@@ -233,7 +233,7 @@ class SEOInterceptor:
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>SynthInk</title>
+    <title>SynthSpark</title>
 </head>
 <body>
     <div id="app"></div>
@@ -265,7 +265,7 @@ class SEOInterceptor:
         
         meta_html = "\n    ".join(meta_tags)
         
-        title = self._escape_html(metadata.meta_title or "SynthInk")
+        title = self._escape_html(metadata.meta_title or "SynthSpark")
         
         return f"""<!DOCTYPE html>
 <html lang="zh-CN">

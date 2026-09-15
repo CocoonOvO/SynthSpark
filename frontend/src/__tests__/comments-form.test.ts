@@ -11,7 +11,7 @@ const isValidEmail = (email: string): boolean => {
 }
 
 // localStorage 记忆 key
-const ANONYMOUS_STORAGE_KEY = 'synthink_anonymous_comment'
+const ANONYMOUS_STORAGE_KEY = 'synthspark_anonymous_comment'
 
 // 读取匿名评论记忆
 function loadAnonymousInfo(): { name?: string; email?: string } {
@@ -157,8 +157,8 @@ describe('匿名评论表单提交验证逻辑', () => {
 describe('匿名/登录态分支行为', () => {
   it('登录态下 author_name 字段应被忽略（不发送）', () => {
     // 模拟登录态：有 token
-    localStorage.setItem('synthink-token', 'mock-token')
-    const isLoggedIn = !!localStorage.getItem('synthink-token')
+    localStorage.setItem('synthspark-token', 'mock-token')
+    const isLoggedIn = !!localStorage.getItem('synthspark-token')
 
     // 登录用户提交时不带匿名字段
     const payload: Record<string, string | undefined> = {
@@ -175,8 +175,8 @@ describe('匿名/登录态分支行为', () => {
   })
 
   it('匿名态下 author_name 应被加入 payload', () => {
-    localStorage.removeItem('synthink-token')
-    const isLoggedIn = !!localStorage.getItem('synthink-token')
+    localStorage.removeItem('synthspark-token')
+    const isLoggedIn = !!localStorage.getItem('synthspark-token')
 
     const payload: Record<string, string | undefined> = {
       post_id: 'p1',

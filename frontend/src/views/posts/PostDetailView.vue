@@ -417,7 +417,7 @@ const isFollowing = ref(false)
 const newComment = ref('')
 
 // 匿名评论信息（localStorage 记忆，方便访客再次评论）
-const ANONYMOUS_STORAGE_KEY = 'synthink_anonymous_comment'
+const ANONYMOUS_STORAGE_KEY = 'synthspark_anonymous_comment'
 const anonymousName = ref('')
 const anonymousEmail = ref('')
 // 加载时回填上次填写的名称/邮箱

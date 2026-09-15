@@ -219,7 +219,7 @@ class SQLiteConfigAdapter(BaseAdapter):
         default_configs = [
             {
                 "key": "database_url",
-                "value": "postgresql+asyncpg://user:password@localhost:5432/synthink",
+                "value": "postgresql+asyncpg://user:password@localhost:5432/synthspark",
                 "description": "PostgreSQL数据库连接URL"
             },
             {
@@ -229,7 +229,7 @@ class SQLiteConfigAdapter(BaseAdapter):
             },
             {
                 "key": "site_name",
-                "value": "SynthInk",
+                "value": "SynthSpark",
                 "description": "站点名称"
             },
             {

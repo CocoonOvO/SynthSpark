@@ -141,8 +141,8 @@ test.describe('UI-003 文章详情页交互测试', () => {
   test('POST-DETAIL-006: 登录用户点赞', async ({ page }) => {
     // 通过localStorage设置登录状态
     await page.evaluate(() => {
-      localStorage.setItem('synthink-token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0dXNlcl9mcm9udGVuZCIsImV4cCI6OTk5OTk5OTk5OX0.test')
-      localStorage.setItem('synthink-user', JSON.stringify({
+      localStorage.setItem('synthspark-token', 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiJ0ZXN0dXNlcl9mcm9udGVuZCIsImV4cCI6OTk5OTk5OTk5OX0.test')
+      localStorage.setItem('synthspark-user', JSON.stringify({
         id: 1,
         username: 'testuser_frontend',
         email: 'test_frontend@example.com',

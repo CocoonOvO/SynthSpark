@@ -63,7 +63,7 @@ npm run dev
 
 | 变量 | 用途 |
 |------|------|
-| `TEST_DATABASE_URL` | 测试数据库连接串（如 `postgresql+asyncpg://用户:密码@localhost:5432/synthink_test`），未设置时自动回退读取 `backend/.env`，两者都没有则依赖 DB 的用例自动跳过 |
+| `TEST_DATABASE_URL` | 测试数据库连接串（如 `postgresql+asyncpg://用户:密码@localhost:5432/synthspark_test`），未设置时自动回退读取 `backend/.env`，两者都没有则依赖 DB 的用例自动跳过 |
 | `SMOKE_SUPERUSER_USERNAME` / `SMOKE_SUPERUSER_PASSWORD` | 冒烟测试的超管账号（`test_smoke.py`），未设置时相关用例跳过 |
 
 > **本地持久化建议**：
@@ -103,7 +103,7 @@ SEO_ENABLED=true|false
 
 | 参数 | 默认值 | 说明 |
 |------|--------|------|
-| `DATABASE_URL` | `sqlite+aiosqlite:///./synthink.db` | 数据库连接 |
+| `DATABASE_URL` | `sqlite+aiosqlite:///./synthspark.db` | 数据库连接 |
 | `UPLOAD_DIR` | `./uploads` | 上传目录(相对backend目录) |
 | `MAX_UPLOAD_SIZE` | `10485760` (10MB) | 最大上传大小 |
 
@@ -211,7 +211,7 @@ SELECT table_name FROM information_schema.tables WHERE table_schema = '${SCHEMA}
 ```json
 {
   "mcpServers": {
-    "synthink": {
+    "synthspark": {
       "url": "http://127.0.0.1:8005/sse"
     }
   }
@@ -222,11 +222,11 @@ SELECT table_name FROM information_schema.tables WHERE table_schema = '${SCHEMA}
 ```json
 {
   "mcpServers": {
-    "synthink": {
+    "synthspark": {
       "command": "python",
       "args": ["${PROJECT_ROOT}/mcp/server_optimized.py"],
       "env": {
-        "SYNTHINK_API_URL": "http://localhost:8002"
+        "SYNTHSPARK_API_URL": "http://localhost:8002"
       }
     }
   }
@@ -293,7 +293,20 @@ SELECT table_name FROM information_schema.tables WHERE table_schema = '${SCHEMA}
 - **自动迁移**：`PostgresAdapter.ensure_anonymous_features()` 幂等补列（查 `information_schema.columns`，缺失则 ALTER），`init_schema()` 末尾调用 → 后端启动与 `POST /api/admin/database/init` 均会执行；SQLite 适配器仍残缺（评论/likes 表未定义，属既有问题）
 - **评论搜索**：comments 搜索改为 LEFT JOIN users + COALESCE，匿名评论可被搜到
 - **时区坑（重要）**：项目历史代码用 `datetime.utcnow()`（naive）写入 timestamptz 列，asyncpg 按会话时区（+08）解释，存储时刻偏差 8 小时。评论创建已改为 `datetime.now(timezone.utc)`；限流统计不受影响。点赞等模块仍用旧写法（既有行为，未动）
-- **前端**：`PostDetailView.vue` 评论区未登录时显示名称+邮箱输入（邮箱格式前端预校验），提交字段 `author_name`/`author_email`；localStorage（key `synthink_anonymous_comment`）记忆上次填写内容
+- **前端**：`PostDetailView.vue` 评论区未登录时显示名称+邮箱输入（邮箱格式前端预校验），提交字段 `author_name`/`author_email`；localStorage（key `synthspark_anonymous_comment`）记忆上次填写内容
+
+---
+
+## 6.9 项目命名规范（2026-09-15 全仓统一）
+
+- **唯一写法**：项目名 `SynthSpark`，内部标识 `synthspark`。仓库目录名、Python 包名（`synthspark-backend` / `synthspark-mcp`）、环境变量（`SYNTHSPARK_API_URL`）、SQLite 业务库文件（`synthspark.db`）、前端本地存储键（`synthspark-token` / `synthspark-user` / `synthspark-theme` / `synthspark_anonymous_comment`）、MCP 服务名、Skill 标识（`synthspark-agent` / `synthspark-superadmin`）全部使用该名称；早期遗留的旧命名已全部废弃，任何文件不得再出现（规则见 `AGENTS.md` 首段）。
+- **自查命令**：仓库根目录执行 `rg -i 'synth[_-]?ink' -g '!node_modules' -g '!.venv' -g '!.git' .`，应无任何命中。
+- **已部署实例的迁移**（本次改名涉及的运行时差异，共三项）：
+  1. MCP 客户端配置：环境变量统一为 `SYNTHSPARK_API_URL`（旧环境变量名已不再读取），`mcpServers` 键名建议同步改为 `synthspark`
+  2. 默认 SQLite 业务库文件：统一为 `synthspark.db`；若磁盘上还留着旧文件名的库，`mv` 成新文件名即可，**表结构与数据无需任何改动**
+  3. 浏览器本地状态：存储键改名后旧键不再读取，已登录用户需重新登录一次，匿名评论的名称/邮箱记忆会重置
+- **不受影响**：数据库表名/列名/索引、既有数据、全部 API 路径与接口协议；生产环境 PostgreSQL 的库名由部署者自定，保持 `DATABASE_URL` 原值即可继续连接。
+- **生成物**：`backend/uv.lock`、`mcp/uv.lock`、各 `requirements*.txt` 已按新包名重新生成（`uv lock` + `uv export`），勿手改。
 
 ---
 
@@ -340,7 +353,7 @@ server {
     
     # 前端静态文件
     location / {
-        root /path/to/synthink/frontend/dist;  # 替换为实际dist目录路径
+        root /path/to/synthspark/frontend/dist;  # 替换为实际dist目录路径
         try_files $uri $uri/ /index.html;  # Vue Router SPA回退
     }
     
@@ -355,7 +368,7 @@ server {
     
     # 上传文件访问
     location /uploads {
-        alias /path/to/synthink/backend/uploads;  # 后端上传目录
+        alias /path/to/synthspark/backend/uploads;  # 后端上传目录
         expires 30d;
     }
 }
@@ -400,4 +413,4 @@ server {
 
 ---
 
-*最后更新: 2026-08-10*
+*最后更新: 2026-09-15*

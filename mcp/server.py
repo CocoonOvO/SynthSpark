@@ -1,5 +1,5 @@
 """
-SynthInk MCP Server
+SynthSpark MCP Server
 
 面向博客用户Agent的MCP服务，提供博客系统的所有API接口。
 使用FastMCP框架开发，支持SSE传输。
@@ -95,10 +95,10 @@ from pydantic import BaseModel, Field
 from mcp.server.fastmcp import FastMCP
 
 # 创建MCP服务器
-mcp = FastMCP("SynthInk")
+mcp = FastMCP("SynthSpark")
 
 # 配置
-BASE_URL = os.getenv("SYNTHINK_API_URL", "http://localhost:8002")
+BASE_URL = os.getenv("SYNTHSPARK_API_URL", "http://localhost:8002")
 MCP_HOST = os.getenv("MCP_HOST", "127.0.0.1")
 MCP_PORT = int(os.getenv("MCP_PORT", "8005"))
 
@@ -580,7 +580,7 @@ async def get_api_docs() -> str:
     返回可用的API接口列表和说明。
     """
     return """
-# SynthInk API 文档
+# SynthSpark API 文档
 
 ## 超管认证接口
 - admin_login - 超管登录
@@ -1990,7 +1990,7 @@ async def get_api_docs() -> str:
     由琉璃大小姐精心整理，优雅而全面。
     """
     return """
-# SynthInk MCP API 文档
+# SynthSpark MCP API 文档
 ## 版本: 2.3 (琉璃大小姐扩展版 + 评论系统 + 点赞系统 + 搜索统计)
 
 ## 超管认证接口

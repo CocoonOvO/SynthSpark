@@ -1,15 +1,15 @@
 {
   "mcpServers": {
-    "SynthInk": {
-      "name": "SynthInk Blog MCP",
-      "description": "SynthInk博客系统的MCP服务，提供文章管理、用户认证、标签分组等功能",
+    "SynthSpark": {
+      "name": "SynthSpark Blog MCP",
+      "description": "SynthSpark博客系统的MCP服务，提供文章管理、用户认证、标签分组等功能",
       "command": "python",
       "args": [
         "-u",
         "server.py"
       ],
       "env": {
-        "SYNTHINK_API_URL": "http://localhost:8001"
+        "SYNTHSPARK_API_URL": "http://localhost:8001"
       },
       "disabled": false,
       "autoApprove": []

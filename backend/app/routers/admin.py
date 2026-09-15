@@ -129,7 +129,7 @@ class DatabaseConfigRequest(BaseModel):
     db_type: DatabaseType = Field(default=DatabaseType.POSTGRESQL, description="数据库类型")
     host: str = Field(default="localhost", description="主机地址")
     port: int = Field(default=5432, ge=1, le=65535, description="端口号")
-    database: str = Field(default="synthink", description="数据库名")
+    database: str = Field(default="synthspark", description="数据库名")
     db_schema: str = Field(default="public", description="PostgreSQL schema名称")
     username: str = Field(default="", description="用户名")
     password: str = Field(default="", description="密码")

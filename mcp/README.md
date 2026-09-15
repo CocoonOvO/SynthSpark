@@ -1,6 +1,6 @@
-# SynthInk MCP Server
+# SynthSpark MCP Server
 
-面向博客用户Agent的MCP服务，提供SynthInk博客系统的API接口。
+面向博客用户Agent的MCP服务，提供SynthSpark博客系统的API接口。
 
 ## 版本说明
 
@@ -181,7 +181,7 @@ pip install -r requirements.txt
 ### 环境变量
 
 ```bash
-export SYNTHINK_API_URL="http://localhost:8001"  # 后端API地址
+export SYNTHSPARK_API_URL="http://localhost:8001"  # 后端API地址
 ```
 
 ### MCP配置
@@ -190,7 +190,7 @@ export SYNTHINK_API_URL="http://localhost:8001"  # 后端API地址
 
 配置说明:
 - `${PROJECT_ROOT}`: 替换为实际的项目根目录路径
-- `SYNTHINK_API_URL`: 后端API地址，根据实际部署修改
+- `SYNTHSPARK_API_URL`: 后端API地址，根据实际部署修改
 
 ## 启动
 
@@ -201,7 +201,7 @@ export SYNTHINK_API_URL="http://localhost:8001"  # 后端API地址
 | `MCP_TRANSPORT` | `sse` | 传输方式：`sse` 或 `stdio` |
 | `MCP_HOST` | `127.0.0.1` | SSE服务绑定地址 |
 | `MCP_PORT` | `8000` | SSE服务端口 |
-| `SYNTHINK_API_URL` | `http://localhost:8002` | 后端API地址 |
+| `SYNTHSPARK_API_URL` | `http://localhost:8002` | 后端API地址 |
 
 ### 方式1: SSE传输（推荐用于远程连接）
 
@@ -241,7 +241,7 @@ python server_optimized.py
 ```json
 {
   "mcpServers": {
-    "synthink": {
+    "synthspark": {
       "url": "http://127.0.0.1:8000/sse"
     }
   }
@@ -253,11 +253,11 @@ python server_optimized.py
 ```json
 {
   "mcpServers": {
-    "synthink": {
+    "synthspark": {
       "command": "python",
       "args": ["${PROJECT_ROOT}/mcp/server_optimized.py"],
       "env": {
-        "SYNTHINK_API_URL": "http://localhost:8002",
+        "SYNTHSPARK_API_URL": "http://localhost:8002",
         "MCP_TRANSPORT": "stdio"
       }
     }
@@ -286,7 +286,7 @@ token = result["access_token"]
 result = await client.call_tool("config_database", {
     "token": token,
     "action": "configure",
-    "database": "synthink",
+    "database": "synthspark",
     "username": "postgres",
     "password": "your_password",
     "host": "localhost",

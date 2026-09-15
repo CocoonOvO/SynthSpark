@@ -29,10 +29,10 @@ class SEOMetadata(SEOBase):
                 "meta_title": "Python入门教程",
                 "meta_description": "最详细的Python入门教程...",
                 "meta_keywords": "Python,教程,入门",
-                "canonical_url": "https://synthink.com/posts/python-tutorial",
+                "canonical_url": "https://synthspark.com/posts/python-tutorial",
                 "og_title": "Python入门教程",
                 "og_description": "最详细的Python入门教程...",
-                "og_image": "https://synthink.com/images/python.png",
+                "og_image": "https://synthspark.com/images/python.png",
                 "created_at": "2026-03-08T10:00:00",
                 "updated_at": "2026-03-08T10:00:00"
             }

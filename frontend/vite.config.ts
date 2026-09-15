@@ -52,7 +52,7 @@ export default defineConfig(({ mode }) => {
       vueDevTools(),
       {
         // 站点配置自动生成插件：保证 dev / build 时 public/site.config.json 始终可用
-        name: 'synthink-site-config',
+        name: 'synthspark-site-config',
         // build 时在模块加载阶段生成（dist 拷贝 public 目录前完成）
         buildStart() {
           ensureSiteConfigFile()

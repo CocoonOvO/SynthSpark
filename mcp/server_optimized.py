@@ -1,5 +1,5 @@
 """
-SynthInk MCP Server - 优化版
+SynthSpark MCP Server - 优化版
 
 面向博客用户Agent的MCP服务，提供博客系统的核心API接口。
 使用FastMCP框架开发，支持SSE传输。
@@ -40,12 +40,12 @@ from pydantic import BaseModel, Field
 from mcp.server.fastmcp import FastMCP
 
 # 配置
-BASE_URL = os.getenv("SYNTHINK_API_URL", "http://localhost:8002")
+BASE_URL = os.getenv("SYNTHSPARK_API_URL", "http://localhost:8002")
 MCP_HOST = os.getenv("MCP_HOST", "127.0.0.1")
 MCP_PORT = int(os.getenv("MCP_PORT", "8005"))
 
 # 创建MCP服务器（使用默认端口，稍后在main中重新创建）
-mcp = FastMCP("SynthInk-Optimized")
+mcp = FastMCP("SynthSpark-Optimized")
 
 
 # ========== 请求/响应模型 ==========
@@ -1112,7 +1112,7 @@ async def get_api_docs() -> str:
     返回可用的API接口列表和说明。
     """
     return """
-# SynthInk API 文档 - 优化版
+# SynthSpark API 文档 - 优化版
 
 ## 工具分类
 
@@ -1180,7 +1180,7 @@ def main():
     import argparse
     
     # 解析命令行参数
-    parser = argparse.ArgumentParser(description="SynthInk MCP Server - 优化版")
+    parser = argparse.ArgumentParser(description="SynthSpark MCP Server - 优化版")
     parser.add_argument("--api-url", default="http://localhost:8002", help="后端API地址 (默认: http://localhost:8002)")
     parser.add_argument("--host", default="127.0.0.1", help="MCP服务器监听地址 (默认: 127.0.0.1)")
     parser.add_argument("--port", type=int, default=8005, help="MCP服务器端口 (默认: 8005)")

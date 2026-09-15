@@ -40,7 +40,7 @@ function buildUrl(url: string, params?: Record<string, string | number | boolean
 // 获取Token
 function getToken(): string | null {
   if (typeof window === 'undefined') return null
-  return localStorage.getItem('synthink-token')
+  return localStorage.getItem('synthspark-token')
 }
 
 // 统一请求封装

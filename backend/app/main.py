@@ -21,7 +21,7 @@ async def get_skill_md():
     """
     获取Agent操作指南 (SKILL.md)
 
-    为Agent提供SynthInk系统的API操作指南
+    为Agent提供SynthSpark系统的API操作指南
     """
     skill_path = Path(__file__).parent.parent.parent / "SKILL.md"
     if skill_path.exists():

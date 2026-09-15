@@ -164,8 +164,8 @@ export const authApi = {
    */
   logout: (): void => {
     if (typeof window !== 'undefined') {
-      localStorage.removeItem('synthink-token')
-      localStorage.removeItem('synthink-user')
+      localStorage.removeItem('synthspark-token')
+      localStorage.removeItem('synthspark-user')
     }
   },
 

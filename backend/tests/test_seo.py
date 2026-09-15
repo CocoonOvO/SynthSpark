@@ -331,7 +331,7 @@ class TestSEOMiddleware:
         assert send.call_count == 2
         body_call = send.call_args_list[1][0][0]
         html = body_call["body"].decode("utf-8")
-        assert "SynthInk" in html
+        assert "SynthSpark" in html
     
     def test_html_escape(self, mock_app, mock_adapter, mock_settings):
         """测试HTML转义"""
@@ -380,7 +380,7 @@ class TestSEOMiddleware:
         
         html = interceptor._render_ssr_html(None)
         
-        assert "SynthInk" in html
+        assert "SynthSpark" in html
         assert '<div id="app"></div>' in html
 
 

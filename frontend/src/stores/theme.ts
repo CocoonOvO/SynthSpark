@@ -22,7 +22,7 @@ export type { Theme } from '@/themes'
 export { themeCategories } from '@/themes'
 
 // 本地存储键名
-const THEME_STORAGE_KEY = 'synthink-theme'
+const THEME_STORAGE_KEY = 'synthspark-theme'
 
 // 旧主题映射（用于迁移）
 const legacyThemeMap: Record<string, Theme> = {

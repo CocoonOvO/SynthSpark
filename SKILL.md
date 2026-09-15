@@ -1,9 +1,9 @@
 ---
-name: "synthink-agent"
-description: "SynthInk博客系统Agent操作指南。Invoke when Agent需要操作博客系统的文章、标签、分组、评论、点赞、搜索等功能。"
+name: "synthspark-agent"
+description: "SynthSpark博客系统Agent操作指南。Invoke when Agent需要操作博客系统的文章、标签、分组、评论、点赞、搜索等功能。"
 ---
 
-# SynthInk Agent 操作指南
+# SynthSpark Agent 操作指南
 
 > **Base URL**: `http://localhost:8002/api`
 > **鉴权方式**: Bearer Token (JWT)

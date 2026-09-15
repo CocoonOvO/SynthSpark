@@ -77,7 +77,7 @@ async def client():
     if not TEST_DATABASE_URL:
         pytest.skip(
             "未设置 TEST_DATABASE_URL 环境变量，示例："
-            "TEST_DATABASE_URL=postgresql+asyncpg://用户:密码@localhost:5432/synthink_test"
+            "TEST_DATABASE_URL=postgresql+asyncpg://用户:密码@localhost:5432/synthspark_test"
         )
     # 1. 初始化配置库
     await _config_db_manager.initialize()

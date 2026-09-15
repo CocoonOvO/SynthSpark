@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     )
     
     # 应用基础配置
-    APP_NAME: str = "SynthInk"
+    APP_NAME: str = "SynthSpark"
     DEBUG_MODE: bool = True
     VERSION: str = "0.1.0"
     
@@ -26,7 +26,7 @@ class Settings(BaseSettings):
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 30 * 24 * 60  # 30天
     
     # 数据库配置
-    DATABASE_URL: str = "sqlite+aiosqlite:///./synthink.db"
+    DATABASE_URL: str = "sqlite+aiosqlite:///./synthspark.db"
     
     # CORS配置 - 允许所有本地开发端口
     ALLOWED_ORIGINS: list[str] = [
@@ -55,7 +55,7 @@ class Settings(BaseSettings):
     UPLOAD_DIR: str = "./uploads"
     
     # 站点配置
-    SITE_NAME: str = "SynthInk"
+    SITE_NAME: str = "SynthSpark"
     SITE_DESCRIPTION: str = "AI 辅助博客站点"
     
     # 限流配置 (slowapi格式: "次数/时间单位")

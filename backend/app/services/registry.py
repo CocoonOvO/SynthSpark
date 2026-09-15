@@ -32,7 +32,7 @@ _NAME_PATTERN = re.compile(r"^[a-z0-9]+(-[a-z0-9]+)*$")
 
 def _load_module(module_path: Path) -> Optional[object]:
     """按文件路径加载一个 Python 模块"""
-    module_name = f"synthink_service_{module_path.stem}"
+    module_name = f"synthspark_service_{module_path.stem}"
     spec = importlib.util.spec_from_file_location(module_name, module_path)
     if spec is None or spec.loader is None:
         logger.warning("[服务挂载] 无法加载模块: %s", module_path)

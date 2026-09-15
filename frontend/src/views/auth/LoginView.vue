@@ -162,7 +162,7 @@ const handleLogin = async () => {
     })
 
     // 先保存token到localStorage，这样getMe才能使用
-    localStorage.setItem('synthink-token', response.access_token)
+    localStorage.setItem('synthspark-token', response.access_token)
 
     // 获取用户信息
     const user = await authApi.getMe()

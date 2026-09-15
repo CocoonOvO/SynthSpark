@@ -12,7 +12,7 @@ vi.stubGlobal('fetch', mockFetch)
 beforeEach(() => {
   mockFetch.mockReset()
   // 确保无 token（模拟匿名）
-  localStorage.removeItem('synthink-token')
+  localStorage.removeItem('synthspark-token')
 })
 
 // 模拟成功响应的 fetch mock 工具
@@ -76,7 +76,7 @@ describe('commentsApi.create', () => {
 
   it('登录用户：不发送 author_name 和 author_email', async () => {
     // 设置 token 模拟登录
-    localStorage.setItem('synthink-token', 'test-token-abc')
+    localStorage.setItem('synthspark-token', 'test-token-abc')
 
     mockFetch.mockResolvedValue(mockSuccessResponse({
       ...mockComment,

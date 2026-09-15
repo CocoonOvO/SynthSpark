@@ -25,7 +25,7 @@ async function uploadWithProgress(
   const formData = new FormData()
   formData.append('file', file)
 
-  const token = typeof window !== 'undefined' ? localStorage.getItem('synthink-token') : null
+  const token = typeof window !== 'undefined' ? localStorage.getItem('synthspark-token') : null
 
   return new Promise((resolve, reject) => {
     const xhr = new XMLHttpRequest()

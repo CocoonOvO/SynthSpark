@@ -1100,7 +1100,7 @@ wheels = [
 ]
 
 [[package]]
-name = "synthink-backend"
+name = "synthspark-backend"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [

@@ -110,7 +110,7 @@ class ConfigDBManager:
                     db_type TEXT NOT NULL DEFAULT 'postgresql',
                     host TEXT DEFAULT 'localhost',
                     port INTEGER DEFAULT 5432,
-                    database TEXT DEFAULT 'synthink',
+                    database TEXT DEFAULT 'synthspark',
                     schema TEXT DEFAULT 'public',
                     username TEXT DEFAULT '',
                     password TEXT DEFAULT '',

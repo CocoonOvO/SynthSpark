@@ -1,9 +1,9 @@
 ---
-name: "synthink-superadmin"
-description: "SynthInk超管系统操作指南。Invoke when 需要进行系统初始化、数据库配置、用户管理、审计日志查看等超管操作。"
+name: "synthspark-superadmin"
+description: "SynthSpark超管系统操作指南。Invoke when 需要进行系统初始化、数据库配置、用户管理、审计日志查看等超管操作。"
 ---
 
-# SynthInk 超管操作指南
+# SynthSpark 超管操作指南
 
 > **Base URL**: `http://localhost:8002/api`
 > **鉴权方式**: Bearer Token (JWT) - 需要超管权限
@@ -51,7 +51,7 @@ Authorization: Bearer {superadmin_token}
   "db_type": "postgresql",
   "host": "localhost",
   "port": 5432,
-  "database": "synthink",
+  "database": "synthspark",
   "schema": "public",
   "username": "postgres",
   "password": "password"
@@ -65,7 +65,7 @@ POST /admin/database/test
   "db_type": "postgresql",
   "host": "localhost",
   "port": 5432,
-  "database": "synthink",
+  "database": "synthspark",
   "username": "postgres",
   "password": "password"
 }
@@ -82,7 +82,7 @@ Authorization: Bearer {superadmin_token}
 POST /admin/init-wizard/complete
 Authorization: Bearer {superadmin_token}
 {
-  "site_name": "SynthInk博客",
+  "site_name": "SynthSpark博客",
   "site_description": "一个优雅的博客系统"
 }
 ```

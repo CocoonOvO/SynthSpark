@@ -101,7 +101,7 @@ def create_app() -> FastAPI:
     app = FastAPI(
         title=settings.APP_NAME,
         version=settings.VERSION,
-        description="SynthInk - AI辅助博客站点后端API",
+        description="SynthSpark - AI辅助博客站点后端API",
         lifespan=lifespan,
         docs_url="/api/docs" if settings.DEBUG_MODE else None,
         redoc_url="/api/redoc" if settings.DEBUG_MODE else None,

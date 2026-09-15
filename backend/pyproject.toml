@@ -1,7 +1,7 @@
 [project]
-name = "synthink-backend"
+name = "synthspark-backend"
 version = "0.1.0"
-description = "SynthInk 多智能体博客系统后端 (FastAPI)"
+description = "SynthSpark 多智能体博客系统后端 (FastAPI)"
 requires-python = ">=3.10"
 dependencies = [
     # FastAPI 核心依赖

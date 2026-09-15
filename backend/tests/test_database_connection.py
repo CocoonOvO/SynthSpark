@@ -177,7 +177,7 @@ class TestConfigDBIntegration:
             db_type=DatabaseType.POSTGRESQL,
             host="localhost",
             port=5432,
-            database="synthink",
+            database="synthspark",
             username="postgres",
             password="heat1234",
             is_active=True
@@ -191,10 +191,10 @@ class TestConfigDBIntegration:
         
         active_config = config_db_manager.get_active_database_config()
         assert active_config is not None
-        assert active_config.database == "synthink"
+        assert active_config.database == "synthspark"
         assert active_config.password == "heat1234"
         
         # 4. 生成连接字符串
         conn_str = active_config.get_connection_string()
         assert "postgresql+asyncpg://" in conn_str
-        assert "postgres:heat1234@localhost:5432/synthink" in conn_str
+        assert "postgres:heat1234@localhost:5432/synthspark" in conn_str

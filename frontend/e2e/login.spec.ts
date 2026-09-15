@@ -22,8 +22,8 @@ test.describe('UI-001 登录页交互测试', () => {
     await page.context().clearCookies()
     await page.goto('/login')
     await page.evaluate(() => {
-      localStorage.removeItem('synthink-token')
-      localStorage.removeItem('synthink-user')
+      localStorage.removeItem('synthspark-token')
+      localStorage.removeItem('synthspark-user')
     })
   })
 
@@ -32,11 +32,11 @@ test.describe('UI-001 登录页交互测试', () => {
    */
   test('LOGIN-001: 页面正常加载', async ({ page }) => {
     // 验证页面标题
-    await expect(page).toHaveTitle(/登录|SynthInk/)
+    await expect(page).toHaveTitle(/登录|SynthSpark/)
     
     // 验证Logo显示
     await expect(page.locator('.logo')).toBeVisible()
-    await expect(page.locator('.brand-name')).toHaveText('SynthInk')
+    await expect(page.locator('.brand-name')).toHaveText('SynthSpark')
     await expect(page.locator('.brand-tagline')).toHaveText('人机共创的写作空间')
     
     // 验证表单元素
@@ -64,7 +64,7 @@ test.describe('UI-001 登录页交互测试', () => {
     await expect(page).toHaveURL('/', { timeout: 10000 })
     
     // 验证token已保存
-    const token = await page.evaluate(() => localStorage.getItem('synthink-token'))
+    const token = await page.evaluate(() => localStorage.getItem('synthspark-token'))
     expect(token).toBeTruthy()
   })
 

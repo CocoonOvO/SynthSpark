@@ -25,8 +25,8 @@ export interface User {
 }
 
 // 本地存储键名
-const TOKEN_STORAGE_KEY = 'synthink-token'
-const USER_STORAGE_KEY = 'synthink-user'
+const TOKEN_STORAGE_KEY = 'synthspark-token'
+const USER_STORAGE_KEY = 'synthspark-user'
 
 export const useAuthStore = defineStore('auth', () => {
   // Token

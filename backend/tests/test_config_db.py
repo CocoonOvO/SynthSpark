@@ -35,7 +35,7 @@ class TestConfigDBInitialization:
         # 检查一些关键配置项
         site_name = config_db_manager.get_system_config("site_name")
         assert site_name is not None
-        assert site_name.value == "SynthInk"
+        assert site_name.value == "SynthSpark"
         
         jwt_secret = config_db_manager.get_system_config("jwt_secret_key")
         assert jwt_secret is not None
@@ -230,14 +230,14 @@ class TestSystemConfig:
         
         assert config is not None
         assert config.key == "site_name"
-        assert config.value == "SynthInk"
+        assert config.value == "SynthSpark"
         assert config.value_type == "string"
     
     @pytest.mark.asyncio
     async def test_get_system_config_value(self, config_db_manager):
         """测试获取系统配置值"""
         value = config_db_manager.get_system_config_value("site_name")
-        assert value == "SynthInk"
+        assert value == "SynthSpark"
         
         # 测试默认值
         value = config_db_manager.get_system_config_value(

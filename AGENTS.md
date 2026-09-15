@@ -1,6 +1,6 @@
 # AGENTS.md
 
-多智能体博客系统。仓库名 `SynthInk`，README 品牌名写作 **SynthSpark**，但代码/运维/API 文档统一用 **SynthInk**（内部标识 `synthink`：`synthink.db`、`SYNTHINK_API_URL`）。不要单方面改名。
+多智能体博客系统，项目名统一为 **SynthSpark**，内部标识统一为 `synthspark`（`synthspark.db`、`SYNTHSPARK_API_URL`、`synthspark-backend`、`synthspark-token` 等）。仓库目录名、Python 包名、环境变量、前端存储键、文档全篇**只允许这一种写法**；早期遗留的旧命名已全部废弃，任何文件都不得再出现。需要引入新命名前先与维护者确认，不要单方面变更。
 
 ## 文档体系（按序阅读）
 
@@ -26,11 +26,11 @@ Python 依赖用 **uv 管理**（`backend/pyproject.toml`、`mcp/pyproject.toml`
 
 - `backend/.env` 必须有 `SECRET_KEY`（`app/config.py` 中无默认值，缺失则启动即崩）。`.env` 已被 gitignore。
 - Vite 代理默认目标为 **8001**（`vite.config.ts`），后端实际在 **8002**：需 `cp frontend/.env.example frontend/.env` 并设 `VITE_API_URL=http://localhost:8002`，否则前端 `/api` 请求全部 404。
-- 业务库默认 SQLite（`sqlite+aiosqlite:///./synthink.db`），生产可切 PostgreSQL（`DATABASE_URL`）。
+- 业务库默认 SQLite（`sqlite+aiosqlite:///./synthspark.db`），生产可切 PostgreSQL（`DATABASE_URL`）。
 
 ## 测试
 
-- **后端**：`cd backend && uv run pytest`（`asyncio_mode=auto`）。测试数据库连接串**不硬编码**，由环境变量 `TEST_DATABASE_URL` 提供（如 `TEST_DATABASE_URL=postgresql+asyncpg://用户:密码@localhost:5432/synthink_test`，需本地 PostgreSQL 已启动且存在对应库）；未设置时自动回退读取 `backend/.env`；**都没有时依赖 DB 的用例自动跳过**。冒烟测试（`tests/test_smoke.py`，需 8002 活服务）的超管账号同理：`SMOKE_SUPERUSER_USERNAME` / `SMOKE_SUPERUSER_PASSWORD`。单文件：`uv run pytest tests/test_posts.py`。
+- **后端**：`cd backend && uv run pytest`（`asyncio_mode=auto`）。测试数据库连接串**不硬编码**，由环境变量 `TEST_DATABASE_URL` 提供（如 `TEST_DATABASE_URL=postgresql+asyncpg://用户:密码@localhost:5432/synthspark_test`，需本地 PostgreSQL 已启动且存在对应库）；未设置时自动回退读取 `backend/.env`；**都没有时依赖 DB 的用例自动跳过**。冒烟测试（`tests/test_smoke.py`，需 8002 活服务）的超管账号同理：`SMOKE_SUPERUSER_USERNAME` / `SMOKE_SUPERUSER_PASSWORD`。单文件：`uv run pytest tests/test_posts.py`。
 - **前端**：单测 `npm run test:unit`（vitest）。
 - **E2E**：Playwright（`frontend/playwright.config.ts`，`testDir: ./e2e`）。README 写的 `npm run test:e2e` **在 package.json 中不存在**，改用 `npx playwright test`；使用 **Playwright 内置 chromium**（无需系统 Chrome），dev server 由配置文件自动拉起（5173）。**依赖版本已锁定** `@playwright/test@1.61.1`（与本机 `~/.cache/ms-playwright` 的 chromium-1228 缓存匹配）；若升级 playwright 版本，需同步更新浏览器缓存（`npx playwright install chromium`）。
 - 提交前检查顺序：前端 `npm run lint`（oxlint + eslint，均带 `--fix`）→ `npm run type-check`（`npm run build` 已包含 type-check）。

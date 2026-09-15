@@ -61,7 +61,7 @@ exceptiongroup==1.3.1
     #   anyio
     #   fastmcp-slim
 fastmcp==3.4.6
-    # via synthink-mcp
+    # via synthspark-mcp
 fastmcp-slim==3.4.6
     # via fastmcp
 griffelib==2.1.0
@@ -76,7 +76,7 @@ httpx==0.28.1
     # via
     #   fastmcp-slim
     #   mcp
-    #   synthink-mcp
+    #   synthspark-mcp
 httpx-sse==0.4.3
     # via mcp
 idna==3.18
@@ -140,7 +140,7 @@ pydantic==2.13.4
     #   mcp
     #   openapi-pydantic
     #   pydantic-settings
-    #   synthink-mcp
+    #   synthspark-mcp
 pydantic-core==2.46.4
     # via pydantic
 pydantic-settings==2.14.2

@@ -21,7 +21,7 @@ test.describe('UI-002 首页交互测试', () => {
    */
   test('HOME-001: 页面正常加载', async ({ page }) => {
     // 验证页面标题
-    await expect(page).toHaveTitle(/SynthInk|SynthSpark/)
+    await expect(page).toHaveTitle(/SynthSpark/)
     
     // 验证Hero区域存在
     const hero = page.locator('.hero')

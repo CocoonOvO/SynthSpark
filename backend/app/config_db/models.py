@@ -44,7 +44,7 @@ class DatabaseConfig(BaseModel):
     db_type: DatabaseType = Field(default=DatabaseType.POSTGRESQL, description="数据库类型")
     host: str = Field(default="localhost", description="主机地址")
     port: int = Field(default=5432, description="端口")
-    database: str = Field(default="synthink", description="数据库名")
+    database: str = Field(default="synthspark", description="数据库名")
     db_schema: str = Field(default="public", description="PostgreSQL schema名称")
     username: str = Field(default="", description="用户名")
     password: str = Field(default="", description="密码")
@@ -146,7 +146,7 @@ class ConfigAuditLog(BaseModel):
 DEFAULT_SYSTEM_CONFIGS = [
     {
         "key": "site_name",
-        "value": "SynthInk",
+        "value": "SynthSpark",
         "value_type": "string",
         "description": "站点名称",
         "category": "site"
