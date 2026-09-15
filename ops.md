@@ -11,7 +11,6 @@
 | 服务 | 端口 |
 |------|------|
 | 后端API | 8002 |
-| MCP服务 | 8005 |
 | 前端开发 | 5173 |
 
 ### 1.2 启动
@@ -19,15 +18,10 @@
 ```bash
 # 依赖安装（uv 管理，首次或依赖变更后执行）
 cd ${PROJECT_ROOT}/backend && uv sync --all-groups
-cd ${PROJECT_ROOT}/mcp && uv sync
 
 # 后端
 cd ${PROJECT_ROOT}/backend
 uv run python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload
-
-# MCP
-cd ${PROJECT_ROOT}/mcp
-uv run python server_optimized.py --api-url http://localhost:8002 --host 127.0.0.1 --port 8005
 
 # 前端
 cd ${PROJECT_ROOT}/frontend
@@ -43,7 +37,6 @@ npm run dev
 | 数据库连接失败 | PostgreSQL服务状态、连接配置 |
 | 配置库损坏 | 删除 `config.db` 后重启重新配置 |
 | 权限不足 (403) | Token是否过期、用户角色 |
-| MCP连接失败 | MCP服务状态、客户端配置 |
 | 前端API请求失败 | Vite代理配置、后端端口（前端 `.env` 需 `VITE_API_URL=http://localhost:8002`） |
 | `init-wizard` 报错 | 2026-08-06 已修复 pydantic `schema` 序列化 bug，如仍异常检查 `backend.log` |
 | 业务库缺表 | 超管登录后调 `POST /api/admin/database/init` 补建（PG 的 init_schema 为硬编码表列表） |
@@ -150,7 +143,6 @@ echo "VITE_API_URL=http://localhost:8002" >> frontend/.env
 - 接口：`GET /api/site-config`（公开）/ `GET|PUT /api/admin/site-config`（业务库超管，同外链接口鉴权）/ `GET /api/admin/site-config/audit-logs`（超管查操作审计）
 - 存储：配置库 `config.db` 的 `system_configs` 表（category=site、key=site_config）；**持久化**：重启后端/前端、改代码均不丢失，删除 `config.db` 后重置（与超管账号重置行为一致）
 - 审计：每次保存记入独立表 `site_config_audit_logs`（操作人/时间/变更前后值；因操作方是业务库用户 UUID，无法写入配置库超管审计表 `config_audit_logs` 的外键约束，故单独建表）
-- MCP 工具：`site_config_get` / `site_config_update`（见 `mcp/README.md`）
 
 **方式二：配置文件覆盖**
 
@@ -202,36 +194,6 @@ SELECT table_name FROM information_schema.tables WHERE table_schema = '${SCHEMA}
 ```
 
 ---
-
-## 5. MCP服务
-
-### 5.1 客户端配置
-
-**SSE方式**:
-```json
-{
-  "mcpServers": {
-    "synthspark": {
-      "url": "http://127.0.0.1:8005/sse"
-    }
-  }
-}
-```
-
-**stdio方式**:
-```json
-{
-  "mcpServers": {
-    "synthspark": {
-      "command": "python",
-      "args": ["${PROJECT_ROOT}/mcp/server_optimized.py"],
-      "env": {
-        "SYNTHSPARK_API_URL": "http://localhost:8002"
-      }
-    }
-  }
-}
-```
 
 ---
 
@@ -299,14 +261,13 @@ SELECT table_name FROM information_schema.tables WHERE table_schema = '${SCHEMA}
 
 ## 6.9 项目命名规范（2026-09-15 全仓统一）
 
-- **唯一写法**：项目名 `SynthSpark`，内部标识 `synthspark`。仓库目录名、Python 包名（`synthspark-backend` / `synthspark-mcp`）、环境变量（`SYNTHSPARK_API_URL`）、SQLite 业务库文件（`synthspark.db`）、前端本地存储键（`synthspark-token` / `synthspark-user` / `synthspark-theme` / `synthspark_anonymous_comment`）、MCP 服务名、Skill 标识（`synthspark-agent` / `synthspark-superadmin`）全部使用该名称；早期遗留的旧命名已全部废弃，任何文件不得再出现（规则见 `AGENTS.md` 首段）。
+- **唯一写法**：项目名 `SynthSpark`，内部标识 `synthspark`。仓库目录名、Python 包名（`synthspark-backend`）、环境变量（`SYNTHSPARK_API_URL`）、SQLite 业务库文件（`synthspark.db`）、前端本地存储键（`synthspark-token` / `synthspark-user` / `synthspark-theme` / `synthspark_anonymous_comment`）、Skill 标识（`synthspark-agent` / `synthspark-superadmin`）全部使用该名称；早期遗留的旧命名已全部废弃，任何文件不得再出现（规则见 `AGENTS.md` 首段）。
 - **自查命令**：仓库根目录执行 `rg -i 'synth[_-]?ink' -g '!node_modules' -g '!.venv' -g '!.git' .`，应无任何命中。
-- **已部署实例的迁移**（本次改名涉及的运行时差异，共三项）：
-  1. MCP 客户端配置：环境变量统一为 `SYNTHSPARK_API_URL`（旧环境变量名已不再读取），`mcpServers` 键名建议同步改为 `synthspark`
-  2. 默认 SQLite 业务库文件：统一为 `synthspark.db`；若磁盘上还留着旧文件名的库，`mv` 成新文件名即可，**表结构与数据无需任何改动**
-  3. 浏览器本地状态：存储键改名后旧键不再读取，已登录用户需重新登录一次，匿名评论的名称/邮箱记忆会重置
+- **已部署实例的迁移**（本次改名涉及的运行时差异，共两项）：
+  1. 默认 SQLite 业务库文件：统一为 `synthspark.db`；若磁盘上还留着旧文件名的库，`mv` 成新文件名即可，**表结构与数据无需任何改动**
+  2. 浏览器本地状态：存储键改名后旧键不再读取，已登录用户需重新登录一次，匿名评论的名称/邮箱记忆会重置
 - **不受影响**：数据库表名/列名/索引、既有数据、全部 API 路径与接口协议；生产环境 PostgreSQL 的库名由部署者自定，保持 `DATABASE_URL` 原值即可继续连接。
-- **生成物**：`backend/uv.lock`、`mcp/uv.lock`、各 `requirements*.txt` 已按新包名重新生成（`uv lock` + `uv export`），勿手改。
+- **生成物**：`backend/uv.lock`、 `requirements*.txt` 已按新包名重新生成（`uv lock` + `uv export`），勿手改。
 
 ---
 

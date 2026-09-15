@@ -9,7 +9,6 @@
 | `ops.md` | **Agent 必读**：架构、端口、账号、部署、排障 |
 | `SKILL.md` | 用户侧 API 指南（后端 `GET /skill.md` 亦可获取） |
 | `backend/app/skills/SKILL.md` | 超管操作指南 |
-| `mcp/README.md` | MCP 接口说明 |
 | `.trae/rules/project-coder-rule0.md` | 开发规范（中文注释、异步 DB、鉴权检查等） |
 
 ## 启动与端口
@@ -18,9 +17,8 @@
 |------|------|------|
 | 后端 | 8002 | `cd backend && uv sync --all-groups && uv run python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload` |
 | 前端 | 5173 | `cd frontend && npm run dev` |
-| MCP | 8005 (SSE `/sse`) | `cd mcp && uv sync && uv run python server_optimized.py --api-url http://localhost:8002 --host 127.0.0.1 --port 8005` |
 
-Python 依赖用 **uv 管理**（`backend/pyproject.toml`、`mcp/pyproject.toml`），增删依赖改 pyproject 后 `uv sync`；`requirements*.txt` 是 `uv export` 生成物，勿手改。
+Python 依赖用 **uv 管理**（`backend/pyproject.toml`），增删依赖改 pyproject 后 `uv sync`；`requirements*.txt` 是 `uv export` 生成物，勿手改。
 
 ## 环境变量陷阱（易踩坑）
 
@@ -51,8 +49,3 @@ Python 依赖用 **uv 管理**（`backend/pyproject.toml`、`mcp/pyproject.toml`
 - 外链（「关联」页 `/links`）存业务库 `external_links` 表，公开读、仅超管可写。
 - **站点配置**：前端启动按「后台配置 > `frontend/public/site.config.json` > 内置默认」三级合并；后台配置存配置库 `system_configs` 表（key=`site_config`），接口 `GET /api/site-config`（公开）与 `GET|PUT /api/admin/site-config`（业务库超管，同外链接口鉴权）；前端管理入口在 Profile 设置页「站点设置」tab；模板 `frontend/public/site.config.example.json`，`npm run config:init` 生成文件配置。
 - **服务挂载**：框架在 `backend/app/services/`（入库），用户自研服务放 `backend/app/services/impl/`（**gitignored，不入库**），契约与规范见 `backend/app/services/README.md`。
-
-## MCP 注意
-
-- 两个服务端：`server_optimized.py`（28 个工具，CRUD 合并为 `action` 参数，**推荐**）与 `server.py`（63 个工具，功能全）。修改后端接口后须同步更新 MCP 服务。
-- 传输方式 `--transport sse|stdio`（默认 sse）；`server_optimized.py` 默认端口即 8005。

@@ -72,7 +72,7 @@
         },
         {
           "title": "Agent集成",
-          "items": ["MCP Protocol", "Agent Identity", "Multi-Agent"]
+          "items": ["Agent Identity", "Multi-Agent"]
         },
         {
           "title": "功能模块",
