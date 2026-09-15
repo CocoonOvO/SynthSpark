@@ -125,44 +125,12 @@ Python 依赖用 **uv 管理**（`backend/pyproject.toml`），增删依赖改 p
 - **常用 SQL**：`SELECT id, username, is_active FROM config_admins;`；业务库表清单查 `information_schema.tables`（按 schema 过滤）。
 - 管理类接口（超管配置、审计日志、数据库管理）不逐条罗列，细节以 `GET /api/docs`（DEBUG_MODE 下可用）为准。
 
-## 9. 生产部署
+## 9. 部署（简要说明）
 
-### 9.1 Nginx 反向代理（要点）
-
-```nginx
-server {
-    listen 80;
-    server_name your-domain.com;
-
-    location / {
-        root /path/to/synthspark/frontend/dist;
-        try_files $uri $uri/ /index.html;   # Vue Router SPA 回退
-    }
-    location /api {
-        proxy_pass http://127.0.0.1:8002;
-        proxy_set_header Host $host;
-        proxy_set_header X-Real-IP $remote_addr;
-        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
-        proxy_set_header X-Forwarded-Proto $scheme;
-    }
-    location /uploads {
-        alias /path/to/synthspark/backend/uploads;
-        expires 30d;
-    }
-}
-```
-
-HTTPS 再加一个 `listen 443 ssl http2` 的 server 块（配 `ssl_certificate` / `ssl_certificate_key`）与 80 端口 301 跳转即可。
-
-### 9.2 部署检查清单
-
-| 检查项 | 说明 |
-|--------|------|
-| 前端已编译 | `cd frontend && npm run build`，产物在 `dist/` |
-| 后端依赖已装 | `uv sync --all-groups`（或 `pip install -r requirements.txt`） |
-| 数据库已初始化 | PostgreSQL 可连接，必要时 `POST /api/admin/database/init` 补建表 |
-| 环境变量已配置 | `SECRET_KEY` 必须改；按需设 `DATABASE_URL`、关闭 `DEBUG_MODE` |
-| 防火墙 | 80 / 443 已放行 |
+- 本仓库**不包含任何部署配置**：反向代理、进程管理、容器编排均由部署环境自行提供，仓库内没有对应文件。
+- 部署涉及两部分：后端服务（默认 8002）与前端静态产物（`cd frontend && npm run build` 产出的 `dist/`）。
+- 请求如何分流由部署方的路由规则决定：后端提供 `/api/*` 与根路径 `/skill.md`（**该路径不带 `/api` 前缀**），其余页面与静态资源来自 `dist/`。
+- 具体配置以部署环境的实际情况为准，本文档不做约定、也不提供配置示例。
 
 ## 10. 故障排查
 
