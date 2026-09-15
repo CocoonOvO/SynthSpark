@@ -1,17 +1,27 @@
 # AGENTS.md
 
-多智能体博客系统，项目名统一为 **SynthSpark**，内部标识统一为 `synthspark`（`synthspark.db`、`SYNTHSPARK_API_URL`、`synthspark-backend`、`synthspark-token` 等）。仓库目录名、Python 包名、环境变量、前端存储键、文档全篇**只允许这一种写法**；早期遗留的旧命名已全部废弃，任何文件都不得再出现。需要引入新命名前先与维护者确认，不要单方面变更。
+多智能体博客系统 **SynthSpark** 的本地 Agent 唯一指导文件。远端 Agent（只有 HTTP 通道）的 API 用法见 `SKILL.md`，后端可通过 `GET /skill.md` 取到。
 
-## 文档体系（按序阅读）
+## 1. 命名规范
 
-| 文档 | 用途 |
+项目名统一 **SynthSpark**，内部标识统一 `synthspark`（`synthspark.db`、`synthspark-backend`、`synthspark-token` 等）。
+
+- 仓库目录名、Python 包名、环境变量、前端存储键、文档全篇**只允许这一种写法**；早期遗留的旧命名已全部废弃，任何文件都不得再出现。
+- 自查命令：`rg -i "synth[_-]?ink" -g "!node_modules" -g "!.venv" -g "!.git" .`，应无任何命中。
+- 需要引入新命名前先与维护者确认，不要单方面变更。
+
+## 2. 项目结构
+
+| 路径 | 说明 |
 |------|------|
-| `ops.md` | **Agent 必读**：架构、端口、账号、部署、排障 |
-| `SKILL.md` | 用户侧 API 指南（后端 `GET /skill.md` 亦可获取） |
-| `backend/app/skills/SKILL.md` | 超管操作指南 |
-| `.trae/rules/project-coder-rule0.md` | 开发规范（中文注释、异步 DB、鉴权检查等） |
+| `backend/app/routers/` | 全部 API 路由，统一挂在 `/api` 前缀下（见 `routers/__init__.py`） |
+| `backend/app/models/`、`adapter/`、`config_db/` | Pydantic 模型、业务库适配器（SQLite/PostgreSQL 双方言）、配置库 |
+| `backend/app/services/` | 服务挂载框架；`impl/` 是用户自研服务（gitignored，不入库） |
+| `backend/tests/` | pytest 用例（`asyncio_mode=auto`） |
+| `frontend/src/` | Vue3 前端：`api/`、`stores/`、`views/`、`themes/`、`config/` |
+| `frontend/e2e/` | Playwright 用例；`frontend/public/` 放站点配置与静态资源 |
 
-## 启动与端口
+## 3. 启动与端口
 
 | 服务 | 端口 | 命令 |
 |------|------|------|
@@ -20,32 +30,148 @@
 
 Python 依赖用 **uv 管理**（`backend/pyproject.toml`），增删依赖改 pyproject 后 `uv sync`；`requirements*.txt` 是 `uv export` 生成物，勿手改。
 
-## 环境变量陷阱（易踩坑）
+## 4. 配置
 
-- `backend/.env` 必须有 `SECRET_KEY`（`app/config.py` 中无默认值，缺失则启动即崩）。`.env` 已被 gitignore。
-- Vite 代理默认目标为 **8001**（`vite.config.ts`），后端实际在 **8002**：需 `cp frontend/.env.example frontend/.env` 并设 `VITE_API_URL=http://localhost:8002`，否则前端 `/api` 请求全部 404。
-- 业务库默认 SQLite（`sqlite+aiosqlite:///./synthspark.db`），生产可切 PostgreSQL（`DATABASE_URL`）。
+### 4.1 后端环境变量（`backend/.env`，已 gitignore）
 
-## 测试
+- `SECRET_KEY`：**必填**，`app/config.py` 无默认值，缺失则启动即崩；生产必须改。
+- `DEBUG_MODE`、`SEO_ENABLED`：`true|false`。
 
-- **后端**：`cd backend && uv run pytest`（`asyncio_mode=auto`）。测试数据库连接串**不硬编码**，由环境变量 `TEST_DATABASE_URL` 提供（如 `TEST_DATABASE_URL=postgresql+asyncpg://用户:密码@localhost:5432/synthspark_test`，需本地 PostgreSQL 已启动且存在对应库）；未设置时自动回退读取 `backend/.env`；**都没有时依赖 DB 的用例自动跳过**。冒烟测试（`tests/test_smoke.py`，需 8002 活服务）的超管账号同理：`SMOKE_SUPERUSER_USERNAME` / `SMOKE_SUPERUSER_PASSWORD`。单文件：`uv run pytest tests/test_posts.py`。
-- **前端**：单测 `npm run test:unit`（vitest）。
-- **E2E**：Playwright（`frontend/playwright.config.ts`，`testDir: ./e2e`）。README 写的 `npm run test:e2e` **在 package.json 中不存在**，改用 `npx playwright test`；使用 **Playwright 内置 chromium**（无需系统 Chrome），dev server 由配置文件自动拉起（5173）。**依赖版本已锁定** `@playwright/test@1.61.1`（与本机 `~/.cache/ms-playwright` 的 chromium-1228 缓存匹配）；若升级 playwright 版本，需同步更新浏览器缓存（`npx playwright install chromium`）。
-- 提交前检查顺序：前端 `npm run lint`（oxlint + eslint，均带 `--fix`）→ `npm run type-check`（`npm run build` 已包含 type-check）。
+### 4.2 应用配置（`backend/app/config.py`）
 
-## 约定
+| 参数 | 默认值 | 说明 |
+|------|--------|------|
+| `DATABASE_URL` | `sqlite+aiosqlite:///./synthspark.db` | 业务库连接；**实际以配置库 `database_configs` 行为准**，无配置才回退此值 |
+| `UPLOAD_DIR` | `./uploads` | 上传目录（相对 backend 目录），可用同名环境变量覆盖 |
+| `MAX_UPLOAD_SIZE` | `10485760`（10MB） | 最大上传大小 |
 
-- 提交信息用中文 + 前缀（`feat:`/`fix:`/`chore:`）。
-- 所有代码需注释（中文，风格自由，禁止出现具体身份信息）。
+### 4.3 前端环境变量（`frontend/.env`）
+
+- `VITE_API_URL` 默认目标是 **8001**，而后端在 **8002**：需 `cp frontend/.env.example frontend/.env` 并设 `VITE_API_URL=http://localhost:8002`，否则前端 `/api` 请求全部 404。
+
+### 4.4 站点配置（三级合并）
+
+- **优先级**：后台配置 > `frontend/public/site.config.json` > 内置默认 `frontend/src/config/copywriting.json`；数组整体替换，未配置字段自动回退默认，修改后刷新页面生效。
+- **接口**：`GET /api/site-config`（公开）、`GET|PUT /api/admin/site-config`（业务库超管，同外链接口鉴权）、`GET /api/admin/site-config/audit-logs`（超管查审计）。
+- **存储与审计**：后台配置存**配置库 `config.db`** 的 `system_configs`（key=`site_config`）；每次保存记入配置库 `site_config_audit_logs`。
+- **配置段**：`site`（name/title/description/icp/defaultTheme/logo）、`navbar`（logo/navItems）、`footer`（copyright/slogan/links）、`home`、`about`；模板见 `frontend/public/site.config.example.json`，`npm run config:init` 可生成文件配置。
+- **管理入口**：Profile 设置页「站点设置」tab。
+
+## 5. 开发约定
+
+- 提交信息用中文 + 前缀（`feat:` / `fix:` / `chore:`）。
+- 所有代码需中文注释，风格自由，禁止出现具体身份信息。
 - 所有 DB 操作：异步 + 事务 + try-except；接口须评估是否鉴权；debug 模式返回详细错误、生产只返回通用错误。
-- 优先复用已有接口；每次改动后更新 `ops.md` 记录进展。
+- 优先复用已有接口；重要改动同步更新本文件对应章节（**不要再新建第二份 Agent 文档**）。
+- 提交前检查顺序：前端 `npm run lint`（oxlint + eslint，均带 `--fix`）→ `npm run type-check`（`npm run build` 已包含 type-check）。
+- 若使用 Trae IDE，其本地规则文件 `.trae/rules/project-coder-rule0.md`（gitignored，不入库）与本文档并存，冲突时**以本文档为准**。
 
-## 运维要点
+## 6. 测试
 
-- 默认超管 `admin` / `123456`（首次登录必须改），登录接口 `/api/admin/login`；普通用户 `/api/auth/token`。
-- 配置库为 `backend/config.db`（SQLite），**删除后重启即重置配置**。
-- 日志仅控制台输出，无持久化文件。
-- 后端路由统一挂载在 `/api` 前缀下（见 `backend/app/routers/__init__.py`）。
-- 外链（「关联」页 `/links`）存业务库 `external_links` 表，公开读、仅超管可写。
-- **站点配置**：前端启动按「后台配置 > `frontend/public/site.config.json` > 内置默认」三级合并；后台配置存配置库 `system_configs` 表（key=`site_config`），接口 `GET /api/site-config`（公开）与 `GET|PUT /api/admin/site-config`（业务库超管，同外链接口鉴权）；前端管理入口在 Profile 设置页「站点设置」tab；模板 `frontend/public/site.config.example.json`，`npm run config:init` 生成文件配置。
-- **服务挂载**：框架在 `backend/app/services/`（入库），用户自研服务放 `backend/app/services/impl/`（**gitignored，不入库**），契约与规范见 `backend/app/services/README.md`。
+- **后端**：`cd backend && uv run pytest`。测试库连接串**不硬编码**，由 `TEST_DATABASE_URL` 提供（如 `postgresql+asyncpg://用户:密码@localhost:5432/synthspark_test`）；未设置则回退读 `backend/.env`，都没有时依赖 DB 的用例自动跳过。单文件：`uv run pytest tests/test_posts.py`。
+- **冒烟测试**：`tests/test_smoke.py` 需要 8002 活服务，超管账号由 `SMOKE_SUPERUSER_USERNAME` / `SMOKE_SUPERUSER_PASSWORD` 提供，未设置则跳过。
+- **前端**：`cd frontend && npm run test:unit`（vitest）。
+- **E2E**：Playwright（`frontend/playwright.config.ts`，`testDir: ./e2e`）。用 `npx playwright test` 运行——README 里的 `npm run test:e2e` **在 package.json 中并不存在**；dev server 由配置自动拉起（5173），使用 Playwright 内置 chromium（无需系统 Chrome）；版本锁定 `@playwright/test@1.61.1`，升级后需 `npx playwright install chromium`。
+- **已知既有失败（勿误判为回归）**：`test_register_api` / `test_integration`（注册已改为需超管，用例仍按公开注册断言）；`test_likes`（部分响应结构与状态码变更后的陈旧断言，且 SQLite 适配器未建 likes 表）；`test_seo`（SEOMiddleware 与新版 starlette 不兼容）；`test_smoke`（需活服务）。
+- **本地持久化建议**：psql 免密写 `~/.pgpass`（`localhost:5432:库名:用户名:密码`，权限 600）；测试配置写 `backend/.env`（gitignored）。
+
+## 7. 运行期事实
+
+### 7.1 账号体系
+
+| 类型 | 存储 | 登录接口 |
+|------|------|----------|
+| 配置库超管 | 配置库 `config.db` 的 `config_admins` | `/api/admin/login`（业务库不可用时仍可登录） |
+| 项目用户 / Agent | 业务库 `users` 表 | `/api/auth/token` |
+
+### 7.2 日志与文件
+
+- 日志仅控制台输出（默认超管创建警告、数据库连接信息），**无持久化文件**。
+- 上传文件默认落 `backend/uploads/`；配置库为 `backend/config.db`。
+
+### 7.3 外链（「关联」页）
+
+- 页面 `/links`，接口 `GET /api/links`（公开）/ `POST|PUT|DELETE`（仅超管 `is_superuser`）；存业务库 `external_links` 表，启动自动建表，默认无数据。
+- URL 规则：`http(s)://` 绝对链接，或 `/` 开头的站内路径（可指向 `/api/services/xxx/` 挂载的同域服务）；拒绝 `//`、`javascript:` 等。管理入口：Profile「外链管理」tab。
+
+### 7.4 服务挂载框架
+
+- 把自研 FastAPI 服务挂到 `/api/services/{name}`：框架在 `backend/app/services/`（入库），实现放 `impl/`（**gitignored，不入库**），契约与模板见 `backend/app/services/README.md`、`examples/hello_service.py`。
+- 契约：模块级 `name`（小写字母/数字/短横线）、`title`、`router`，可选 `static_dir`（API 与 UI 共存）；启动时自动发现，非法模块跳过并输出 `[服务挂载]` 中文警告；**新增或修改后需重启后端**。
+
+### 7.5 主题系统（自动发现）
+
+- 目录 `frontend/src/themes/`：`system/`（内置主题，入库）+ `custom/`（**gitignored**，自研主题不入库）；custom 与 system 同 id 时自定义覆盖。
+- 每个主题目录包含 `theme.json`（id/name/icon/category/behaviors）、`theme.css`（必须用 `:root[data-theme="id"]` 选择器压过默认变量）、可选 `theme.ts`（`activate(ctx)` 返回 cleanup + 可选 `deactivate`）。
+- Vite `import.meta.glob` 编译期扫描；非法主题跳过并输出 `[主题系统]` 警告；新增主题后 dev 需重启，`npm run build` 自动扫描。页面判断主题能力用 `themeHasBehavior(id, 'matrix-rain')`，**禁止硬编码主题 id**。
+- 默认主题由站点配置 `site.defaultTheme` 决定（仅首次访问用户生效）。已知坑：`MarkdownRenderer.vue` 的 `background: transparent` **必须带 `!important`**，否则被 milkdown base 的实色背景压过（frostsugar 主题曾因此正文白块）。
+
+### 7.6 匿名评论与 IP 落库
+
+- 评论创建鉴权为可选（`get_current_user_optional`）：未登录需填 `author_name`（1–50 字符，XSS 转义存储），可选 `author_email`（仅存储，不进任何响应）；登录用户提交的匿名字段被忽略。
+- 匿名评论按 IP 限流：24 小时 20 条 + 最小间隔 30 秒，超限 429；常量在 `backend/app/routers/comments.py` 顶部（`ANONYMOUS_COMMENT_DAILY_LIMIT` / `ANONYMOUS_COMMENT_MIN_INTERVAL`），时间比较用数据库相对时间规避时区坑。
+- 数据字段：comments 增加 `author_name` / `author_email` / `ip_address`，`author_id` 可空；likes 增加 `anonymous_token` / `like_type` / `ip_address`，`user_id` 可空。
+- 自动迁移：`PostgresAdapter.ensure_anonymous_features()` 幂等补列，`init_schema()` 末尾调用（后端启动与 `POST /api/admin/database/init` 都会执行）；**SQLite 适配器仍残缺**（评论/likes 表未定义，属既有问题）。
+- **时区坑**：历史代码用 `datetime.utcnow()`（naive）写入 timestamptz 列，asyncpg 按会话时区解释会偏差 8 小时；评论创建已改用 `datetime.now(timezone.utc)`，其余模块仍是旧写法（新增代码不要照抄）。
+
+## 8. 目录级管理（有项目目录权限时）
+
+这类操作直接作用于项目目录，不经过 HTTP。
+
+- **配置库** `backend/config.db`（SQLite）：超管账号 `config_admins`、业务库连接 `database_configs`、系统配置 `system_configs`、超管审计 `config_audit_logs`、站点配置审计 `site_config_audit_logs`；**删除该文件并重启 = 退回全新未初始化状态**（超管账号与站点配置一并重置）。
+- **业务库**由启动时读到的 `database_configs` 行决定（无配置才回退 `DATABASE_URL`）；补建表 `POST /api/admin/database/init`（PG 的 init_schema 是硬编码表列表），切库 `POST /api/admin/database/switch`，总览 `GET /api/admin/setup-status`。
+- **超管账号**默认 `admin` / `123456`（首次登录必须改），登录 `POST /api/admin/login`；首次初始化可用环境变量 `CONFIG_ADMIN_USERNAME` / `CONFIG_ADMIN_PASSWORD` 覆盖。
+- **备份 / 恢复**：备份配置库 `cp backend/config.db backend/config.db.bak`，恢复即反向覆盖后重启。
+- **常用 SQL**：`SELECT id, username, is_active FROM config_admins;`；业务库表清单查 `information_schema.tables`（按 schema 过滤）。
+- 管理类接口（超管配置、审计日志、数据库管理）不逐条罗列，细节以 `GET /api/docs`（DEBUG_MODE 下可用）为准。
+
+## 9. 生产部署
+
+### 9.1 Nginx 反向代理（要点）
+
+```nginx
+server {
+    listen 80;
+    server_name your-domain.com;
+
+    location / {
+        root /path/to/synthspark/frontend/dist;
+        try_files $uri $uri/ /index.html;   # Vue Router SPA 回退
+    }
+    location /api {
+        proxy_pass http://127.0.0.1:8002;
+        proxy_set_header Host $host;
+        proxy_set_header X-Real-IP $remote_addr;
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header X-Forwarded-Proto $scheme;
+    }
+    location /uploads {
+        alias /path/to/synthspark/backend/uploads;
+        expires 30d;
+    }
+}
+```
+
+HTTPS 再加一个 `listen 443 ssl http2` 的 server 块（配 `ssl_certificate` / `ssl_certificate_key`）与 80 端口 301 跳转即可。
+
+### 9.2 部署检查清单
+
+| 检查项 | 说明 |
+|--------|------|
+| 前端已编译 | `cd frontend && npm run build`，产物在 `dist/` |
+| 后端依赖已装 | `uv sync --all-groups`（或 `pip install -r requirements.txt`） |
+| 数据库已初始化 | PostgreSQL 可连接，必要时 `POST /api/admin/database/init` 补建表 |
+| 环境变量已配置 | `SECRET_KEY` 必须改；按需设 `DATABASE_URL`、关闭 `DEBUG_MODE` |
+| 防火墙 | 80 / 443 已放行 |
+
+## 10. 故障排查
+
+| 现象 | 检查项 |
+|------|--------|
+| 数据库连接失败 | PostgreSQL 服务状态、配置库里的连接配置 |
+| 配置库损坏 | 删除 `backend/config.db` 后重启重新配置 |
+| 权限不足 403 | Token 是否过期、用户角色（管理类接口全靠 `is_superuser`） |
+| 前端 /api 全部 404 | Vite 代理：`frontend/.env` 的 `VITE_API_URL` 是否指向 8002 |
+| 业务库缺表 | 超管登录后调 `POST /api/admin/database/init` 补建 |
+| `init-wizard` 报错 | 2026-08-06 已修 pydantic `schema` 序列化 bug；仍异常看控制台日志 |
+| 后端启动即崩 | `backend/.env` 缺少 `SECRET_KEY` |

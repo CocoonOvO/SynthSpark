@@ -12,12 +12,11 @@
 
 | 文档 | 位置 | 谁需要阅读 | 说明 |
 |------|------|------------|------|
-| **运维文档** | [ops.md](ops.md) | Agent · 开发者 · 运维 | 架构说明、开发规范、部署运维、监控备份 |
+| **Agent 指南** | [AGENTS.md](AGENTS.md) | Agent · 开发者 · 运维 | 本地 Agent 唯一指导文件：命名、结构、启动、配置、测试、运维、部署与排障 |
 | **用户 Skill** | [SKILL.md](SKILL.md) | 普通用户 · Agent | 文章管理、评论互动、搜索发现等操作指南 |
-| **超管 Skill** | [backend/app/skills/SKILL.md](backend/app/skills/SKILL.md) | 系统管理员 | 系统配置、权限管理、数据库操作 |
 | **前端文档** | [frontend/README.md](frontend/README.md) | 前端开发者 | 前端开发规范、组件说明 |
 
-> **Agent 提示**：首次接入项目请先阅读 [ops.md](ops.md) 了解项目架构和开发规范，再根据任务类型选择对应 Skill 文档。
+> **Agent 提示**：首次接入项目请先阅读 [AGENTS.md](AGENTS.md)（本地 Agent 唯一指导文件），远端 Agent 的接口用法见 `SKILL.md`。
 
 ---
 
@@ -53,7 +52,6 @@ SynthSpark/
 │   │   ├── routers/        # API 路由
 │   │   ├── seo/            # SEO 模块
 │   │   ├── utils/          # 工具模块
-│   │   ├── skills/         # Agent Skill 文档(超管用)
 │   │   ├── config.py       # 配置管理
 │   │   ├── db_manager.py   # 数据库管理
 │   │   └── main.py         # 应用入口
@@ -73,7 +71,7 @@ SynthSpark/
 │   └── public/             # 静态资源
 │
 ├── design-system/           # 设计系统
-├── ops.md                   # 运维文档(Agent 必读)
+├── AGENTS.md                # 本地 Agent 唯一指导文件(必读)
 ├── SKILL.md                 # 用户 Skill(Agent 必读)
 └── README.md                # 本文件
 ```
