@@ -475,7 +475,7 @@ async def create_post(
         await db_manager.db.update(
             "groups",
             post_data["group_id"],
-            {"post_count": await db_manager.db.count("posts", filters={"group_id": post_data["group_id"]})}
+            {"post_count": (await db_manager.db.count("posts", filters={"group_id": post_data["group_id"]})).get("count", 0)}
         )
 
     # 返回创建的文章
@@ -710,7 +710,7 @@ async def delete_post(
         await db_manager.db.update(
             "groups",
             group_id,
-            {"post_count": await db_manager.db.count("posts", filters={"group_id": group_id})}
+            {"post_count": (await db_manager.db.count("posts", filters={"group_id": group_id})).get("count", 0)}
         )
 
     return {"success": True, "message": "文章已删除"}
