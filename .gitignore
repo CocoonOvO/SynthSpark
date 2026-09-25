@@ -165,3 +165,4 @@ backend/API_PLAN.md
 design/icespark-prototype/node_modules/
 design/icespark-prototype/dist/
 design/icespark-prototype/*.mjs
+design/icespark-prototype/public/fonts/*.woff2

@@ -12,6 +12,7 @@ import { onPad, usePad, focusIndex } from '../ui/pad'
 import { pushScene, popScene, useStatusBar, canGoBack } from '../ui/scene'
 import { store, loadPosts, dataSource, shortDate, type PostListItem } from '../data/api'
 import PixelAvatar from '../ui/PixelAvatar.vue'
+import { AVATAR_PALETTE } from '../styles/tokens'
 
 usePad()
 const { clock, stop } = useStatusBar()
@@ -20,11 +21,6 @@ const PAGE_SIZE = 4
 const page = ref(0)
 const selected = ref(0)
 const shaking = ref(false)
-
-const palette = computed(() => [
-  'var-paper',
-])
-void palette
 
 onMounted(() => {
   loadPosts(40)
@@ -79,7 +75,7 @@ function open(p?: PostListItem) {
 }
 
 const stageNo = (i: number) => String(page.value * PAGE_SIZE + i + 1).padStart(2, '0')
-const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', '#0E2E42']
+
 </script>
 
 <template>
@@ -134,7 +130,7 @@ const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', 
               :name="p.author_name"
               :size="16"
               :display="32"
-              :palette="palB"
+              :palette="AVATAR_PALETTE"
             />
             <div class="author-text">
               <span class="author-name">{{ p.author_name }}</span>
@@ -209,10 +205,8 @@ const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', 
 .world-head {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
-  letter-spacing: 0.16em;
   color: var(--ink-soft);
-  border-bottom: 2px solid var(--ink);
+  border-bottom: 2px solid var(--blue-300);
   padding-bottom: 8px;
 }
 
@@ -225,9 +219,8 @@ const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', 
 }
 
 .lab-en {
-  font-size: 15px;
-  letter-spacing: 0.2em;
-  color: var(--ink);
+  font-size: 24px;
+  color: var(--blue-600);
 }
 
 .lab-cn {
@@ -239,9 +232,7 @@ const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', 
 
 .lab-count {
   margin-left: auto;
-  font-size: 10.5px;
-  letter-spacing: 0.12em;
-  color: var(--ink-soft);
+  color: var(--ink-faint);
 }
 
 .stage-state {
@@ -251,7 +242,7 @@ const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', 
   align-items: center;
   justify-content: center;
   gap: 8px;
-  border: 3px dashed var(--ink-soft);
+  border: 3px dashed var(--blue-400);
   padding: 40px 20px;
   color: var(--ink);
   min-height: 320px;
@@ -266,12 +257,12 @@ const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', 
 .empty-bit {
   width: 18px;
   height: 18px;
-  border: 2px solid var(--ink-soft);
+  border: 2px solid var(--blue-400);
 }
 
 .empty-bit:nth-child(3) {
-  background: var(--ink);
-  border-color: var(--ink);
+  background: var(--blue-500);
+  border-color: var(--blue-500);
 }
 
 .empty-text {
@@ -283,7 +274,6 @@ const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', 
 
 .empty-hint {
   font-size: 11.5px;
-  letter-spacing: 0.12em;
   color: var(--ink-soft);
   margin: 0;
 }
@@ -307,7 +297,7 @@ const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', 
 
 .stage-card {
   background: var(--paper);
-  border: 3px solid var(--ink);
+  border: 3px solid var(--blue-400);
   padding: 14px 16px 12px;
   display: flex;
   flex-direction: column;
@@ -316,22 +306,10 @@ const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', 
 }
 
 .stage-card.is-focused {
-  /* 焦点：反色，而不是发光 */
-  background: var(--ink);
-  color: var(--paper);
-}
-
-.stage-card.is-focused .stage-intro,
-.stage-card.is-focused .stage-no,
-.stage-card.is-focused .author-type,
-.stage-card.is-focused .date,
-.stage-card.is-focused .score {
-  color: var(--paper-alt);
-}
-
-.stage-card.is-focused .tag {
-  border-color: var(--paper);
-  color: var(--paper);
+  /* 焦点：浅蓝底 + 加粗描边，而不是整卡反色发黑 */
+  background: var(--blue-200);
+  border-color: var(--blue-500);
+  box-shadow: inset 0 0 0 2px var(--blue-500);
 }
 
 .stage-card.locked {
@@ -343,8 +321,8 @@ const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', 
 }
 
 .lock-tag {
-  background: var(--ink-soft);
-  color: var(--paper);
+  background: var(--blue-300);
+  color: var(--ink);
 }
 
 .lock-art {
@@ -360,15 +338,14 @@ const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', 
 .lock-bit {
   width: 12px;
   height: 12px;
-  background: var(--ink-soft);
-  opacity: 0.45;
+  background: var(--blue-300);
 }
 
 .lock-title {
   margin: 0;
-  font-size: 20px;
+  font-size: 24px;
   letter-spacing: 0.3em;
-  color: var(--ink-soft);
+  color: var(--blue-400);
   text-align: center;
 }
 
@@ -376,9 +353,8 @@ const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', 
   margin: 0 0 6px;
   font-family: 'Source Han Sans CN', 'Noto Sans CJK SC', sans-serif;
   font-size: 11.5px;
-  color: var(--ink-soft);
+  color: var(--ink-faint);
   text-align: center;
-  letter-spacing: 0.1em;
 }
 
 .stage-top {
@@ -388,17 +364,13 @@ const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', 
 }
 
 .stage-no {
-  font-size: 11px;
-  letter-spacing: 0.18em;
-  color: var(--ink-soft);
+  color: var(--ink-faint);
 }
 
 .stage-new {
   background: var(--spark);
   color: var(--paper);
-  font-size: 10px;
   padding: 1px 6px;
-  letter-spacing: 0.14em;
 }
 
 .stage-card:not(.is-focused) .stage-new {
@@ -452,9 +424,7 @@ const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', 
 }
 
 .author-type {
-  font-size: 9px;
-  letter-spacing: 0.16em;
-  color: var(--ink-soft);
+  color: var(--ink-faint);
 }
 
 .tags {
@@ -464,32 +434,29 @@ const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', 
 }
 
 .tag {
-  font-size: 10px;
-  letter-spacing: 0.08em;
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--blue-400);
   padding: 1px 6px;
-  color: var(--ink);
+  color: var(--blue-700);
 }
 
 .stage-foot {
   display: flex;
   align-items: center;
   gap: 12px;
-  border-top: 2px solid currentColor;
+  border-top: 2px solid var(--blue-300);
   padding-top: 7px;
-  font-size: 10.5px;
-  letter-spacing: 0.1em;
+  color: var(--ink-soft);
 }
 
 .score {
-  color: var(--ink-soft);
+  color: var(--ink-faint);
 }
 
 .hearts {
   display: flex;
   align-items: center;
   gap: 2px;
-  color: var(--ink);
+  color: var(--blue-500);
 }
 
 .hearts.hot {
@@ -501,17 +468,13 @@ const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', 
   color: var(--ink-soft);
 }
 
-.stage-card.is-focused .heart-num {
-  color: var(--paper-alt);
-}
-
 .date {
   margin-left: auto;
-  color: var(--ink-soft);
+  color: var(--ink-faint);
 }
 
 .world-foot {
-  border-top: 2px solid var(--ink);
+  border-top: 2px solid var(--blue-300);
   margin-top: auto;
   padding-top: 12px;
   display: flex;
@@ -529,11 +492,9 @@ const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', 
 
 .pager-btn {
   font: inherit;
-  font-size: 11px;
-  letter-spacing: 0.14em;
   background: var(--paper);
-  color: var(--ink);
-  border: 2px solid var(--ink);
+  color: var(--blue-700);
+  border: 2px solid var(--blue-400);
   padding: 5px 12px;
   cursor: pointer;
 }
@@ -551,19 +512,17 @@ const palB = ['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', 
 .dot {
   width: 10px;
   height: 10px;
-  border: 2px solid var(--ink);
+  border: 2px solid var(--blue-400);
   cursor: pointer;
 }
 
 .dot.on {
-  background: var(--ink);
+  background: var(--blue-500);
 }
 
 .keys {
   display: flex;
   gap: 14px;
-  font-size: 10px;
-  letter-spacing: 0.12em;
   color: var(--ink-soft);
 }
 </style>

@@ -13,6 +13,7 @@ import { popScene, currentScene, useStatusBar } from '../ui/scene'
 import { store, loadPost, shortDate, type Comment } from '../data/api'
 import PixelAvatar from '../ui/PixelAvatar.vue'
 import PixelDialog from '../ui/PixelDialog.vue'
+import { AVATAR_PALETTE } from '../styles/tokens'
 
 usePad()
 const { clock, stop } = useStatusBar()
@@ -122,7 +123,7 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
               :name="post.author_name"
               :size="20"
               :display="72"
-              :palette="['#FFFFFF', '#E4F2FA', '#B8DCF0', '#7FC0E0', '#3E90BC', '#1E5A7A', '#0E2E42']"
+              :palette="AVATAR_PALETTE"
             />
             <div class="pc-name">{{ post.author_name }}</div>
             <div class="pc-type">{{ post.author_type === 'agent' ? 'AI AGENT' : 'HUMAN' }}</div>
@@ -206,29 +207,28 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
 .stage-head {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
-  letter-spacing: 0.16em;
   color: var(--ink-soft);
-  border-bottom: 2px solid var(--ink);
+  border-bottom: 2px solid var(--blue-300);
   padding-bottom: 8px;
 }
 
 .mode-toggle {
   cursor: pointer;
-  border: 1px solid var(--ink-soft);
+  border: 1px solid var(--blue-400);
   padding: 0 6px;
-  color: var(--ink);
+  color: var(--blue-700);
+  background: var(--blue-100);
 }
 
 /* ── 关卡牌：全屏反色的 STAGE 开场 ── */
 .level-card {
   flex: 1;
-  background: var(--ink);
-  color: var(--paper);
+  background: var(--blue-200);
+  color: var(--ink);
   display: grid;
   place-items: center;
   margin-top: 14px;
-  border: 3px solid var(--ink);
+  border: 3px solid var(--blue-500);
 }
 
 .level-inner {
@@ -240,16 +240,15 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
 }
 
 .level-line {
-  font-size: 13px;
-  letter-spacing: 0.4em;
+  font-size: 24px;
+  color: var(--blue-500);
 }
 
 .level-group {
   font-family: 'Source Han Sans CN', 'Noto Sans CJK SC', sans-serif;
   font-weight: 700;
   font-size: 15px;
-  letter-spacing: 0.1em;
-  color: var(--paper-alt);
+  color: var(--blue-700);
 }
 
 .level-title {
@@ -258,18 +257,16 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
   font-size: clamp(28px, 5vw, 52px);
   line-height: 1.2;
   margin: 6px 0;
+  color: var(--blue-700);
 }
 
 .level-sub {
-  font-size: 11px;
-  letter-spacing: 0.24em;
-  color: var(--paper-alt);
+  color: var(--ink-soft);
 }
 
 .level-blink {
   margin-top: 14px;
-  font-size: 12px;
-  letter-spacing: 0.2em;
+  color: var(--blue-600);
 }
 
 /* ── 正文区 ── */
@@ -297,16 +294,14 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
 }
 
 .player-card {
-  background: var(--paper-alt);
-  border: 3px solid var(--ink);
+  background: var(--blue-100);
+  border: 3px solid var(--blue-400);
   padding: 14px;
   text-align: center;
 }
 
 .pc-cap {
-  font-size: 10px;
-  letter-spacing: 0.26em;
-  color: var(--ink-soft);
+  color: var(--ink-faint);
   margin-bottom: 10px;
 }
 
@@ -322,9 +317,7 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
 }
 
 .pc-type {
-  font-size: 9.5px;
-  letter-spacing: 0.2em;
-  color: var(--ink-soft);
+  color: var(--ink-faint);
   margin-top: 3px;
 }
 
@@ -332,7 +325,7 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
   display: flex;
   gap: 8px;
   margin-top: 12px;
-  border-top: 2px solid var(--ink);
+  border-top: 2px solid var(--blue-300);
   padding-top: 10px;
 }
 
@@ -343,26 +336,25 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
 }
 
 .pc-stats span {
-  font-size: 15px;
+  font-size: 24px;
+  color: var(--blue-600);
   font-variant-numeric: tabular-nums;
 }
 
 .pc-stats i {
   font-style: normal;
-  font-size: 8.5px;
-  letter-spacing: 0.16em;
-  color: var(--ink-soft);
+  color: var(--ink-faint);
 }
 
 .heart-box,
 .comment-btn {
   background: var(--paper);
-  border: 3px solid var(--ink);
+  border: 3px solid var(--blue-400);
   padding: 12px;
   text-align: center;
   cursor: pointer;
   font: inherit;
-  color: var(--ink);
+  color: var(--blue-700);
 }
 
 .heart-box.pop {
@@ -370,7 +362,7 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
 }
 
 .heart-icon {
-  font-size: 26px;
+  font-size: 36px;
   line-height: 1;
 }
 
@@ -382,7 +374,6 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
 .heart-label,
 .comment-btn {
   font-size: 11px;
-  letter-spacing: 0.14em;
 }
 
 .heart-label {
@@ -407,10 +398,8 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
   gap: 10px;
   align-items: center;
   flex-wrap: wrap;
-  font-size: 11px;
-  letter-spacing: 0.1em;
   color: var(--ink-soft);
-  border-bottom: 2px solid var(--ink);
+  border-bottom: 2px solid var(--blue-300);
   padding-bottom: 10px;
 }
 
@@ -422,10 +411,9 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
 
 .tag {
   font-style: normal;
-  font-size: 10px;
-  border: 1.5px solid var(--ink);
+  border: 1.5px solid var(--blue-400);
   padding: 1px 6px;
-  color: var(--ink);
+  color: var(--blue-700);
 }
 
 .doc-content {
@@ -434,13 +422,11 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
 
 /* 像素层：等宽、紧凑、机器感强，适合短内容 */
 .mode-px .doc-content p {
-  font-family: 'JetBrains Mono', 'Noto Sans Mono', monospace;
-  font-weight: 500;
-  font-size: 13.5px;
-  line-height: 1.95;
-  letter-spacing: 0.03em;
-  margin: 0 0 12px;
-  max-width: 62ch;
+  font-family: 'ArkPixel', monospace;
+  font-size: 12px;
+  line-height: 2.1;
+  margin: 0 0 14px;
+  max-width: 68ch;
 }
 
 /* 阅读层：思源黑体、放大、行距舒展，长文与移动端友好 */
@@ -455,9 +441,8 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
   display: flex;
   gap: 20px;
   padding: 9px 14px;
-  background: var(--paper-alt);
-  font-size: 10.5px;
-  letter-spacing: 0.14em;
+  background: var(--blue-100);
+  border: 2px solid var(--blue-200);
   color: var(--ink-soft);
   flex-wrap: wrap;
 }
@@ -470,10 +455,9 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 12px;
-  letter-spacing: 0.22em;
-  border-bottom: 2px solid var(--ink);
+  border-bottom: 2px solid var(--blue-300);
   padding-bottom: 8px;
+  color: var(--blue-600);
 }
 
 .records-num {
@@ -485,12 +469,11 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
   display: flex;
   gap: 12px;
   padding: 12px 0;
-  border-bottom: 1.5px dashed var(--ink-soft);
+  border-bottom: 1.5px dashed var(--blue-300);
 }
 
 .record-no {
-  font-size: 11px;
-  color: var(--ink-soft);
+  color: var(--ink-faint);
   padding-top: 3px;
 }
 
@@ -512,9 +495,7 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
 }
 
 .record-date {
-  font-size: 10px;
-  color: var(--ink-soft);
-  letter-spacing: 0.1em;
+  color: var(--ink-faint);
 }
 
 .record-text {
@@ -525,19 +506,15 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
 
 .record-empty {
   padding: 16px 0;
-  font-size: 12px;
   color: var(--ink-soft);
-  letter-spacing: 0.1em;
 }
 
 .stage-foot {
-  border-top: 2px solid var(--ink);
+  border-top: 2px solid var(--blue-300);
   margin-top: 18px;
   padding-top: 10px;
   display: flex;
   gap: 18px;
-  font-size: 10px;
-  letter-spacing: 0.12em;
   color: var(--ink-soft);
   flex-wrap: wrap;
 }

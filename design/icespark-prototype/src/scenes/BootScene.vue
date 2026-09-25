@@ -1,31 +1,46 @@
 <script setup lang="ts">
 /**
  * BOOT 场景：开机自检
- * 反传统入场：不是 Hero 大图，而是一台机器在启动
+ *
+ * 反传统入场：不是 Hero 大图，而是一台机器在启动。
+ * 自检播完【自动进入主页】，不需要用户按键（按任意键可跳过）。
+ * 底色为白 + 浅蓝，不铺深色（深色只留给文字）。
  */
 import { ref, onMounted, onUnmounted } from 'vue'
 import { onPad, usePad } from '../ui/pad'
-import { pushScene, useStatusBar } from '../ui/scene'
-import { store, loadStats, dataSource } from '../data/api'
+import { pushScene, replaceScene } from '../ui/scene'
+import { loadStats, dataSource } from '../data/api'
 
 usePad()
-const { clock, stop } = useStatusBar()
 
-const STEP_INTERVAL = 320
+const STEP_INTERVAL = 240
 const lines = ref<string[]>([])
 const bootDone = ref(false)
 const progress = ref(0)
+let entered = false
 
 const LOG = [
   'SYNTHSPARK BIOS  v1.0',
   'MEMORY CHECK ....... 64K OK',
-  'SCANNING AGENTS ....',
-  'LOADING WORLD ......',
+  'SCANNING AGENTS .... OK',
+  'LOADING WORLD ...... OK',
 ]
 
 let timers: number[] = []
 
-onMounted(async () => {
+/** 进入主页：只允许进一次 */
+function goHome() {
+  if (entered) return
+  entered = true
+  if (lines.value.length === 0) {
+    // 用户提前按键跳过：直接替换场景，避免栈里留下未播完的开机帧
+    replaceScene('title')
+  } else {
+    pushScene('title', undefined, 'flash')
+  }
+}
+
+onMounted(() => {
   loadStats()
   LOG.forEach((line, i) => {
     timers.push(
@@ -35,35 +50,25 @@ onMounted(async () => {
       }, i * STEP_INTERVAL),
     )
   })
-  timers.push(
-    window.setTimeout(() => {
-      bootDone.value = true
-    }, LOG.length * STEP_INTERVAL + 240),
-  )
+  // 自检播完 → 短暂停留 → 自动进入主页
+  timers.push(window.setTimeout(() => (bootDone.value = true), LOG.length * STEP_INTERVAL))
+  timers.push(window.setTimeout(goHome, LOG.length * STEP_INTERVAL + 520))
 })
 
 onUnmounted(() => {
   timers.forEach((t) => window.clearTimeout(t))
-  stop()
 })
 
-const off = onPad((a) => {
-  if ((a === 'confirm' || a === 'up' || a === 'down') && bootDone.value) start()
-})
-
+// 按任意键可跳过开机动画
+const off = onPad(() => goHome())
 onUnmounted(off)
-
-function start() {
-  pushScene('title', undefined, 'flash')
-}
 </script>
 
 <template>
-  <div class="boot invert px">
+  <div class="boot px">
     <div class="boot-head">
-      <span>{{ clock }}</span>
       <span>ICESPARK · SYNTHSPARK</span>
-      <span>BAT [████] 100%</span>
+      <span class="boot-ver">BIOS v1.0</span>
     </div>
 
     <div class="boot-body">
@@ -78,9 +83,9 @@ function start() {
         <div class="boot-bar-fill" :style="{ width: `${progress}%` }" />
         <span class="boot-bar-label">LOADING {{ progress }}%</span>
       </div>
-      <div v-if="bootDone" class="boot-cta px">
+      <div class="boot-cta">
         <span class="blink">▶</span>
-        PRESS <em>START</em> / 按 A 键开始
+        正在进入主页
         <span class="src-tag">{{ dataSource === 'live' ? 'LIVE DATA' : 'DEMO DATA' }}</span>
       </div>
     </div>
@@ -90,8 +95,9 @@ function start() {
 <style scoped>
 .boot {
   min-height: 100%;
-  background: var(--ink);
-  color: var(--paper);
+  /* 白 + 浅蓝：不铺深色底 */
+  background: var(--paper);
+  color: var(--ink);
   display: flex;
   flex-direction: column;
   justify-content: space-between;
@@ -103,10 +109,13 @@ function start() {
   display: flex;
   justify-content: space-between;
   gap: 16px;
-  font-size: 11px;
-  letter-spacing: 0.14em;
-  border-bottom: 2px solid var(--paper);
+  color: var(--ink-soft);
+  border-bottom: 2px solid var(--blue-300);
   padding-bottom: 10px;
+}
+
+.boot-ver {
+  color: var(--blue-600);
 }
 
 .boot-body {
@@ -114,9 +123,8 @@ function start() {
   display: flex;
   flex-direction: column;
   justify-content: center;
-  gap: 10px;
-  font-size: 15px;
-  letter-spacing: 0.1em;
+  gap: 12px;
+  color: var(--ink);
 }
 
 .boot-line {
@@ -125,24 +133,25 @@ function start() {
 }
 
 .boot-mark {
-  opacity: 0.6;
+  color: var(--blue-500);
 }
 
 .boot-foot {
-  border-top: 2px solid var(--paper);
+  border-top: 2px solid var(--blue-300);
   padding-top: 16px;
 }
 
 .boot-bar {
   position: relative;
   height: 28px;
-  border: 2px solid var(--paper);
+  border: 2px solid var(--blue-400);
+  background: var(--blue-100);
   padding: 3px;
 }
 
 .boot-bar-fill {
   height: 100%;
-  background: var(--paper);
+  background: var(--blue-400);
   transition: width 160ms steps(4, end);
 }
 
@@ -151,31 +160,22 @@ function start() {
   inset: 0;
   display: grid;
   place-items: center;
-  font-size: 11px;
-  letter-spacing: 0.2em;
-  mix-blend-mode: difference;
+  color: var(--ink);
+  mix-blend-mode: multiply;
 }
 
 .boot-cta {
-  margin-top: 20px;
+  margin-top: 18px;
   display: flex;
   align-items: center;
   gap: 10px;
-  font-size: 14px;
-  letter-spacing: 0.16em;
-}
-
-.boot-cta em {
-  font-style: normal;
-  text-decoration: underline;
-  text-underline-offset: 4px;
+  color: var(--blue-600);
 }
 
 .src-tag {
   margin-left: auto;
-  font-size: 10px;
-  border: 1px solid var(--paper);
+  color: var(--ink-faint);
+  border: 1px solid var(--blue-300);
   padding: 1px 6px;
-  opacity: 0.7;
 }
 </style>

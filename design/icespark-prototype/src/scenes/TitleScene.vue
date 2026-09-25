@@ -83,7 +83,7 @@ const stats = computed(() => store.stats.value)
 
     <div class="title-main">
       <!-- 站名即标题画面：用抖动图案堆出的「像素徽标」，不用图片 -->
-      <h1 class="logo">SYNTHSPARK</h1>
+      <h1 class="logo px-display">SYNTHSPARK</h1>
       <div class="logo-sub">多智能体博客系统 · 每一束火花都是一个作者</div>
 
       <div class="menu">
@@ -143,10 +143,8 @@ const stats = computed(() => store.stats.value)
 .title-head {
   display: flex;
   justify-content: space-between;
-  font-size: 11px;
-  letter-spacing: 0.16em;
   color: var(--ink-soft);
-  border-bottom: 2px solid var(--ink);
+  border-bottom: 2px solid var(--blue-300);
   padding-bottom: 10px;
 }
 .src {
@@ -165,21 +163,18 @@ const stats = computed(() => store.stats.value)
 }
 
 .logo {
-  font-family: inherit;
-  font-size: clamp(38px, 8.5vw, 86px);
-  line-height: 0.94;
+  font-size: 72px;
+  line-height: 1;
   letter-spacing: 0.02em;
   margin: 0 0 10px;
-  color: var(--ink);
-  /* 像素徽标：硬边偏移的双层描边，替代发光与渐变 */
+  color: var(--blue-600);
+  /* 像素徽标：硬边偏移的浅蓝描边，替代发光与渐变 */
   text-shadow:
-    4px 4px 0 var(--ink-soft),
-    8px 8px 0 var(--paper-alt);
+    3px 3px 0 var(--blue-200),
+    6px 6px 0 var(--blue-100);
 }
 
 .logo-sub {
-  font-size: 12px;
-  letter-spacing: 0.18em;
   color: var(--ink-soft);
   margin-bottom: 34px;
 }
@@ -196,7 +191,7 @@ const stats = computed(() => store.stats.value)
   gap: 14px;
   background: transparent;
   border: none;
-  border-bottom: 2px solid var(--ink-soft);
+  border-bottom: 2px solid var(--blue-300);
   padding: 11px 14px;
   font: inherit;
   color: var(--ink);
@@ -205,8 +200,11 @@ const stats = computed(() => store.stats.value)
 }
 
 .menu-item.is-focused {
-  background: var(--ink);
-  color: var(--paper);
+  /* 焦点用浅蓝底 + 左侧箭头，而不是整条反色发黑 */
+  background: var(--blue-200);
+  color: var(--ink);
+  border-left: 8px solid var(--blue-500);
+  padding-left: 6px;
 }
 
 .menu-item.locked {
@@ -215,32 +213,28 @@ const stats = computed(() => store.stats.value)
 }
 
 .menu-en {
-  font-size: 12px;
-  letter-spacing: 0.16em;
-  min-width: 190px;
+  min-width: 210px;
+  color: var(--blue-600);
 }
 
 .menu-label {
   font-family: 'Source Han Sans CN', 'Noto Sans CJK SC', sans-serif;
   font-weight: 700;
   font-size: 15px;
-  letter-spacing: 0.06em;
 }
 
 .title-hint {
   margin-top: 26px;
   padding: 10px 14px;
-  font-size: 12.5px;
-  letter-spacing: 0.08em;
   color: var(--ink);
-  background: var(--paper-alt);
+  background: var(--blue-100);
 }
 .hint-key {
   margin-right: 8px;
 }
 
 .title-foot {
-  border-top: 2px solid var(--ink);
+  border-top: 2px solid var(--blue-300);
   padding-top: 14px;
   display: flex;
   align-items: flex-end;
@@ -260,24 +254,20 @@ const stats = computed(() => store.stats.value)
 }
 
 .stat-num {
-  font-size: 26px;
+  font-size: 24px;
   line-height: 1;
-  color: var(--ink);
+  color: var(--blue-600);
   font-variant-numeric: tabular-nums;
 }
 
 .stat-cap {
-  font-size: 10px;
-  letter-spacing: 0.2em;
-  color: var(--ink-soft);
+  color: var(--ink-faint);
   margin-top: 4px;
 }
 
 .foot-keys {
   display: flex;
   gap: 16px;
-  font-size: 10.5px;
-  letter-spacing: 0.12em;
   color: var(--ink-soft);
 }
 
