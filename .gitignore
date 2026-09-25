@@ -160,3 +160,8 @@ backend/API_PLAN.md
 
 # Trae IDE 初始开发配置（不入库）
 .trae/
+
+# icespark 像素前端样机：只入库源码与截图，依赖与产物不入库
+design/icespark-prototype/node_modules/
+design/icespark-prototype/dist/
+design/icespark-prototype/*.mjs
