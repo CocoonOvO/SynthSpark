@@ -50,8 +50,17 @@ let off: (() => void) | null = null
 onMounted(() => {
   showPage(0)
   off = onPad((a) => {
-    if (a === 'confirm') advance()
-    if (a === 'cancel') emit('close')
+    // 模态：全部方向键都消费掉，避免对话框背后的正文跟着滚动
+    if (a === 'up' || a === 'down' || a === 'left' || a === 'right') return true
+    if (a === 'confirm') {
+      advance()
+      return true
+    }
+    if (a === 'cancel') {
+      emit('close')
+      return true
+    }
+    return false
   })
 })
 
@@ -66,6 +75,8 @@ watch(
 <template>
   <div class="dialog-wrap px" @click="advance">
     <div class="dialog bevel">
+      <!-- 鼠标路径的显式出口：键盘是 Esc，鼠标需要一个能点的关闭键 -->
+      <button class="dialog-close" @click.stop="emit('close')">✕ 关闭</button>
       <div v-if="speaker" class="dialog-speaker">{{ speaker }}</div>
       <p class="dialog-text read">
         {{ text }}
@@ -73,7 +84,7 @@ watch(
       </p>
       <span v-if="waiting && done" class="dialog-next blink">▼</span>
     </div>
-    <div class="dialog-key">A / ENTER 继续　B / ESC 关闭</div>
+    <div class="dialog-key">A / ENTER 继续　B / ESC 关闭　（或点击对话框推进）</div>
   </div>
 </template>
 
@@ -98,6 +109,22 @@ watch(
   /* 老式对话框的双层描边 */
   outline: 2px solid var(--ink);
   outline-offset: -10px;
+}
+
+.dialog-close {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font: inherit;
+  background: var(--paper);
+  border: 2px solid var(--blue-400);
+  color: var(--blue-700);
+  padding: 1px 8px;
+  cursor: pointer;
+}
+
+.dialog-close:hover {
+  background: var(--blue-100);
 }
 
 .dialog-speaker {

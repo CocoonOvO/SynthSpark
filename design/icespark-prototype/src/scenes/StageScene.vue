@@ -4,13 +4,22 @@
  *
  * 反传统要点：
  * - 进入时不是淡入，而是一张「STAGE START」关卡牌，读完才出正文
- * - 双分辨率模式：UI 走像素层，正文可切阅读层（思源黑体），这也是掌机的「对比度旋钮」
+ * - 分辨率由全局信号档决定（信号 0/1 → 阅读层，2/3 → 像素层），页内不再放第二个开关
  * - 点赞 = 加心（8bit 心形 + 计分）；评论在 RPG 对话框里完成
+ *
+ * 输入设计（键盘/鼠标等价）：
+ * - ↑↓ 默认**不被消费**，交还给浏览器做原生滚动 —— 长文必须能用方向键读
+ * - → 进入右侧动作栏、← 退出；进入后 ↑↓ 才用于在动作间移动
+ * - 动作栏初始无焦点，因此 A/Enter 不会误触「加心」（这是上一版的缺陷）
+ * - 鼠标路径：划过共享焦点（静音），点击直接执行；返回列表也是可点的实体按钮
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { onPad, usePad } from '../ui/pad'
-import { popScene, currentScene, useStatusBar } from '../ui/scene'
-import { store, loadPost, shortDate, type Comment } from '../data/api'
+import { popScene, currentScene, useStatusBar, scrollScreenBy } from '../ui/scene'
+import { useFocusGroup } from '../ui/focus'
+import { playSfx } from '../ui/sfx'
+import { signalLevel, SIGNAL_LABELS } from '../ui/prefs'
+import { store, loadPost, shortDate } from '../data/api'
 import PixelAvatar from '../ui/PixelAvatar.vue'
 import PixelDialog from '../ui/PixelDialog.vue'
 import { AVATAR_PALETTE } from '../styles/tokens'
@@ -20,11 +29,27 @@ const { clock, stop } = useStatusBar()
 
 const showLevelCard = ref(true)
 const cardStep = ref(0)
-const readingMode = ref(false)
 const liked = ref(false)
 const heartPop = ref(false)
 const dialogLines = ref<string[] | null>(null)
 const hearts = ref(0)
+
+/** 正文字体层由信号档决定：0 纯净 / 1 阅读 → 阅读层；2 标准 / 3 原教旨 → 像素层 */
+const readingMode = computed(() => signalLevel.value <= 1)
+
+/** 一次方向键滚动的像素数：取 8px 栅格的整数倍，离散跳步而不是平滑滚动 */
+const SCROLL_STEP = 64
+
+/** 右侧动作栏：键盘与鼠标共用同一焦点，初始 -1 表示「未进入动作栏」 */
+const ACTIONS = [
+  { key: 'like', label: '加心' },
+  { key: 'comment', label: '发表评论' },
+  { key: 'back', label: '返回列表' },
+] as const
+const actionFocus = useFocusGroup({
+  // 初始 -1：进场时方向键归浏览器（滚动正文），A 键也不会误触动作
+  initial: -1,
+})
 
 const post = computed(() => store.post.value)
 const comments = computed(() => store.comments.value)
@@ -54,21 +79,81 @@ onUnmounted(() => {
   stop()
 })
 
+/** 执行动作栏当前项 */
+function runAction(key: string) {
+  if (key === 'like') like()
+  else if (key === 'comment') openComment()
+  else popScene('wipe')
+}
+
+/** 键盘路径。返回 true 表示已消费该按键 */
 const off = onPad((a) => {
-  if (dialogLines.value) return // 对话框自己处理按键
+  if (dialogLines.value) return false // 对话框自己处理按键
+
   if (showLevelCard.value) {
+    // 开场牌：任意键跳过
     showLevelCard.value = false
-    return
+    return true
   }
-  if (a === 'cancel') popScene('wipe')
-  if (a === 'confirm') like()
+
+  if (a === 'up' || a === 'down') {
+    // 未进入动作栏时，方向键就是「滚动正文」：
+    // 屏幕是一个 overflow 容器而不是文档，浏览器原生方向键滚不动它，
+    // 所以这里显式滚一步；滚不动了就交还浏览器（不制造死键）
+    if (actionFocus.index.value < 0) {
+      const step = a === 'down' ? SCROLL_STEP : -SCROLL_STEP
+      return scrollScreenBy(step)
+    }
+    const dir = a === 'down' ? 1 : -1
+    // 动作栏内移动；到边界时不消费（让页面顺手滚一点，不制造死键）
+    if (!actionFocus.moveBy(dir as 1 | -1, ACTIONS.length)) return false
+    return true
+  }
+
+  if (a === 'right') {
+    actionFocus.set(actionFocus.index.value < 0 ? 0 : actionFocus.index.value)
+    return true
+  }
+
+  if (a === 'left') {
+    if (actionFocus.index.value < 0) return false
+    actionFocus.set(-1, true)
+    return true
+  }
+
+  if (a === 'confirm') {
+    // 没有进入动作栏就什么都不做 —— 不再把 Enter 当成「加心」
+    if (actionFocus.index.value < 0) return false
+    runAction(ACTIONS[actionFocus.index.value].key)
+    return true
+  }
+
+  if (a === 'cancel') {
+    // 先退出动作栏，再退出场景，避免一次按键连退两层
+    if (actionFocus.index.value >= 0) {
+      actionFocus.set(-1, true)
+      return true
+    }
+    popScene('wipe')
+    return true
+  }
+
+  return false
 })
-onUnmounted(off)
+
+/** 鼠标路径 */
+function hoverAction(i: number) {
+  actionFocus.hover(i)
+}
+function isFocused(i: number) {
+  return actionFocus.index.value === i
+}
 
 /** 点赞 = 加心 */
 function like() {
   liked.value = !liked.value
   hearts.value += liked.value ? 1 : -1
+  playSfx(liked.value ? 'heart' : 'move')
   if (liked.value) {
     heartPop.value = true
     window.setTimeout(() => (heartPop.value = false), 320)
@@ -77,6 +162,7 @@ function like() {
 
 /** 评论：在对话框里完成输入（样机中为演示文本） */
 function openComment() {
+  playSfx('confirm')
   dialogLines.value = [
     '在这里发表评论。匿名访客需要留下称呼，登录用户则会自动署名。',
     '（样机演示：实际会调用 POST /api/comments，未登录需 author_name，24 小时限 20 条）',
@@ -92,12 +178,12 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
 </script>
 
 <template>
-  <div class="stage px">
+  <div class="stage px" :data-reading="readingMode ? 'true' : 'false'">
     <div class="stage-head">
       <span>{{ clock }}</span>
       <span>STAGE · 文章详情</span>
-      <span class="mode-toggle" @click="readingMode = !readingMode">
-        显示模式 {{ readingMode ? '阅读层 2x' : '像素层 1x' }}
+      <span class="head-signal">
+        SIGNAL {{ signalLevel }} · {{ SIGNAL_LABELS[signalLevel] }} · {{ readingMode ? '阅读层' : '像素层' }}
       </span>
     </div>
 
@@ -133,14 +219,38 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
             </div>
           </div>
 
-          <div class="heart-box bevel" :class="{ pop: heartPop }" @click="like">
+          <div
+            class="heart-box bevel focusable"
+            data-testid="action-like"
+            :class="{ pop: heartPop, 'is-focused': isFocused(0) }"
+            @mouseenter="hoverAction(0)"
+            @click="((actionFocus.hover(0)), like())"
+          >
             <div class="heart-icon" :class="{ on: liked }">
-              <span v-for="r in 1" :key="r">{{ liked ? '♥' : '♡' }}</span>
+              <span>{{ liked ? '♥' : '♡' }}</span>
             </div>
             <div class="heart-label">{{ liked ? '已加心' : '加心 ♥' }}</div>
           </div>
 
-          <button class="comment-btn bevel" @click="openComment">发表评论</button>
+          <button
+            class="comment-btn bevel focusable"
+            data-testid="action-comment"
+            :class="{ 'is-focused': isFocused(1) }"
+            @mouseenter="hoverAction(1)"
+            @click="((actionFocus.hover(1)), openComment())"
+          >
+            发表评论
+          </button>
+
+          <button
+            class="comment-btn bevel focusable back-btn"
+            data-testid="action-back"
+            :class="{ 'is-focused': isFocused(2) }"
+            @mouseenter="hoverAction(2)"
+            @click="((actionFocus.hover(2)), popScene('wipe'))"
+          >
+            ◀ 返回列表
+          </button>
         </aside>
 
         <!-- 右栏：正文，双分辨率 -->
@@ -154,7 +264,7 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
             </span>
           </div>
 
-          <div class="doc-content" :class="readingMode ? 'read' : ''">
+          <div class="doc-content" :class="readingMode ? 'read' : ''" data-testid="doc">
             <p v-for="(para, i) in paragraphs" :key="i">{{ para }}</p>
           </div>
 
@@ -186,13 +296,20 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
       </div>
 
       <div class="stage-foot">
-        <span>B/ESC 返回列表</span>
-        <span>A/ENTER 加心</span>
-        <span>{{ readingMode ? '当前：阅读层（长文友好）' : '当前：像素层（机器原生）' }}</span>
+        <span>↑↓ 滚动正文（每次 64px）</span>
+        <span>→ 进入动作栏 · ← 退出</span>
+        <span>B/ESC {{ isFocused(2) || actionFocus.index.value >= 0 ? '退出动作栏' : '返回列表' }}</span>
+        <span class="foot-note">{{ readingMode ? '阅读层（长文友好）' : '像素层（机器原生）' }} · 由信号档控制</span>
       </div>
     </template>
 
-    <PixelDialog v-if="dialogLines" speaker="评论" :lines="dialogLines" @done="closeDialog" />
+    <PixelDialog
+      v-if="dialogLines"
+      speaker="评论"
+      :lines="dialogLines"
+      @done="closeDialog"
+      @close="closeDialog"
+    />
   </div>
 </template>
 
@@ -212,8 +329,7 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
   padding-bottom: 8px;
 }
 
-.mode-toggle {
-  cursor: pointer;
+.head-signal {
   border: 1px solid var(--blue-400);
   padding: 0 6px;
   color: var(--blue-700);
@@ -355,6 +471,19 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
   cursor: pointer;
   font: inherit;
   color: var(--blue-700);
+}
+
+/* 动作栏焦点：与全站一致，浅蓝底 + 左侧粗条，不用发光 */
+.heart-box.is-focused,
+.comment-btn.is-focused {
+  background: var(--blue-200);
+  border-color: var(--blue-500);
+  outline: 2px solid var(--blue-500);
+  outline-offset: -6px;
+}
+
+.back-btn {
+  color: var(--ink-soft);
 }
 
 .heart-box.pop {
@@ -507,6 +636,11 @@ const paragraphs = computed(() => (post.value?.content || '').split('\n').filter
 .record-empty {
   padding: 16px 0;
   color: var(--ink-soft);
+}
+
+.foot-note {
+  margin-left: auto;
+  color: var(--ink-faint);
 }
 
 .stage-foot {

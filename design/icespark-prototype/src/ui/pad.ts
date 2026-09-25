@@ -2,36 +2,57 @@
  * 手柄输入层
  *
  * 反传统要点：
- * - 方向键移动焦点，A 确认，B 返回
- * - 鼠标 hover 不产生任何视觉变化（调用方禁止给 hover 加样式）
- * - 触摸设备降级：点击等同 A 键，长按等同 B 键
+ * - 方向键移动焦点，A 确认，B 返回，START 呼出暂停菜单
+ * - 鼠标 hover 不产生视觉变化之外的效果（焦点由共享焦点模型统一管理）
+ * - 触摸降级：点击等同 A 键
+ *
+ * 关键机制「消费语义」：
+ * emit 返回本次事件是否被消费，只有被消费才 preventDefault。
+ * 这样正文页不接管 ↑↓ 时，浏览器原生滚动依然可用 —— 修复了
+ * 「方向键被全局吞掉导致键盘用户无法滚动长文」的缺陷。
+ *
+ * 作用域（scope）：暂停菜单打开时屏蔽场景层监听，避免按键穿透。
  */
 import { ref, onMounted, onUnmounted } from 'vue'
+import { playSfx } from './sfx'
 
-export type PadAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'cancel'
+export type PadAction = 'up' | 'down' | 'left' | 'right' | 'confirm' | 'cancel' | 'start'
 
-export interface FocusItem {
-  id: string
-  el: HTMLElement
-}
+/** 输入作用域：any 永远接收（用于 START 这类全局键） */
+export type PadScope = 'scene' | 'pause' | 'any'
 
 /** 全局焦点索引（场景内单选列表用） */
 export const focusIndex = ref(0)
 export const focusCount = ref(0)
 
-/** 输入事件订阅表 */
-const listeners = new Set<(a: PadAction) => void>()
+/** 当前生效的作用域 */
+export const activeScope = ref<Exclude<PadScope, 'any'>>('scene')
 
-export function onPad(handler: (a: PadAction) => void): () => void {
-  listeners.add(handler)
+/** 输入是否被锁定（转场中） */
+export const inputLocked = ref(false)
+
+type Handler = (a: PadAction) => boolean | void
+
+const listeners = new Map<Handler, PadScope>()
+
+export function onPad(handler: Handler, scope: PadScope = 'scene'): () => void {
+  listeners.set(handler, scope)
   return () => listeners.delete(handler)
 }
 
-function emit(a: PadAction) {
-  listeners.forEach((fn) => fn(a))
+/** 派发事件，返回是否被消费 */
+function emit(a: PadAction): boolean {
+  if (inputLocked.value && a !== 'start') return false
+  let consumed = false
+  listeners.forEach((scope, fn) => {
+    if (scope !== 'any' && scope !== activeScope.value) return
+    const r = fn(a)
+    if (r === true) consumed = true
+  })
+  return consumed
 }
 
-/** 按键映射：方向键 / WASD / Enter-Z 确认 / Esc-X 返回 */
+/** 按键映射 */
 const KEYMAP: Record<string, PadAction> = {
   ArrowUp: 'up',
   ArrowDown: 'down',
@@ -47,37 +68,43 @@ const KEYMAP: Record<string, PadAction> = {
   Escape: 'cancel',
   Backspace: 'cancel',
   x: 'cancel',
+  p: 'start',
+  P: 'start',
 }
 
 /** 在组件中使用：自动挂载/卸载键盘监听 */
 export function usePad() {
   function handler(e: KeyboardEvent) {
-    // 输入框内不劫持按键
-    const t = e.target as HTMLElement
-    if (t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)) {
-      if (e.key === 'Escape') emit('cancel')
+    const t = e.target as HTMLElement | null
+    const inField = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+
+    // 输入框内不劫持按键：只保留 Esc 交给上层处理
+    if (inField) {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        emit('cancel')
+      }
       return
     }
+
     const action = KEYMAP[e.key]
     if (!action) return
-    e.preventDefault()
-    emit(action)
+
+    // 只有被消费才阻止默认行为，否则把按键还给浏览器（原生滚动等）
+    if (emit(action)) e.preventDefault()
   }
 
   onMounted(() => window.addEventListener('keydown', handler))
   onUnmounted(() => window.removeEventListener('keydown', handler))
 }
 
-/** 焦点列表管理：向上/下移动，越界时抖动提示（8bit 音效位） */
+/** 焦点列表管理：越界时返回 false（由调用方决定是否抖动提示） */
 export function useFocusList(count: () => number) {
   function move(dir: 1 | -1) {
     const n = count()
     if (n === 0) return false
     const next = focusIndex.value + dir
-    if (next < 0 || next >= n) {
-      // 越界：抖动而不是循环滚动，保留老游戏的「撞墙」手感
-      return false
-    }
+    if (next < 0 || next >= n) return false
     focusIndex.value = next
     return true
   }
@@ -139,4 +166,9 @@ export function useCountUp() {
   }
 
   return { value, run }
+}
+
+/** 键盘移动焦点时的音效（鼠标移动焦点必须静音，见 sfx.ts） */
+export function playFocusMove() {
+  playSfx('move')
 }

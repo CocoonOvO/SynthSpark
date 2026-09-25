@@ -272,3 +272,68 @@ body {
 
 .focusable.is-focused::before { left: -13px; }
 .focusable.is-focused::after { right: -13px; }
+
+/* ══════════════════════════════════════════════
+   信号档：一个旋钮管 CRT 强度 / 字体模式 / 动效强度
+   0 纯净 · 1 阅读 · 2 标准 · 3 原教旨
+   ══════════════════════════════════════════════ */
+
+/* 0 纯净：关掉 CRT 全部层次 */
+.app[data-signal='0'] .crt::before,
+.app[data-signal='0'] .crt::after {
+  display: none;
+}
+
+/* 1 阅读：极轻扫描线与暗角 */
+.app[data-signal='1'] .crt::before {
+  opacity: 0.32;
+}
+.app[data-signal='1'] .crt::after {
+  opacity: 0.22;
+}
+
+/* 0/1 档：全站改走阅读层字体（长文与低视力友好） */
+.app[data-signal='0'] .px,
+.app[data-signal='0'] .px *,
+.app[data-signal='1'] .px,
+.app[data-signal='1'] .px * {
+  font-family: 'Source Han Sans CN', 'Noto Sans CJK SC', sans-serif;
+  letter-spacing: 0.02em;
+}
+
+/* 0 纯净：动效与过渡全关 */
+.app[data-signal='0'] *,
+.app[data-signal='0'] *::before,
+.app[data-signal='0'] *::after {
+  animation: none !important;
+  transition: none !important;
+}
+
+/* 1 阅读：只保留转场，关掉闪烁与抖动 */
+.app[data-signal='1'] .blink,
+.app[data-signal='1'] .shake,
+.app[data-signal='1'] .focusable.is-focused::before,
+.app[data-signal='1'] .focusable.is-focused::after {
+  animation: none !important;
+}
+
+/* ══════════════════════════════════════════════
+   无障碍：尊重系统「减少动态效果」
+   必须保留全部功能，只取消动效（光敏性安全）
+   ══════════════════════════════════════════════ */
+
+@media (prefers-reduced-motion: reduce) {
+  .crt-flicker,
+  .crt-on,
+  .blink,
+  .shake {
+    animation: none !important;
+  }
+  .focusable.is-focused::before,
+  .focusable.is-focused::after {
+    animation: none !important;
+  }
+  * {
+    transition: none !important;
+  }
+}

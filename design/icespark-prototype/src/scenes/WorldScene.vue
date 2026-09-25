@@ -8,8 +8,9 @@
  * - 没有 hover 效果，焦点是闪烁选框
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { onPad, usePad, focusIndex } from '../ui/pad'
-import { pushScene, popScene, useStatusBar, canGoBack } from '../ui/scene'
+import { onPad, usePad } from '../ui/pad'
+import { pushScene, popScene, useStatusBar } from '../ui/scene'
+import { useFocusGroup } from '../ui/focus'
 import { store, loadPosts, dataSource, shortDate, type PostListItem } from '../data/api'
 import PixelAvatar from '../ui/PixelAvatar.vue'
 import { AVATAR_PALETTE } from '../styles/tokens'
@@ -19,12 +20,18 @@ const { clock, stop } = useStatusBar()
 
 const PAGE_SIZE = 4
 const page = ref(0)
-const selected = ref(0)
 const shaking = ref(false)
+
+/** 光标：卡片栅格与底部页码条是两个区，键盘/鼠标共享同一套焦点 */
+const gridFocus = useFocusGroup()
+const selected = gridFocus.index
+/** 0 = 卡片区，1 = 页码条 */
+const zone = ref(0)
+const pagerIndex = ref(0)
+const PAGER = 2 // 0 = PREV，1 = NEXT
 
 onMounted(() => {
   loadPosts(40)
-  focusIndex.value = 0
 })
 
 onUnmounted(stop)
@@ -40,29 +47,97 @@ const slots = computed(() => {
   return { filled, placeholders: Array.from({ length: placeholders }, (_, i) => filled + i) }
 })
 
+/** 键盘路径。返回 true 表示已消费该按键 */
 const off = onPad((a) => {
   const n = pagePosts.value.length
   if (a === 'cancel') {
     popScene('wipe')
-    return
+    return true
   }
-  if (a === 'up') selected.value = Math.max(0, selected.value - 1)
-  if (a === 'down') selected.value = Math.min(n - 1, selected.value + 1)
+  // 卡片区不足一屏时按实际张数走，避免光标跑到 LOCKED 占位格上
+  if (a === 'up') {
+    if (zone.value === 1) {
+      zone.value = 0
+      return true
+    }
+    // 首行再往上：把光标交给页码条，方向键不出现「死键」
+    if (selected.value === 0) {
+      enterPager(0)
+      return true
+    }
+    gridFocus.set(selected.value - 1)
+    return true
+  }
+  if (a === 'down') {
+    if (zone.value === 1) {
+      zone.value = 0
+      return true
+    }
+    if (selected.value >= n - 1) return false
+    gridFocus.set(selected.value + 1)
+    return true
+  }
   if (a === 'left') {
-    if (page.value > 0) {
-      page.value -= 1
-      selected.value = 0
-    } else shake()
+    if (zone.value === 1) pagerIndex.value = Math.max(0, pagerIndex.value - 1)
+    else turn(-1)
+    return true
   }
   if (a === 'right') {
-    if (page.value < pageCount.value - 1) {
-      page.value += 1
-      selected.value = 0
-    } else shake()
+    if (zone.value === 1) pagerIndex.value = Math.min(PAGER - 1, pagerIndex.value + 1)
+    else turn(1)
+    return true
   }
-  if (a === 'confirm') open(pagePosts.value[selected.value])
+  if (a === 'confirm') {
+    if (zone.value === 1) {
+      turn(pagerIndex.value === 0 ? -1 : 1)
+      return true
+    }
+    open(pagePosts.value[selected.value])
+    return true
+  }
+  return true
 })
 onUnmounted(off)
+
+/** 翻页。到边界时抖动而不是静默无响应 —— 玩家必须知道按键是被听见的 */
+function turn(dir: 1 | -1) {
+  const next = page.value + dir
+  if (next < 0 || next >= pageCount.value) {
+    shake()
+    return
+  }
+  page.value = next
+  gridFocus.set(0, true)
+}
+
+/** 把光标移到页码条 */
+function enterPager(i: number) {
+  zone.value = 1
+  pagerIndex.value = i
+}
+
+/** 翻页按钮的鼠标路径 */
+function hoverPager(i: number) {
+  enterPager(i)
+}
+function clickPager(i: number) {
+  enterPager(i)
+  turn(i === 0 ? -1 : 1)
+}
+
+function jumpPage(n: number) {
+  page.value = n
+  gridFocus.set(0, true)
+}
+
+/** 鼠标：划过即共享焦点（静音） */
+function hoverCard(i: number) {
+  gridFocus.hover(i)
+}
+function clickCard(p: PostListItem, i: number) {
+  gridFocus.set(i, true)
+  open(p)
+}
 
 function shake() {
   shaking.value = true
@@ -112,8 +187,10 @@ const stageNo = (i: number) => String(page.value * PAGE_SIZE + i + 1).padStart(2
         v-for="(p, i) in pagePosts"
         :key="p.id"
         class="stage-card bevel focusable"
+        data-testid="stage-card"
         :class="{ 'is-focused': selected === i }"
-        @click="((selected = i), open(p))"
+        @mouseenter="hoverCard(i)"
+        @click="clickCard(p, i)"
       >
         <div class="stage-top">
           <span class="stage-no">STAGE {{ stageNo(i) }}</span>
@@ -169,23 +246,42 @@ const stageNo = (i: number) => String(page.value * PAGE_SIZE + i + 1).padStart(2
     <!-- 分页器：像素风页码，取代滚动 -->
     <div class="world-foot">
       <div class="pager">
-        <button class="pager-btn" :disabled="page === 0" @click="page -= 1">◀ PREV</button>
+        <button
+          class="pager-btn focusable"
+          data-testid="pager-prev"
+          :class="{ 'is-focused': zone === 1 && pagerIndex === 0 }"
+          :disabled="page === 0"
+          @mouseenter="hoverPager(0)"
+          @click="clickPager(0)"
+        >
+          ◀ PREV
+        </button>
         <span class="pager-dots">
           <i
             v-for="n in pageCount"
             :key="n"
-            class="dot"
+            class="dot focusable"
             :class="{ on: n - 1 === page }"
-            @click="((page = n - 1), (selected = 0))"
+            @click="jumpPage(n - 1)"
           />
         </span>
-        <button class="pager-btn" :disabled="page >= pageCount - 1" @click="page += 1">NEXT ▶</button>
+        <button
+          class="pager-btn focusable"
+          data-testid="pager-next"
+          :class="{ 'is-focused': zone === 1 && pagerIndex === 1 }"
+          :disabled="page >= pageCount - 1"
+          @mouseenter="hoverPager(1)"
+          @click="clickPager(1)"
+        >
+          NEXT ▶
+        </button>
       </div>
       <div class="keys">
-        <span>←→ 翻页</span>
         <span>↑↓ 选择</span>
-        <span>A 进入</span>
-        <span v-if="canGoBack">B 返回</span>
+        <span>←→ 翻页</span>
+        <span>A/ENTER 进入</span>
+        <span>B/ESC 返回</span>
+        <span>P/START 菜单</span>
       </div>
     </div>
   </div>

@@ -8,7 +8,9 @@
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { focusIndex, onPad, usePad } from '../ui/pad'
-import { pushScene, useStatusBar, soundEnabled } from '../ui/scene'
+import { pushScene, useStatusBar } from '../ui/scene'
+import { useFocusGroup } from '../ui/focus'
+import { playSfx } from '../ui/sfx'
 import { store, dataSource } from '../data/api'
 
 usePad()
@@ -31,37 +33,45 @@ const MENU: MenuItem[] = [
   { label: '隐藏关卡', en: '??????', scene: 'list', locked: true },
 ]
 
-const selected = ref(0)
-const blinkOnce = ref(false)
+// 共享焦点：键盘移动出声，鼠标划过移动同一个焦点但静音
+const focus = useFocusGroup()
+const selected = focus.index
 
-function redraw() {
-  blinkOnce.value = true
-  window.setTimeout(() => (blinkOnce.value = false), 160)
+function enterAt(i: number) {
+  const item = MENU[i]
+  if (!item || item.locked) {
+    if (item?.locked) playSfx('move')
+    return
+  }
+  playSfx('confirm')
+  pushScene(item.scene, item.scene === 'list' ? 'all' : undefined, 'wipe')
 }
 
+/** 键盘路径。返回 true 表示已消费该按键 */
 const off = onPad((a) => {
   if (a === 'up') {
-    selected.value = (selected.value - 1 + MENU.length) % MENU.length
-    redraw()
-  } else if (a === 'down') {
-    selected.value = (selected.value + 1) % MENU.length
-    redraw()
-  } else if (a === 'confirm') {
-    const item = MENU[selected.value]
-    if (item.locked) return
-    pushScene(item.scene, item.scene === 'list' ? 'all' : undefined, 'wipe')
+    // 菜单项循环滚动，越界不是错误而是回到另一端
+    focus.set((focus.index.value - 1 + MENU.length) % MENU.length)
+    return true
   }
+  if (a === 'down') {
+    focus.set((focus.index.value + 1) % MENU.length)
+    return true
+  }
+  if (a === 'confirm') {
+    enterAt(focus.index.value)
+    return true
+  }
+  return false
 })
 
-// 场景内的 8bit 光标
-function move(dir: number) {
-  selected.value = (selected.value + dir + MENU.length) % MENU.length
-  redraw()
+/** 鼠标路径：划过即共享焦点（静音），点击即进入 */
+function hoverItem(i: number) {
+  focus.hover(i)
 }
-function enter() {
-  const item = MENU[selected.value]
-  if (item.locked) return
-  pushScene(item.scene, item.scene === 'list' ? 'all' : undefined, 'wipe')
+function clickItem(i: number) {
+  focus.set(i, true)
+  enterAt(i)
 }
 
 onMounted(() => (focusIndex.value = 0))
@@ -91,8 +101,10 @@ const stats = computed(() => store.stats.value)
           v-for="(m, i) in MENU"
           :key="m.en"
           class="menu-item focusable"
+          data-testid="menu-item"
           :class="{ 'is-focused': selected === i, locked: m.locked }"
-          @click="((selected = i), enter())"
+          @mouseenter="hoverItem(i)"
+          @click="clickItem(i)"
         >
           <span class="menu-en">{{ m.en }}</span>
           <span class="menu-label">{{ m.locked ? '尚未解锁' : m.label }}</span>
@@ -124,9 +136,7 @@ const stats = computed(() => store.stats.value)
       <div class="foot-keys">
         <span>↑↓ 选择</span>
         <span>A/ENTER 确认</span>
-        <span class="sound" @click="((soundEnabled = !soundEnabled), $event.stopPropagation())">
-          音效 {{ soundEnabled ? 'ON' : 'OFF' }}
-        </span>
+        <span>P/START 菜单</span>
       </div>
     </div>
   </div>
@@ -269,11 +279,5 @@ const stats = computed(() => store.stats.value)
   display: flex;
   gap: 16px;
   color: var(--ink-soft);
-}
-
-.sound {
-  cursor: pointer;
-  border: 1px solid var(--ink-soft);
-  padding: 0 6px;
 }
 </style>
