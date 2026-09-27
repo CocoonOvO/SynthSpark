@@ -253,68 +253,182 @@ body {
   animation: shake-step 160ms steps(1, end) 2;
 }
 
-/* 8bit 焦点选框：左右闪烁方块 */
+/* ══════════════════════════════════════════════
+   8bit 焦点：**唯一**一套焦点视觉
+   —— 浅蓝底 + 盒子内侧左右两个闪烁方块。
+   规则（用户反馈驱动的修正）：
+   · 不再叠「粗描边 / outline / inset 描边」—— 焦点同时出现边框与光标会互相打架
+   · 光标画在盒子**内部**（垂直居中、贴左右内壁），不溢出到相邻元素上
+   · 所有场景/对话框只加 .focusable 与 .is-focused，禁止自己再写一套焦点样式
+   ══════════════════════════════════════════════ */
+
 .focusable {
   outline: none;
   position: relative;
+}
+
+.focusable.is-focused {
+  background-color: var(--blue-200);
 }
 
 .focusable.is-focused::before,
 .focusable.is-focused::after {
   content: '';
   position: absolute;
-  top: 6px;
-  bottom: 6px;
+  top: 50%;
   width: 8px;
+  height: 16px;
+  margin-top: -8px;
   background: var(--blue-500);
   animation: blink-step 640ms steps(1, end) infinite;
+  pointer-events: none;
 }
 
-.focusable.is-focused::before { left: -13px; }
-.focusable.is-focused::after { right: -13px; }
+.focusable.is-focused::before { left: 3px; }
+.focusable.is-focused::after { right: 3px; }
+
+/* 小尺寸控件（软按键、标签）里的光标缩短一点，别顶满 */
+.focusable.mini.is-focused::before,
+.focusable.mini.is-focused::after {
+  height: 8px;
+  margin-top: -4px;
+  width: 6px;
+}
 
 /* ══════════════════════════════════════════════
-   信号档：一个旋钮管 CRT 强度 / 字体模式 / 动效强度
-   0 纯净 · 1 阅读 · 2 标准 · 3 原教旨
+   图片容器：像素画框
+   —— 在照片上叠一层抖动网点，让真照片也归入点阵世界；
+      圆角/模糊/渐变一律不许用，靠硬边与网点统一质感
    ══════════════════════════════════════════════ */
 
-/* 0 纯净：关掉 CRT 全部层次 */
-.app[data-signal='0'] .crt::before,
-.app[data-signal='0'] .crt::after {
-  display: none;
+.img-frame {
+  position: relative;
+  overflow: hidden;
+  background: var(--blue-100);
+  border: 3px solid var(--edge);
+  box-shadow:
+    inset 1px 1px 0 0 var(--paper),
+    inset -2px -2px 0 0 var(--blue-300);
 }
 
-/* 1 阅读：极轻扫描线与暗角 */
-.app[data-signal='1'] .crt::before {
-  opacity: 0.32;
-}
-.app[data-signal='1'] .crt::after {
-  opacity: 0.22;
-}
-
-/* 0/1 档：全站改走阅读层字体（长文与低视力友好） */
-.app[data-signal='0'] .px,
-.app[data-signal='0'] .px *,
-.app[data-signal='1'] .px,
-.app[data-signal='1'] .px * {
-  font-family: 'Source Han Sans CN', 'Noto Sans CJK SC', sans-serif;
-  letter-spacing: 0.02em;
+.img-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
 }
 
-/* 0 纯净：动效与过渡全关 */
-.app[data-signal='0'] *,
-.app[data-signal='0'] *::before,
-.app[data-signal='0'] *::after {
+/* 网点层：挂在画框上而不是图片上，因此图片加载失败时图案依然在 */
+.img-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(rgba(18, 58, 82, 0.14) 1px, transparent 1px);
+  background-size: 3px 3px;
+}
+
+/* 无封面时的占位：纯抖动图案块，尺寸与真封面一致，混排才不参差 */
+.img-fallback {
+  width: 100%;
+  height: 100%;
+  background-color: var(--blue-100);
+  background-image:
+    linear-gradient(45deg, var(--blue-300) 25%, transparent 25%, transparent 75%, var(--blue-300) 75%),
+    linear-gradient(45deg, var(--blue-300) 25%, transparent 25%, transparent 75%, var(--blue-300) 75%);
+  background-size: 8px 8px;
+  background-position: 0 0, 4px 4px;
+}
+
+/* ══════════════════════════════════════════════
+   按键提示小签：快捷键指南用，克制、不抢眼
+   ══════════════════════════════════════════════ */
+
+.kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 5px;
+  border: 1.5px solid var(--blue-400);
+  background: var(--paper);
+  color: var(--blue-700);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.hint {
+  color: var(--ink-faint);
+}
+
+
+/* ══════════════════════════════════════════════
+   翻页动效：8bit 风「整屏滚动」
+   —— 用 steps() 离散位移，而不是平滑缓动；
+      位移量取 8px 的整数倍，与点阵网格对齐
+   ══════════════════════════════════════════════ */
+
+@keyframes turn-next {
+  0% { transform: translateY(0); opacity: 1; }
+  20% { transform: translateY(-8px); opacity: 0.25; }
+  40% { transform: translateY(100%); opacity: 0.25; }
+  41% { transform: translateY(-100%); opacity: 0.25; }
+  70% { transform: translateY(0); opacity: 1; }
+  85% { transform: translateY(-4px); }
+  100% { transform: translateY(0); }
+}
+
+@keyframes turn-prev {
+  0% { transform: translateY(0); opacity: 1; }
+  20% { transform: translateY(8px); opacity: 0.25; }
+  40% { transform: translateY(-100%); opacity: 0.25; }
+  41% { transform: translateY(100%); opacity: 0.25; }
+  70% { transform: translateY(0); opacity: 1; }
+  85% { transform: translateY(4px); }
+  100% { transform: translateY(0); }
+}
+
+.turn-next { animation: turn-next 280ms steps(1, end) 1; }
+.turn-prev { animation: turn-prev 280ms steps(1, end) 1; }
+
+/* 翻到边界时的抖动提示：按键被听见了，只是过不去 */
+@keyframes bump-step {
+  0%, 100% { transform: translateX(0); }
+  50% { transform: translateX(-6px); }
+}
+
+.bump { animation: bump-step 180ms steps(1, end) 2; }
+
+/* ══════════════════════════════════════════════
+   信号强度固定为最高档，用户不再可调。
+   用户侧唯一的动效开关是「设置 → 动效」，关掉后：
+   CRT 闪烁、闪烁光标、翻页与转场全部停用，功能一个不少。
+   ══════════════════════════════════════════════ */
+
+.app[data-motion='off'] .crt-flicker,
+.app[data-motion='off'] .crt-on,
+.app[data-motion='off'] .blink,
+.app[data-motion='off'] .shake,
+.app[data-motion='off'] .bump,
+.app[data-motion='off'] .turn-next,
+.app[data-motion='off'] .turn-prev,
+.app[data-motion='off'] .focusable.is-focused::before,
+.app[data-motion='off'] .focusable.is-focused::after {
   animation: none !important;
+}
+
+/* 关掉动效时，焦点光标的 ON 态常亮（否则看不见焦点） */
+.app[data-motion='off'] .focusable.is-focused::before,
+.app[data-motion='off'] .focusable.is-focused::after {
+  opacity: 1;
+}
+
+.app[data-motion='off'] * {
   transition: none !important;
 }
 
-/* 1 阅读：只保留转场，关掉闪烁与抖动 */
-.app[data-signal='1'] .blink,
-.app[data-signal='1'] .shake,
-.app[data-signal='1'] .focusable.is-focused::before,
-.app[data-signal='1'] .focusable.is-focused::after {
-  animation: none !important;
+/* 无动效时 CRT 刷新抖动也停掉，避免光敏不适 */
+.app[data-motion='off'] .crt::before {
+  opacity: 0.72;
 }
 
 /* ══════════════════════════════════════════════
@@ -326,12 +440,16 @@ body {
   .crt-flicker,
   .crt-on,
   .blink,
-  .shake {
+  .shake,
+  .bump,
+  .turn-next,
+  .turn-prev {
     animation: none !important;
   }
   .focusable.is-focused::before,
   .focusable.is-focused::after {
     animation: none !important;
+    opacity: 1;
   }
   * {
     transition: none !important;

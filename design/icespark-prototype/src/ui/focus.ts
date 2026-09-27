@@ -59,3 +59,26 @@ export function useFocusGroup(opts: FocusGroupOptions = {}) {
 
   return { index, set, moveBy, hover, click }
 }
+
+/**
+ * 栅格里的「视觉相邻」移动（用户反馈第 7 条：方向键必须按视觉相邻走，不能依次切换）
+ *
+ * 两列栅格（cols=2）下的语义：
+ *   ← 左边那张（同行的前一列） · → 右边那张（同行的后一列）
+ *   ↑ 上一行同一列 · ↓ 下一行同一列
+ * 返回 null 表示该方向没有相邻项，由调用方决定怎么处理
+ * （列表页的「首行再往上」= 焦点交给标签栏；末行再往下 = 把按键交还浏览器）。
+ */
+export function spatialIndex(
+  i: number,
+  dir: 'up' | 'down' | 'left' | 'right',
+  cols: number,
+  count: number
+): number | null {
+  if (count <= 0 || i < 0 || i >= count) return null
+  const col = i % cols
+  if (dir === 'left') return col > 0 ? i - 1 : null
+  if (dir === 'right') return col < cols - 1 && i + 1 < count ? i + 1 : null
+  if (dir === 'up') return i - cols >= 0 ? i - cols : null
+  return i + cols < count ? i + cols : null
+}

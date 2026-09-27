@@ -1,0 +1,252 @@
+<script setup lang="ts">
+/**
+ * 登录弹窗（与暂停菜单同级的独立弹窗）
+ *
+ * 走真实接口：POST /api/auth/token，**form-urlencoded**（不是 JSON）。
+ * 失败时把后端的 detail 原样显示出来 —— 样机里最容易说谎的地方就是「登录成功」。
+ *
+ * 输入等价性：
+ * - 键盘：输入框内 Enter 直接提交（原生 form 行为）；Tab 在 用户名→密码→登录 之间移动；
+ *   ESC 关闭。空闲时 A/Enter 提交、B/ESC 关闭由输入层兜底。
+ * - 鼠标：点击输入、点击「登录」。
+ * 注意：文字输入框的焦点指示用光标与描边，不叠两侧闪烁方块（否则和文字抢注意力）。
+ */
+import { ref, onMounted, onUnmounted, nextTick } from 'vue'
+import { onPad } from './pad'
+import { playSfx } from './sfx'
+import { login } from './auth'
+
+const emit = defineEmits<{ (e: 'close'): void; (e: 'ok', username: string): void }>()
+
+const username = ref('')
+const password = ref('')
+const error = ref('')
+const busy = ref(false)
+const userEl = ref<HTMLInputElement | null>(null)
+
+async function submit() {
+  if (busy.value) return
+  busy.value = true
+  error.value = ''
+  const r = await login(username.value, password.value)
+  busy.value = false
+  if (r.ok) {
+    playSfx('confirm')
+    emit('ok', username.value.trim())
+  } else {
+    error.value = r.message
+    password.value = ''
+    await nextTick()
+    userEl.value?.focus()
+  }
+}
+
+/** 输入层兜底：输入框内不劫持按键（只留 ESC），这里处理的是「焦点不在输入框」的情况 */
+const off = onPad((a) => {
+  if (a === 'cancel') {
+    emit('close')
+    return true
+  }
+  if (a === 'confirm') {
+    void submit()
+    return true
+  }
+  if (a === 'up' || a === 'down' || a === 'left' || a === 'right') return true
+  return false
+}, 'pause')
+
+onMounted(() => {
+  void nextTick(() => userEl.value?.focus())
+})
+onUnmounted(off)
+</script>
+
+<template>
+  <div class="mask" data-testid="login-dialog" @click.self="emit('close')">
+    <div class="panel px">
+      <div class="panel-head">
+        <span class="panel-title">登录</span>
+        <button class="x focusable mini" data-testid="login-close" @click="emit('close')">✕</button>
+      </div>
+
+      <p class="panel-desc">
+        用项目账号登录后可发表评论、编辑自己的文章。匿名访客也能评论，只是要留一个称呼。
+      </p>
+
+      <form class="form" @submit.prevent="submit">
+        <label class="field">
+          <span class="field-cap">用户名</span>
+          <input
+            ref="userEl"
+            v-model="username"
+            class="input"
+            data-testid="login-username"
+            type="text"
+            name="username"
+            autocomplete="username"
+            spellcheck="false"
+            placeholder="username"
+          />
+        </label>
+
+        <label class="field">
+          <span class="field-cap">密码</span>
+          <input
+            v-model="password"
+            class="input"
+            data-testid="login-password"
+            type="password"
+            name="password"
+            autocomplete="current-password"
+            placeholder="password"
+          />
+        </label>
+
+        <p v-if="error" class="err" data-testid="login-error">✕ {{ error }}</p>
+        <p v-else class="tip hint">接口：POST /api/auth/token（form-urlencoded）</p>
+
+        <div class="actions">
+          <button class="btn focusable mini" data-testid="login-submit" type="submit" :disabled="busy">
+            {{ busy ? '登录中…' : '确认登录' }}
+          </button>
+          <button class="btn ghost focusable mini" type="button" @click="emit('close')">取消</button>
+        </div>
+      </form>
+
+      <div class="keys hint">ENTER 提交 · TAB 换输入框 · ESC 关闭</div>
+    </div>
+  </div>
+</template>
+
+<style scoped>
+.mask {
+  position: absolute;
+  inset: 0;
+  z-index: 240;
+  background: rgba(18, 58, 82, 0.34);
+  display: grid;
+  place-items: center;
+  padding: 20px;
+}
+
+.panel {
+  width: min(440px, 100%);
+  background: var(--paper);
+  border: 3px solid var(--edge);
+  box-shadow:
+    inset 1px 1px 0 0 var(--paper),
+    inset -2px -2px 0 0 var(--blue-300);
+  padding: 14px 18px 16px;
+}
+
+.panel-head {
+  display: flex;
+  align-items: center;
+  border-bottom: 3px solid var(--blue-300);
+  padding-bottom: 8px;
+}
+
+.panel-title {
+  font-size: 24px;
+  color: var(--blue-600);
+}
+
+.x {
+  margin-left: auto;
+  font: inherit;
+  background: var(--paper);
+  border: 2px solid var(--blue-400);
+  color: var(--ink-soft);
+  padding: 2px 8px;
+  cursor: pointer;
+}
+
+.panel-desc {
+  font-family: 'Source Han Sans CN', 'Noto Sans CJK SC', sans-serif;
+  font-size: 13px;
+  line-height: 1.85;
+  color: var(--ink-soft);
+  margin: 12px 0 14px;
+}
+
+.form {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.field {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.field-cap {
+  width: 48px;
+  color: var(--ink-soft);
+  flex: 0 0 auto;
+}
+
+.input {
+  flex: 1;
+  min-width: 0;
+  font: inherit;
+  color: var(--ink);
+  background: var(--paper);
+  border: 3px solid var(--blue-400);
+  padding: 7px 8px;
+}
+
+/* 文本输入框的焦点：描边 + 浅蓝底（用插入光标当焦点指示，不再叠两侧闪烁方块） */
+.input:focus {
+  outline: none;
+  border-color: var(--blue-500);
+  background: var(--blue-100);
+}
+
+.err {
+  margin: 0;
+  padding: 7px 10px;
+  background: var(--blue-100);
+  border-left: 8px solid var(--spark);
+  color: var(--spark);
+  font-size: 12px;
+}
+
+.tip {
+  margin: 0;
+  font-size: 12px;
+}
+
+.actions {
+  display: flex;
+  gap: 8px;
+  margin-top: 4px;
+}
+
+.btn {
+  flex: 1;
+  font: inherit;
+  background: var(--paper);
+  border: 3px solid var(--blue-400);
+  color: var(--blue-700);
+  padding: 8px;
+  cursor: pointer;
+}
+
+.btn:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
+.btn.ghost {
+  color: var(--ink-soft);
+  flex: 0 0 96px;
+}
+
+.keys {
+  margin-top: 12px;
+  text-align: center;
+  font-size: 12px;
+}
+</style>

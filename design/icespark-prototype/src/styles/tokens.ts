@@ -35,8 +35,7 @@ export const PALETTE = {
   inkFaint: '#9BC0D2', // 极次要 / 装饰
 
   // 强调事件（克制使用）
-  spark: '#FF5C8A', // 点赞
-  coin: '#FFC93C', // 成就
+  spark: '#FF5C8A', // 点赞 / 错误提示
 
   // 8bit 显像管
   crtGlow: '#7FD4F5', // 荧光辉光
@@ -58,7 +57,6 @@ export const ROLES = {
   '--ink-soft': PALETTE.inkSoft,
   '--ink-faint': PALETTE.inkFaint,
   '--spark': PALETTE.spark,
-  '--coin': PALETTE.coin,
   '--crt-glow': PALETTE.crtGlow,
   // 8bit 立体边框：用浅蓝系，不再用深色压边
   '--bevel-light': PALETTE.paper,
@@ -88,7 +86,9 @@ export interface SceneDef {
 
 export const SCENES: SceneDef[] = [
   { id: 'boot', label: 'BOOT', hint: '开机' },
-  { id: 'title', label: 'TITLE', hint: '主菜单' },
-  { id: 'list', label: 'WORLD 1-1', hint: '文章列表' },
-  { id: 'article', label: 'STAGE', hint: '文章详情' },
+  { id: 'home', label: 'HOME', hint: '主页' },
+  { id: 'posts', label: 'POSTS', hint: '文章列表' },
+  { id: 'links', label: 'LINKS', hint: '关联链接' },
+  { id: 'about', label: 'ABOUT', hint: '关于' },
+  { id: 'article', label: 'ARTICLE', hint: '文章详情' },
 ]

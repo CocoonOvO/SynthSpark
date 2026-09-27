@@ -3,33 +3,32 @@
  * icespark 应用外壳
  *
  * 职责：
- * - 场景栈渲染 + 整屏像素转场
+ * - 场景渲染 + 整屏像素转场（历史栈见 ui/scene.ts）
  * - 8bit 显像管质感（扫描线 / 荧光点阵 / 暗角 / 辉光 / 开机亮线）
- * - 信号档（0–3）统一控制 CRT 强度、字体模式、动效强度
- * - START 暂停菜单（全局导航 + 全局设置）
+ * - 顶部标签栏（浏览类页面的全局导航）
+ * - P 键暂停菜单（全局导航 + 设置入口）
+ * - 全局键：Q/E 切标签页
  * - 音效首次询问
  *
- * 注：塑料机身外壳已移除，画面即屏幕，全部空间让给内容与交互
+ * 注：塑料机身外壳已移除，画面即屏幕；CRT 强度固定为最高档，用户不再可调。
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { isTransitioning, transitionKind, currentScene, screenScroller } from './ui/scene'
+import { isTransitioning, transitionKind, currentScene, sceneKey, screenScroller } from './ui/scene'
 import { SCENES } from './styles/tokens'
-import {
-  signalLevel,
-  soundEnabled,
-  setSound,
-  soundPromptShown,
-  markSoundPromptShown,
-  SIGNAL_LABELS,
-} from './ui/prefs'
+import { soundEnabled, setSound, soundPromptShown, markSoundPromptShown, motionEnabled } from './ui/prefs'
 import { playSfx, previewSfx } from './ui/sfx'
-import { onPad, activeScope, inputLocked } from './ui/pad'
+import { onPad, activeScope, inputLocked, focusZone } from './ui/pad'
+import { cycleTab, syncTabWithScene, onTabScene, blurTabs } from './ui/tabs'
+import { bootstrapAuth } from './ui/auth'
 import { loadSiteConfig, loadStats, dataSource } from './data/api'
 import PauseMenu from './ui/PauseMenu.vue'
+import TabBar from './ui/TabBar.vue'
 import BootScene from './scenes/BootScene.vue'
-import TitleScene from './scenes/TitleScene.vue'
-import WorldScene from './scenes/WorldScene.vue'
-import StageScene from './scenes/StageScene.vue'
+import HomeScene from './scenes/HomeScene.vue'
+import ArticleListScene from './scenes/ArticleListScene.vue'
+import LinksScene from './scenes/LinksScene.vue'
+import AboutScene from './scenes/AboutScene.vue'
+import ArticleScene from './scenes/ArticleScene.vue'
 
 /** 开机瞬间的显像管亮线动画 */
 const poweringOn = ref(true)
@@ -43,17 +42,37 @@ const promptOpen = ref(false)
 /** 音效询问里的焦点：0 = 开启，1 = 保持静音 */
 const promptFocus = ref(0)
 
-const SCENE_MAP: Record<string, any> = {
+const SCENE_MAP: Record<string, unknown> = {
   boot: BootScene,
-  title: TitleScene,
-  list: WorldScene,
-  article: StageScene,
+  home: HomeScene,
+  posts: ArticleListScene,
+  links: LinksScene,
+  about: AboutScene,
+  article: ArticleScene,
 }
 
 const frame = computed(() => currentScene.value)
-const currentComponent = computed(() => SCENE_MAP[frame.value.id] || BootScene)
+const currentComponent = computed(() => SCENE_MAP[frame.value.id] || HomeScene)
 
-/** START 是全局键：注册在 any 作用域，任何场景下都能呼出暂停菜单 */
+/** 场景变化时同步标签高亮；离开标签页时把焦点收回内容区（否则没人接收按键） */
+watch(
+  () => frame.value.id,
+  (id) => {
+    syncTabWithScene(id)
+    if (!onTabScene.value) blurTabs()
+  }
+)
+
+/** 全局键（any 作用域）：Q / E 切标签页。P 单独在下面处理 */
+const offGlobal = onPad((a) => {
+  if (a !== 'tabPrev' && a !== 'tabNext') return false
+  // 模态打开时不切页：先关掉弹窗再说
+  if (activeScope.value !== 'scene' || pauseOpen.value || promptOpen.value) return true
+  cycleTab(a === 'tabNext' ? 1 : -1)
+  return true
+}, 'any')
+
+/** P 是全局键：任何场景下都能呼出暂停菜单 */
 const offStart = onPad((a) => {
   if (a !== 'start') return false
   if (promptOpen.value) return true
@@ -103,6 +122,7 @@ function onFirstGesture() {
 onMounted(() => {
   loadSiteConfig()
   loadStats()
+  bootstrapAuth()
   window.setTimeout(() => (poweringOn.value = false), 640)
   // 首次手势：键盘或鼠标任一路径都能触发询问
   window.addEventListener('keydown', onFirstGesture, { once: false })
@@ -112,6 +132,7 @@ onMounted(() => {
 onUnmounted(() => {
   window.removeEventListener('keydown', onFirstGesture)
   window.removeEventListener('click', onFirstGesture)
+  offGlobal()
   offStart()
   offPrompt()
 })
@@ -126,52 +147,55 @@ function togglePause() {
 <template>
   <div
     class="app"
-    :data-signal="signalLevel"
+    :data-motion="motionEnabled ? 'on' : 'off'"
     :data-locked="inputLocked"
     :data-scope="activeScope"
+    :data-zone="focusZone"
   >
     <!-- 唯一的屏幕：crt 类挂载扫描线/荫罩/暗角三层质感 -->
-    <div
-      class="screen crt"
-      :class="{ 'crt-on': poweringOn, 'crt-flicker': signalLevel === 3 }"
-    >
+    <div class="screen crt" :class="{ 'crt-on': poweringOn, 'crt-flicker': motionEnabled }">
+      <!-- 顶部标签栏：只在浏览类页面上出现，文章详情自带返回 -->
+      <TabBar v-if="onTabScene" />
+
       <div ref="screenInner" class="screen-inner">
-        <component :is="currentComponent" :key="frame.id + (frame.param || '')" />
+        <component :is="currentComponent" :key="sceneKey" />
       </div>
 
       <!-- 场景转场遮罩：整屏像素切换 -->
       <div v-if="isTransitioning" class="trans" :class="`k-${transitionKind}`" />
 
-      <!-- START 暂停菜单 -->
+      <!-- 暂停菜单 -->
       <PauseMenu v-if="pauseOpen" @close="pauseOpen = false" />
 
       <!-- 音效首次询问：键鼠双路径 -->
       <div v-if="promptOpen" class="prompt-mask">
         <div class="prompt px">
-          <div class="prompt-title">SOUND CHECK</div>
+          <div class="prompt-title">音效检查</div>
           <p class="prompt-text">
-            本站有 8bit 音效（光标移动 / 确认 / 加心 / 转场）。<br />
-            要开启吗？随时可在 START 菜单里更改。
+            本站有 8bit 音效（光标移动 / 确认 / 点赞 / 转场）。<br />
+            要开启吗？随时可在菜单里更改。
           </p>
           <div class="prompt-actions">
             <button
-              class="prompt-btn"
-              :class="{ on: promptFocus === 0 }"
+              class="prompt-btn focusable mini"
+              data-testid="prompt-on"
+              :class="{ on: promptFocus === 0, 'is-focused': promptFocus === 0 }"
               @mouseenter="promptFocus = 0"
               @click="choosePrompt(true)"
             >
               ▶ 开启音效
             </button>
             <button
-              class="prompt-btn"
-              :class="{ on: promptFocus === 1 }"
+              class="prompt-btn focusable mini"
+              data-testid="prompt-off"
+              :class="{ on: promptFocus === 1, 'is-focused': promptFocus === 1 }"
               @mouseenter="promptFocus = 1"
               @click="choosePrompt(false)"
             >
               保持静音
             </button>
           </div>
-          <div class="prompt-keys">←→ 选择　A/ENTER 确认　B/ESC 保持静音</div>
+          <div class="prompt-keys hint">←→ 选择 · ENTER 确认 · ESC 保持静音</div>
         </div>
       </div>
     </div>
@@ -185,16 +209,18 @@ function togglePause() {
       </span>
 
       <span class="deck-keys">
-        <button class="softkey" @click="togglePause">START 菜单 (P)</button>
-        <span class="softkey signal-key" @click="pauseOpen = true">
-          SIGNAL {{ signalLevel }} · {{ SIGNAL_LABELS[signalLevel] }}
-        </span>
-        <span class="softkey" @click="((setSound(!soundEnabled)), soundEnabled && previewSfx('confirm'))">
+        <button class="softkey focusable mini" @click="togglePause">菜单 (P)</button>
+        <span
+          class="softkey focusable mini"
+          @click="((setSound(!soundEnabled)), soundEnabled && previewSfx('confirm'))"
+        >
           音效 {{ soundEnabled ? 'ON' : 'OFF' }}
         </span>
       </span>
 
-      <span class="deck-src" :class="dataSource">{{ dataSource === 'live' ? '● LIVE' : '○ DEMO' }}</span>
+      <span class="deck-src" :class="dataSource">
+        {{ dataSource === 'live' ? '● LIVE' : '○ DEMO' }}
+      </span>
     </div>
   </div>
 </template>
@@ -210,7 +236,7 @@ function togglePause() {
   overflow: hidden;
 }
 
-/* 屏幕：唯一的画布 */
+/* 屏幕：唯一的画布。改成纵向 flex，好让标签栏与滚动区各就各位 */
 .screen {
   flex: 1;
   position: relative;
@@ -218,14 +244,17 @@ function togglePause() {
   background: var(--paper);
   overflow: hidden;
   min-height: 0;
+  display: flex;
+  flex-direction: column;
   box-shadow:
     inset 1px 1px 0 0 var(--paper),
     inset -2px -2px 0 0 var(--blue-300);
 }
 
 .screen-inner {
-  position: absolute;
-  inset: 0;
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
   overflow-y: auto;
   scrollbar-width: thin;
   display: flex;
@@ -329,14 +358,11 @@ function togglePause() {
 }
 
 .prompt-btn.on {
-  background: var(--blue-200);
   border-color: var(--blue-500);
-  box-shadow: inset 0 0 0 2px var(--blue-500);
 }
 
 .prompt-keys {
   margin-top: 10px;
-  color: var(--ink-faint);
 }
 
 /* ── 底部软按键条 ── */

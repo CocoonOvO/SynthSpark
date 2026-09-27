@@ -23,12 +23,14 @@
 |--------|------|
 | 屏幕模型 | **响应式像素网格**（不锁定固定虚拟分辨率，保留 8px 网格纪律） |
 | 机身外壳 | **已移除** —— 画面即屏幕，全部空间让给内容与交互 |
-| 导航模型 | **场景切换（一屏一场景）** |
+| 导航模型 | **一屏一场景**：标签栏管浏览页，历史栈管前进/后退 |
+| 交互底线 | **单独用鼠标、或单独用键盘，都能完成全部操作**（输入等价性） |
 | 机器名 | **SYNTHSPARK** |
 | 调色板 | **白底 + 浅蓝主体**（深色只作文字与细描边，禁止大面积铺底） |
 | 开机流程 | 自检播完**自动进入主页**，无需等待输入（按任意键可跳过） |
 | 视觉质感 | **8bit 显像管（CRT）**：扫描线 + 荫罩点阵 + 桶形暗角 + 荧光辉光 + 开机亮线 |
-| 字体 | **真像素字体已接入并验证**（第 5 节），正文可切阅读层 |
+| 字体 | **真像素字体已接入并验证**（第 5 节）；像素字只用于结构性文字，正文走中文黑体 |
+| 实现层级 | **皮肤式**：8bit 是外壳与交互，底层仍是正常文档（用户第四轮确认） |
 
 ### 第二轮修订记录（针对用户反馈）
 
@@ -40,23 +42,56 @@
 | 开机需等待输入 | 自检播完 520ms 后**自动进入主页** |
 | 需要 8bit 显像管质感 | 新增 `.crt` 三层质感（扫描线 / 荫罩点阵 / 暗角）+ `.crt-glow` 辉光 + `.crt-flicker` 刷新微抖 + `.crt-on` 开机亮线张开 |
 
+### 第四轮修订记录（本轮：用户七条反馈，逐条落实）
+
+| # | 用户反馈 | 处理 | 落点 |
+|---|----------|------|------|
+| 1 | 移除所有游戏术语，各场景按正常方案命名 | 场景改名：`WORLD 1-1`/`STAGE`/`TITLE` 全部消失；统计不再叫 SCORE/HEARTS；`STAGE 03`/`LOCKED`/`SELECT STAGE`/`PAUSED`/`加心` 等一并删除。并加了**术语门**用例，逐页扫描禁用词表 | `scenes/*`、`e2e/gates.mjs` |
+| 2 | 不要游戏主菜单式初始页；用 8bit tab 栏做浏览页 | 删除 `TitleScene`。新增**主页**（最新文章 + 分组集合 + 标签集合 + 统计）与 **8bit tab 栏**（主页 / 文章 / 关联 / 关于）；tab 是历史栈的栈底，切换用 `resetTo` 清空历史 | `scenes/HomeScene.vue`、`ui/TabBar.vue`、`ui/tabs.ts` |
+| 3 | 暂停菜单具体化 | 九行：继续 / 搜索 / 音效 / 返回上一页 / 转到下一页 / 登录（或退出登录）/ 编辑文章（登录后）/ 设置 / 返回主菜单。搜索是真检索（调 `/api/search/`）；登录是与暂停菜单同级的**独立弹窗**，走真实 `POST /api/auth/token`；**信号强度设置删除**，固定最高档 | `ui/PauseMenu.vue`、`ui/LoginDialog.vue`、`ui/SettingsDialog.vue`、`ui/auth.ts` |
+| 4 | 焦点同时有粗边框和闪烁光标，视觉冲突 | 焦点收敛为**唯一一套**：浅蓝底 + 盒子内侧、垂直居中的左右两块闪烁方块。删掉所有场景自写的 `outline` / `border-left: 8px` / `inset` 描边；酸门新增「焦点无额外描边、边框保持 3px」断言 | `styles/pixel.css`、`e2e/gates.mjs` |
+| 5 | 文章页：接 markdown、宽度自适应、去掉左侧竖列、快捷键指南固定在底部 | 接 `markdown-it`（`html:false`，链接协议白名单）；容器只设上限不写死像素；左侧作者/点赞/评论竖列改成**横向操作条**（作者并入元信息行）；快捷键指南做成 `position: sticky; bottom: 0` 的细条，常驻屏幕底部 | `ui/MarkdownBody.vue`、`scenes/ArticleScene.vue` |
+| 6 | 图片容器 + 列表卡片显示封面 | 新增 `ImageFrame`：像素画框 + 画框上的抖动网点；无封面时用**同尺寸**抖动占位块，因此有/无封面混排时封面区高度完全一致 | `ui/ImageFrame.vue`、`scenes/ArticleListScene.vue` |
+| 7 | 列表保留两列，但方向键按视觉相邻移动；翻页改 PgUp/PgDn 并加滚动动效 | 新增 `spatialIndex()`：←→ 走同行相邻列、↑↓ 走同列相邻行，首行再往上把焦点交给标签栏；翻页键改为 PgUp/PgDn（方向键专心做焦点移动），配 `steps()` 整屏滚动动效，到边界则抖动提示 | `ui/focus.ts`、`scenes/ArticleListScene.vue`、`styles/pixel.css` |
+
+本轮另外补的三件事：
+
+- **场景栈升级为真正的历史栈**（`history` + `cursor`），否则「返回上一页 / 转到下一页」这两行没东西可接。
+- **键盘焦点自动滚进视野**（`pad.ts` 的 `ensureFocusedVisible`）：焦点是我们自己用 class 画的，不是 DOM 焦点，
+  浏览器不会帮我们滚动，页面一长键盘用户就会「焦点跑到屏幕外」。
+- **样张数据源开关 `?demo=1`**：真实库里可能是重复标题、没有封面图的测试数据，而设计评审要看的恰恰是
+  「有封面 / 无封面混排」这类形态。默认永远优先真接口。
+
 ---
 
 ## 3. 样机结构
 
 ```
 design/icespark-prototype/
-├── public/fonts/             # Ark Pixel 12px 像素字体（gitignored，约 738KB）
-├── src/styles/tokens.ts      # 唯一调色板（白底浅蓝）+ 场景定义
-├── src/styles/pixel.css      # 像素铁律 + CRT 显像管质感
-├── src/ui/pad.ts             # 手柄输入层（方向键/A/B）+ 打字机 + 计数滚动
-├── src/ui/scene.ts           # 场景栈 + 整屏像素转场
-├── src/ui/PixelAvatar.vue    # 头像降采样 + 色彩量化 → 统一成「机器居民」
-├── src/ui/PixelDialog.vue    # RPG 对话框（全站唯一的输入/提示形态）
-├── src/scenes/BootScene.vue  # 开机自检（BIOS → LOADING → 自动进主页）
-├── src/scenes/TitleScene.vue # 主菜单（8bit 选项板，含锁定项）
-├── src/scenes/WorldScene.vue # 文章列表（WORLD 1-1，关卡卡 + 分页）
-└── src/scenes/StageScene.vue # 文章详情（关卡牌开场 + 双分辨率 + 加心）
+├── public/fonts/               # Ark Pixel 12px 像素字体（gitignored，约 738KB）
+├── e2e/smoke.mjs               # 交互回归：纯键盘路线 / 纯鼠标路线 / 减动效（57 项断言）
+├── e2e/gates.mjs               # 回归门：配色 / 焦点 / 术语 / 存储键 / 独立性（18 项断言）
+├── e2e/shots.mjs               # 出图脚本（23 张）
+├── src/styles/tokens.ts        # 唯一调色板（白底浅蓝）+ 场景定义
+├── src/styles/pixel.css        # 像素铁律 + CRT 质感 + 唯一焦点样式 + 图片画框 + 翻页动效
+├── src/data/api.ts             # 数据层：真接口 + 离线样张回退 + ?demo=1 开关
+├── src/ui/pad.ts               # 输入层：手柄键位、消费语义、焦点分区、焦点自动滚入视野
+├── src/ui/scene.ts             # 历史栈（history + cursor）+ 整屏像素转场
+├── src/ui/tabs.ts              # 标签页定义 + 浏览状态（翻页/筛选跨往返保留）
+├── src/ui/auth.ts              # 登录态：POST /api/auth/token（form-urlencoded）+ GET /api/auth/me
+├── src/ui/focus.ts             # 共享焦点模型 + 栅格「视觉相邻」移动
+├── src/ui/prefs.ts             # 音效 / 每页条数 / 动效（信号强度已移除，固定最高档）
+├── src/ui/sfx.ts               # WebAudio 方波音效（零音频资源）
+├── src/ui/TabBar.vue           # 8bit 标签栏
+├── src/ui/PauseMenu.vue        # 菜单九行 + 弹内搜索
+├── src/ui/LoginDialog.vue      # 登录弹窗（真实接口，失败显示后端 detail）
+├── src/ui/SettingsDialog.vue   # 设置弹窗（音效 / 每页条数 / 动效）
+├── src/ui/MarkdownBody.vue     # markdown-it 渲染 + 像素外壳样式
+├── src/ui/ImageFrame.vue       # 像素画框图片容器（无图时同尺寸占位）
+├── src/ui/SceneHead.vue        # 场景页头（时钟 + 页面名）
+├── src/ui/PixelAvatar.vue      # 头像降采样 + 色彩量化
+├── src/ui/PixelDialog.vue      # RPG 对话框
+└── src/scenes/                 # BootScene / HomeScene / ArticleListScene / LinksScene / AboutScene / ArticleScene
 ```
 
 跑起来：
@@ -66,13 +101,14 @@ cd design/icespark-prototype && npm install && npm run dev
 # 代理已指向 http://localhost:8002（真实后端），连不上自动回退演示数据
 ```
 
-操作：`↑↓←→` 移动　`A/Enter/Z` 确认　`B/Esc/X` 返回　右上角 `A`/`B` 按钮切调色板。
+操作：`↑↓←→` 移动　`PgUp/PgDn` 翻页与整屏滚动　`Enter` 确认　`Esc` 返回　`P` 菜单　`Q/E` 切标签页。
+（键盘与鼠标完全等价，`e2e/smoke.mjs` 用两条独立路线各跑一遍验收。）
 
 ---
 
 ## 4. 调色板：白底 + 浅蓝主体
 
-```dsh-ui 之外的纯文本说明（此处为文档）
+```text
 
 | 角色 | 色值 | 用途 |
 |------|------|------|
@@ -84,8 +120,7 @@ cd design/icespark-prototype && npm install && npm run dev
 | `--blue-500` | `#3D9BD0` | 主强调色（焦点框、进度条） |
 | `--ink` | `#123A52` | **文字与细描边专用**（深蓝，不作大面积底色） |
 | `--ink-soft` | `#5B8CA6` | 次要文字 |
-| `--spark` | `#FF5C8A` | 点赞（克制使用） |
-| `--coin` | `#FFC93C` | 成就 |
+| `--spark` | `#FF5C8A` | 点赞 / 错误提示（唯二的暖色，克制使用） |
 
 **关键纪律**：深色只用于文字与 1–3px 细描边；任何面积超过一小块的区域都必须走浅蓝或白。
 上一版正是违反了这条（`--ink` 被当底色用），才让画面"发黑发蓝"。
@@ -122,19 +157,24 @@ cd design/icespark-prototype && npm install && npm run dev
 
 | 机制 | 实现位置 | 说明 |
 |------|----------|------|
-| 场景栈 + 整屏转场 | `ui/scene.ts` | 闪白 / 竖条擦除 / 抖屏，取代路由跳转 |
+| 历史栈 + 整屏转场 | `ui/scene.ts` | `history` + `cursor`，前进/后退都成立；闪白 / 竖条擦除 / 抖屏 |
 | 转场不吞输入 | `ui/scene.ts` | 转场可被打断；同一目标连点只算一次，换目标则立刻结算上一次（不做输入排队） |
-| 手柄输入 | `ui/pad.ts` | 方向键/WASD、A=确认、B=返回、**P=START**；输入框内不劫持按键 |
+| 8bit 标签栏 | `ui/TabBar.vue` | 浏览类页面并列在顶部；tab 是历史栈的栈底，切换清空历史 |
+| 输入层 | `ui/pad.ts` | 方向键/WASD、Enter=确认、Esc=返回、**P=菜单**、**PgUp/PgDn=翻页**、**Q/E=切页**；输入框内不劫持按键 |
+| 焦点分区 | `ui/pad.ts` | 焦点在标签栏时内容层收不到按键，同一按键不会既走标签又走列表 |
 | 消费语义 | `ui/pad.ts` | 事件处理返回布尔值，**只有被消费才 preventDefault**，没接管的按键还给浏览器 |
+| 焦点自动滚入视野 | `ui/pad.ts` | 焦点是自绘的（不是 DOM 焦点），浏览器不会帮忙滚动，页面一长键盘用户就会跟丢 |
 | 共享焦点 | `ui/focus.ts` | 键盘与鼠标共用同一个焦点；键盘移动出声，鼠标划过静音（避免滑动时噪音轰炸） |
-| START 暂停菜单 | `ui/PauseMenu.vue` | 全局导航 + 全局设置的唯一入口，任何场景下 P / Esc / 点软按键都能呼出 |
-| 信号档 | `ui/prefs.ts` | 一个旋钮同时管 CRT 强度、字体层、动效强度（0 纯净 / 1 阅读 / 2 标准 / 3 原教旨） |
+| 视觉相邻导航 | `ui/focus.ts` | `spatialIndex()`：←→ 走同行、↑↓ 走同列，不是「一张一张依次切」 |
+| 暂停菜单 | `ui/PauseMenu.vue` | 全局导航 + 全局设置的唯一入口；搜索是真检索，不是占位 |
+| 登录弹窗 | `ui/LoginDialog.vue` | 真实 `POST /api/auth/token`（form-urlencoded），失败原样显示后端 `detail` |
 | 8bit 音效 | `ui/sfx.ts` | WebAudio 方波实时合成，**零音频资源**；默认静音，首次交互时询问 |
-| 闪烁选框焦点 | `pixel.css` `.focusable` | 左右各一块闪烁实心方块，无发光描边 |
+| 唯一焦点样式 | `pixel.css` `.focusable` | 浅蓝底 + 盒子内侧左右两块闪烁方块；**不允许任何场景再写第二套焦点** |
+| 像素画框 | `ui/ImageFrame.vue` | 画框叠抖动网点，让真照片也归入点阵世界；无图时同尺寸占位 |
+| markdown 渲染 | `ui/MarkdownBody.vue` | `markdown-it`（`html:false`）；标题/代码/表格走像素字，正文走中文黑体 |
 | 头像像素化 | `ui/PixelAvatar.vue` | canvas 降采样 + 量化到本站调色板，跨域失败回退到名字哈希生成图案 |
-| RPG 对话框 | `ui/PixelDialog.vue` | 逐字出字、▼ 闪烁提示、A 推进 / B 关闭 |
-| 关卡牌开场 | `StageScene.vue` | 进入文章先出 STAGE 牌，逐步出字后自动进场 |
-| 加心 | `StageScene.vue` | 点赞 = 8bit 心形跳动 + SCORE 计分，非现代点赞按钮 |
+| RPG 对话框 | `ui/PixelDialog.vue` | 逐字出字、▼ 闪烁提示、Enter 推进 / Esc 关闭 |
+| 翻页动效 | `pixel.css` `.turn-next/.turn-prev` | `steps()` 离散整屏位移，到边界改抖动提示 |
 | 离散动画 | `pixel.css` | 全局 `steps()`，时长只有 80/160/320ms |
 | 抖动图案 | `pixel.css` `.dither-*` | 像素世界唯一的「渐变」表达 |
 | 8bit 立体边框 | `pixel.css` `.bevel` | 左上高光 1px / 右下暗影 1px |
@@ -143,10 +183,48 @@ cd design/icespark-prototype && npm install && npm run dev
 
 ## 7. 验证结论（已用无头浏览器实测）
 
-### 第三轮：输入等价性 + 配色门（本轮）
+### 第四轮：七条反馈验收（本轮）
 
-输入等价性是用户提出的硬指标，已写成可执行用例 `design/icespark-prototype/e2e/parity.mjs`
-（`node e2e/parity.mjs`，需要 5173 的 dev server）。**当前 69 项断言全部通过。**
+两个可执行套件（都需要 5173 的 dev server）：
+
+```bash
+cd design/icespark-prototype
+node e2e/smoke.mjs     # 交互回归：57 项，全通过
+node e2e/gates.mjs     # 回归门：18 项，全通过
+node e2e/shots.mjs     # 出图 23 张 → design/icespark-shots-v3/
+```
+
+`smoke.mjs` 覆盖：
+
+| 用例组 | 覆盖内容 |
+|--------|----------|
+| 开机与主页 | 自动进入主页；最新文章 / 分组 / 标签 / 统计四块都在 |
+| 视觉相邻导航 | 两列栅格：`↓` 从 0 到 **2**（不是 1）、`→` 到 3、`←` 回 2 |
+| 翻页 | PgDn 从 PAGE 1/2 到 2/2，PgUp 回来；返回文章后页码不丢 |
+| 标签栏 | `↑` 顶到标签栏、`←→` 选页、Enter 进入、`Q/E` 直接切页 |
+| 文章页 | markdown 真的渲染出标题/代码块/表格；左侧竖列已删；操作条是横排；快捷键指南常驻且贴在屏幕底部（y+h > 800） |
+| 暂停菜单 | 8 行（未登录）/ 9 行（登录后）；无信号强度行；有返回上一页 / 转到下一页 |
+| 搜索 | 菜单内输入关键词出 6 条结果（真调 `/api/search/`） |
+| 设置 | 音效 / 每页条数 / 动效三项；无信号强度行 |
+| 登录 | 错账号 → 显示后端 `用户名或密码错误`；真账号 → 成功、菜单多出「编辑文章」、刷新后仍登录 |
+| 无障碍 | `prefers-reduced-motion` 下切页与导航照常可用 |
+| 纯鼠标 | 全程不碰键盘：切页 → 进文章 → 返回 → 翻页 → 开菜单 |
+| 控制台 | 无 JS 报错（故意触发的 401 已排除） |
+
+`gates.mjs` 覆盖五道门：
+
+| 门 | 断言 |
+|----|------|
+| 配色门 | 枚举样式表里全部 `var()`（16 个）逐个可解析；屏幕与卡片边框真的画出来；底色是白不是透明 |
+| 焦点门 | 焦点移动有**像素级差异**；底色浅蓝；左右各 8px 实心块；`blink-step` 关键帧；**无额外 outline、边框仍为 3px** |
+| 术语门 | 主页 / 文章 / 关联 / 关于 / 文章详情 / 菜单六个页面扫描 19 个禁用词表，零命中 |
+| 存储键门 | `localStorage` 键全部带 `synthspark` 前缀；动效开关真的改变 `data-motion` |
+| 独立性门 | 运行期资源请求都落在本站 `/api`，前端不猜后端内部实现 |
+
+### 第三轮：输入等价性 + 配色门（历史记录）
+
+以下断言属于**已重构掉的旧场景**（当时 69 项全绿），保留在此是为了留下判断依据；
+现行用例见上一小节的 `smoke.mjs` + `gates.mjs`。
 
 | 用例组 | 覆盖内容 |
 |--------|----------|
@@ -185,23 +263,46 @@ cd design/icespark-prototype && npm install && npm run dev
 | 控制台错误 | **无** |
 | 数据 | `● LIVE`，真实后端（3 Agent / 6 篇文章） |
 
+### 第四轮修掉的真实缺陷
+
+| # | 缺陷 | 根因 | 修法 |
+|---|------|------|------|
+| 8 | 列表卡片内容被裁掉 | 两列栅格每格 640+ 宽，16:9 封面就有 364px 高，两行 728px 直接超出可用高度 634px，卡片 `overflow:hidden` 把页脚裁了 | 卡片改横向（左封面 320×213 + 右文字），行高按内容走 |
+| 9 | 主页最后一段被切在屏幕外 | 首页内容 856px > 可视 798px，而焦点是自绘的，浏览器不会帮忙滚动 | 收紧主页间距与卡片比例；并加 `ensureFocusedVisible()` 让焦点永远滚进视野 |
+| 10 | 鼠标划过标签栏后方向键一直在切标签 | 「焦点在标签栏」这个状态没人负责撤销 | 指针离开标签栏即把焦点交还内容区；点击标签后也立即归还 |
+| 11 | 首次按键永远被音效询问吃掉 | 首屏第一次交互必定弹询问（设计如此），但 e2e 没处理，导致后续断言全错位 | 用例里显式先处理询问；并给两个按钮加 `data-testid` |
+| 12 | 「每页条数」设 8 时列表会溢出屏幕 | 8 篇 = 4 行，超出可视高度，而焦点移动不滚动，键盘用户够不到第二页底部 | 选项收敛为 4 / 6（都能一屏放下） |
+
+> 教训记录：这一轮最值得记的不是「改了什么」，而是**测出来的东西比看截图可靠得多**。
+> 缺陷 8、9、12 在截图里都「看起来正常」，是量了 `clientHeight` / `scrollHeight` 才发现的。
+
 ### 样机阶段发现、正式开发需处理的问题
 
-1. **正文是 Markdown 原文未渲染** —— 正式开发必须接 `MarkdownRenderer`（样机为纯文本直出）
+1. ~~正文是 Markdown 原文未渲染~~ → **本轮已接 `markdown-it`**；正式版再加 DOMPurify + 代码高亮
 2. `likes.getLikers` 等旧封装路径错误，见 `frontend/API-SURFACE.md` 第 14 节
 3. 头像量化依赖 canvas 读像素，跨域图会回退；正式版需后端支持同源或 CORS
-4. 场景切换目前不改变 URL，**正式版需解决深链接与 SEO**（建议场景 ↔ URL 双向映射）
+4. 场景切换目前不改变 URL，**正式版需解决深链接与 SEO**（历史栈已就位，接 vue-router 即可）
 5. 像素字体为 738KB 全量版本，正式版应子集化到 **123KB**（见第 5 节）
+6. 列表页「返回上一页」靠应用内历史栈，**浏览器后退键仍会直接退出站点**（正式版由 vue-router 接管）
+7. 评论提交、文章编辑仍是演示入口：`POST /api/comments` 匿名可用，编辑器未实现（本轮只保留入口）
 
-### 第三轮截图（`design/icespark-shots-v2/`，共 9 张）
+### 第四轮截图（`design/icespark-shots-v3/`，共 23 张）
 
-`1-boot` / `2-title` / `3-pause` / `4-world` / `5-article-px` / `6-article-action` /
-`7-dialog` / `8-read-layer` / `9-signal3-crt`。
+`1-boot` / `2-home` / `3-home-focus-group` / `4-posts` / `4b-card-focus-closeup` /
+`5-page-turn-mid` / `5b-page-2` / `6-tabbar-focus` / `7-article-top` / `8-article-markdown` /
+`9-article-actions-focus` / `10-article-comments` / `10b-keybar` / `11-links` / `12-about` /
+`13-pause` / `13b-pause-closeup` / `14-search` / `15-settings` / `16-login-error` /
+`17-home-live` / `18-mobile-posts` / `19-mobile-article`。
+
+其中 `17-home-live` 用的是真实后端（`● LIVE`），其余为 `?demo=1` 样张数据源 —— 真实库里是
+5 篇同标题的测试数据、且没有封面图，用它做设计评审看不出形态。
 
 ## 8. 尚待确定
 
 - **调色板 A / B 二选一**（或各取所长）—— 现在变量真的生效了，这一项才第一次真正可评
 - 8bit 音效默认静音的判断是否合适（现为首次交互询问）
-- 未实现场景：搜索（密码输入）、作者页（玩家档案）、个人中心、写作页、404（GAME OVER）、后台（DEBUG ROOM）
-- 移动端形态：窄屏下场景如何降级（当前样机已做单列回退，但未做触摸手势）
-- 浏览器后退键仍会直接退出站点（场景栈未与 history 同步）—— 正式版必须解决
+- 未实现页面：作者页、个人中心、写作/编辑页、404、后台
+- 搜索目前是菜单里的一个模式，是否要提升为独立标签页（现在共 4 个 tab）
+- 移动端形态：窄屏下已做单列回退（`18-mobile-posts` 实测可用），但未做触摸手势
+- 每页条数是否要重新开放 8（需要先解决「焦点移动带动滚动」之外的整屏容量问题）
+- 密码输入目前只有用户名 / 密码两项，未做注册与找回入口

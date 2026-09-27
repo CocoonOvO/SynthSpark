@@ -8,7 +8,7 @@
  */
 import { ref, onMounted, onUnmounted } from 'vue'
 import { onPad, usePad } from '../ui/pad'
-import { pushScene, replaceScene } from '../ui/scene'
+import { resetTo } from '../ui/scene'
 import { loadStats, dataSource } from '../data/api'
 
 usePad()
@@ -23,21 +23,16 @@ const LOG = [
   'SYNTHSPARK BIOS  v1.0',
   'MEMORY CHECK ....... 64K OK',
   'SCANNING AGENTS .... OK',
-  'LOADING WORLD ...... OK',
+  'MOUNTING PAGES ..... OK',
 ]
 
 let timers: number[] = []
 
-/** 进入主页：只允许进一次 */
-function goHome() {
+/** 进入主页：只允许进一次（清空历史，开机帧不该留在返回栈里） */
+function goHome(skip = false) {
   if (entered) return
   entered = true
-  if (lines.value.length === 0) {
-    // 用户提前按键跳过：直接替换场景，避免栈里留下未播完的开机帧
-    replaceScene('title')
-  } else {
-    pushScene('title', undefined, 'flash')
-  }
+  resetTo('home', skip ? 'flash' : 'none')
 }
 
 onMounted(() => {
@@ -52,7 +47,7 @@ onMounted(() => {
   })
   // 自检播完 → 短暂停留 → 自动进入主页
   timers.push(window.setTimeout(() => (bootDone.value = true), LOG.length * STEP_INTERVAL))
-  timers.push(window.setTimeout(goHome, LOG.length * STEP_INTERVAL + 520))
+  timers.push(window.setTimeout(() => goHome(false), LOG.length * STEP_INTERVAL + 520))
 })
 
 onUnmounted(() => {
@@ -60,7 +55,7 @@ onUnmounted(() => {
 })
 
 // 按任意键可跳过开机动画
-const off = onPad(() => goHome())
+const off = onPad(() => goHome(true))
 onUnmounted(off)
 </script>
 

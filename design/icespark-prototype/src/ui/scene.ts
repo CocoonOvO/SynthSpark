@@ -1,14 +1,16 @@
 /**
- * 场景切换器（SceneStack）
+ * 场景栈（SceneStack）
  *
- * 反传统核心：取代「页面路由 + 浏览器历史 + 无限纵向滚动」。
- * - 一个场景占据整屏，场景之间是整屏像素转场（闪白 / 竖条擦除 / 抖屏）
- * - 内容超出时不拉长整页，而是屏内滚动或分页
- * - B 键返回上一场景，语义上等同老游戏的「退回」
+ * 一屏一个场景，场景之间是整屏像素转场。与上一版的区别：
+ * 现在这是一个**真正的历史栈**（history + cursor），而不是只能前进后退的线性栈，
+ * 因此「返回上一页 / 转到下一页」可以像浏览器一样来回走。
+ *
+ * - 标签页（主页 / 文章 / 关联 / 关于）是栈底（resetTo 清空历史）
+ * - 文章详情是压在上面的临时页（pushScene）
+ * - 前进分支在压入新场景时被截断（浏览器语义）
  *
  * 转场可被打断，且**不吞按键**：
- * - 遮罩出现到内容切换之间的这段时间（120ms）锁输入 —— 此刻屏幕上还是旧场景，
- *   对旧场景的操作没有意义
+ * - 遮罩出现到内容切换之间的这段时间（120ms）锁输入 —— 此刻屏幕上还是旧场景
  * - 内容一换完就立刻解锁 —— 用户看到新场景后马上就能操作，不必等淡出动画结束
  * - 同一个目标在转场中被重复触发只算一次（防连点），换一个目标则立刻结算上一次
  *   （「转场期间吞掉输入」是设计禁令，这里用去重 + 可打断替代排队）
@@ -26,40 +28,79 @@ export interface SceneFrame {
   transition: TransitionKind
 }
 
-export const sceneStack = ref<SceneFrame[]>([{ id: 'boot', transition: 'none' }])
+let uidSeq = 0
+
+function mk(id: string, param?: string, transition: TransitionKind = 'none'): SceneFrame & { uid: number } {
+  uidSeq += 1
+  return { id, param, transition, uid: uidSeq }
+}
+
+/** 历史栈 + 游标 */
+export const history = ref<Array<SceneFrame & { uid: number }>>([mk('boot')])
+export const cursor = ref(0)
+
 export const isTransitioning = ref(false)
 export const transitionKind = ref<TransitionKind>('none')
 
-export const currentScene = computed(() => sceneStack.value[sceneStack.value.length - 1])
-export const canGoBack = computed(() => sceneStack.value.length > 1)
+export const currentScene = computed(() => history.value[cursor.value])
+export const canGoBack = computed(() => cursor.value > 0)
+export const canGoForward = computed(() => cursor.value < history.value.length - 1)
 
-/** 进入新场景。key 用目标本身，同一目标连点只执行一次 */
+/**
+ * 场景实例 key：只有「不同文章」才需要重建组件实例。
+ * 不用 uid —— 否则从文章返回列表会重建列表，翻页进度就丢了（改由 postsView 记住）。
+ */
+export const sceneKey = computed(() => {
+  const f = currentScene.value
+  return `${f.id}:${f.param ?? ''}`
+})
+
+/** 进入新场景（会截断前进分支，浏览器语义） */
 export function pushScene(id: string, param?: string, transition: TransitionKind = 'flash') {
   if (currentScene.value.id === id && currentScene.value.param === param) return
   runTransition(transition, `push:${id}:${param ?? ''}`, () => {
-    sceneStack.value = [...sceneStack.value, { id, param, transition }]
+    history.value = [...history.value.slice(0, cursor.value + 1), mk(id, param, transition)]
+    cursor.value = history.value.length - 1
   })
 }
 
-/** 返回上一场景 */
+/** 返回上一页 */
 export function popScene(transition: TransitionKind = 'wipe') {
   if (!canGoBack.value) return
-  runTransition(transition, `pop:${sceneStack.value.length}`, () => {
-    sceneStack.value = sceneStack.value.slice(0, -1)
+  runTransition(transition, `back:${cursor.value}`, () => {
+    cursor.value -= 1
+  })
+}
+
+/** 转到下一页（历史里的前进分支） */
+export function goForward(transition: TransitionKind = 'wipe') {
+  if (!canGoForward.value) return
+  runTransition(transition, `forward:${cursor.value}`, () => {
+    cursor.value += 1
+  })
+}
+
+/** 回到某个根场景（标签页切换）：清空历史 */
+export function resetTo(id: string, transition: TransitionKind = 'wipe', param?: string) {
+  if (currentScene.value.id === id && cursor.value === 0) return
+  runTransition(transition, `reset:${id}`, () => {
+    history.value = [mk(id, param)]
+    cursor.value = 0
   })
 }
 
 /** 回到根场景（开机） */
 export function resetScene(transition: TransitionKind = 'shake') {
-  runTransition(transition, 'reset', () => {
-    sceneStack.value = [{ id: 'boot', transition: 'none' }]
-  })
+  resetTo('boot', transition)
 }
 
-/** 直接替换当前场景（用于开机被跳过等场景） */
+/** 直接替换当前场景（用于开机被跳过等场景），不产生历史 */
 export function replaceScene(id: string, param?: string) {
   settleTransition(false)
-  sceneStack.value = [...sceneStack.value.slice(0, -1), { id, param, transition: 'none' }]
+  const next = history.value.slice(0, cursor.value)
+  next.push(mk(id, param))
+  history.value = next
+  cursor.value = next.length - 1
 }
 
 /** 正在进行的转场：key 用于去重，apply 是内容切换，timers 用于打断时清理 */
@@ -135,6 +176,11 @@ export function scrollScreenBy(deltaY: number): boolean {
   const before = el.scrollTop
   el.scrollBy({ top: deltaY, behavior: 'auto' })
   return el.scrollTop !== before
+}
+
+/** 滚回顶部（切场景时用） */
+export function scrollScreenTop() {
+  screenScroller.value?.scrollTo({ top: 0, behavior: 'auto' })
 }
 
 /** 状态栏时钟 */
