@@ -136,6 +136,16 @@ try {
   await page.waitForTimeout(220)
   check('⑥ J 打开跳页输入框', (await page.locator('[data-testid="jump-input"]').count()) === 1)
   await shot('5-jump')
+  // 跳页框里的 ESC 只该关框：它若同时被全局收到，就会「关掉输入框又弹出菜单」
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(260)
+  check(
+    '⑥ 跳页框里 ESC 只关框、不开菜单',
+    (await page.locator('[data-testid="jump-input"]').count()) === 0 &&
+      (await page.locator('[data-testid="pause"]').count()) === 0
+  )
+  await page.keyboard.press('j')
+  await page.waitForTimeout(220)
   await page.fill('[data-testid="jump-input"]', '99')
   await page.keyboard.press('Enter')
   await settle()
@@ -200,6 +210,17 @@ try {
   const chipCls = await page.locator('[data-testid^="chip-"]').first().getAttribute('class')
   check('⑦ G 聚焦分组/标签芯片', /is-focused/.test(chipCls || ''), chipCls || '')
   await shot('9-article-chips')
+  // 分区内的 ESC 先退出一层（这里不该开菜单），这正是两趟派发要处理的边界
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(240)
+  check(
+    '⑦ 芯片区里 ESC 先退出分区、不开菜单',
+    !/is-focused/.test(
+      (await page.locator('[data-testid^="chip-"]').first().getAttribute('class')) || ''
+    ) && (await page.locator('[data-testid="pause"]').count()) === 0
+  )
+  await page.keyboard.press('g')
+  await page.waitForTimeout(200)
   const chipText = (await page.locator('[data-testid^="chip-"]').first().innerText()).replace(/[#▣→\s]/g, '')
   await page.keyboard.press('Enter')
   await settle(560)
