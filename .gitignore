@@ -168,3 +168,9 @@ design/icespark-prototype/*.mjs
 design/icespark-prototype/public/fonts/*.woff2
 # 补数据脚本现画的封面（每次跑都重新生成）
 design/icespark-prototype/scripts/_covers/
+
+# icespark 生产前端：源码、生成物（src/api/schema.d.ts）与锁文件入库；依赖与构建/测试产物不入库
+icespark/dist/
+icespark/test-results/
+icespark/playwright-report/
+icespark/.eslintcache

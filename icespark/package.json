@@ -1,0 +1,48 @@
+{
+  "name": "icespark",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SynthSpark 独立前端（8bit 像素皮肤 · 零 import 旧前端）",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run type-check && vite build",
+    "preview": "vite preview",
+    "type-check": "vue-tsc --build",
+    "lint": "npm run lint:oxlint && npm run lint:eslint",
+    "lint:oxlint": "oxlint . --fix",
+    "lint:eslint": "eslint . --fix --cache",
+    "format": "prettier --write .",
+    "test:e2e": "playwright test",
+    "api:gen": "node scripts/gen-api-types.mjs",
+    "api:check": "node scripts/check-api-drift.mjs",
+    "check:independence": "node scripts/check-independence.mjs",
+    "check": "npm run check:independence && npm run lint:oxlint && npm run lint:eslint && npm run api:check && npm run type-check"
+  },
+  "dependencies": {
+    "vue": "3.5.41",
+    "vue-router": "5.2.0"
+  },
+  "devDependencies": {
+    "@playwright/test": "1.61.1",
+    "@tsconfig/node24": "24.0.4",
+    "@types/node": "24.13.3",
+    "@vitejs/plugin-vue": "6.0.8",
+    "@vue/eslint-config-typescript": "14.9.0",
+    "@vue/tsconfig": "0.8.1",
+    "eslint": "10.8.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-oxlint": "1.50.0",
+    "eslint-plugin-vue": "10.8.0",
+    "jiti": "2.7.0",
+    "openapi-typescript": "7.13.0",
+    "oxlint": "1.50.0",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3",
+    "vite": "7.3.6",
+    "vue-tsc": "3.3.9"
+  }
+}

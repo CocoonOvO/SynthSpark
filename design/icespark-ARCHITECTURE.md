@@ -3,7 +3,8 @@
 > 这份文档是**决定记录**，也是后续开发的**可执行约束**。
 > 第 3 节里的每一条都会落成 `scripts/` 下的脚本和 `e2e/` 下的用例，不是建议。
 >
-> 状态：已定稿 · 尚未开工（当前阶段仍在优化 `design/icespark-prototype/` 样机）
+> 状态：**P0 骨架已落地**（`icespark/` 独立 app · 构建 / 类型检查 / 两道门跑通，见 §13）；
+> P1 设计系统起进入真实页面开发。`design/icespark-prototype/` 仍留作视觉与交互的参考实现。
 
 ---
 
@@ -132,7 +133,7 @@ icespark/
 
 | 阶段 | 覆盖旧前端的 | 说明 |
 |---|---|---|
-| **P0 骨架** | — | 独立性门 / 契约漂移门 / lint / vue-tsc / e2e 跑通 |
+| **P0 骨架** ✅ | — | 独立性门 / 契约漂移门 / lint / vue-tsc / e2e 跑通（**已落地**，见 §13） |
 | **P1 设计系统** | — | tokens 构建期生成、pixel.css、CRT、字体子集、M/F/S 目录与 lint 规则 |
 | **P2 交互内核** | — | 手柄层 + 共享焦点 + 作用域、场景转场、对话框、菜单 |
 | **P3 公开阅读** | HomeView 559 · PostListView 1373 · PostDetailView 1499 · About 286 · Links 288 · 404 460 | 路由化 + markdown-it 渲染正文 |
@@ -179,6 +180,12 @@ icespark/
   并由 `e2e/gates.mjs` 的「存储键门」断言兜底（枚举 localStorage，任何不带前缀的键直接失败）。
 - **部署不共享**：`icespark/` 产出自己的 `dist/`。
   分流规则（`/` → icespark，`/admin` 或旧路径 → frontend）由部署方决定，仓库里不写配置——与 AGENTS.md 第 9 节一致。
+- **开发端口 5175**：5173 是样机、5174 被同机别的项目占着（本轮实测），所以 icespark 固定在 5175。
+  等它接管线上服务时，AGENTS.md 第 2、3 节的目录表与端口表要一并更新（那时才不只是"另起一个 app"）。
+- **history 模式要配 SPA 回退**：这是本轮的第二个决定（用户选的方案 A）。
+  真 URL 换来的是「刷新 `/post/xxx` 必须由部署端回退到 `index.html` 而不是 404」。
+  仓库不含部署配置，所以这条要求写在三处：`vite.config.ts` 注释、`router/index.ts` 注释、本节。
+  `e2e/skeleton.spec.ts` 里有一条用例专门验「dev 下深链不白屏」，线上回退失效时它是第一道提示。
 
 ---
 
@@ -186,6 +193,9 @@ icespark/
 
 **P0 + P1 先做**：骨架、三道门（独立性 / 契约漂移 / 配色）、设计系统，
 跑通 `dev` / `build` / `type-check` / `e2e`，再进 P2。
+
+实际起手（用户定的口径）：**P0 只做最小集** —— 骨架 + 独立性门 + 契约漂移门 + 一组骨架 e2e，
+**设计系统与配色门留到 P1**。理由是先让"独立"这件事可验证，再谈好看；配色门离开真实样式表也无从验起。
 
 ---
 
@@ -590,3 +600,99 @@ type Handler = (a: PadAction, consumed: boolean) => boolean | void
   文章页还只看字段不看加载结果。收到 `ui/cover.ts` 一处之后，三页行为才第一次真正相同。
 - **`<img>` 与容器的关系要早定**：装饰伪元素只能挂容器，而「容器要不要渲染」直接决定了
   「无图」在 DOM 里是「一个空节点」还是「没有节点」——后者才能让样式和断言都干净。
+
+---
+
+## 13. P0 落地记录（新增）
+
+用户定的两条起手口径：**只做骨架 + 两道门**（设计系统与配色门留到 P1）；路由用 **history 模式 + 部署端 SPA 回退**。
+
+### 13.1 落地了什么
+
+```
+icespark/
+├── package.json                  # 独立 app：2 运行时 + 17 开发依赖，全部精确锁版本
+├── tsconfig{,.app,.node,.e2e}.json · vite.config.ts · eslint.config.ts · .oxlintrc.json
+├── playwright.config.ts · index.html · env.d.ts · .env.example · .prettierignore
+├── scripts/
+│   ├── lib/openapi.mjs           # 取契约 + 生成类型（两个脚本共用）
+│   ├── gen-api-types.mjs         # openapi.json → src/api/schema.d.ts
+│   ├── check-api-drift.mjs       # 契约漂移门
+│   └── check-independence.mjs    # 独立性门（含 --selftest）
+├── e2e/skeleton.spec.ts          # 7 条骨架用例
+└── src/
+    ├── main.ts · App.vue
+    ├── api/client.ts + schema.d.ts(生成)
+    ├── router/{index,routes,types}.ts
+    ├── scene/presenter.ts
+    ├── styles/base.css
+    └── views/{HomeView,NotFoundView}.vue
+```
+
+一句话：这一轮交付的是**能跑、能查、能挡的空壳**，刻意没有任何设计（`base.css` 里一个颜色值都没有，防止出现"先用后定"的散装色板）。
+
+`scene/presenter.ts` 只有 50 行左右，不是把样机那 153 行搬了个位置，而是**职责被砍掉了**：
+导航、历史、返回栈全部交给 vue-router，presenter 只剩「把 `meta.scene` 写到外壳根节点的 `data-scene` 上」这一件事。
+约定 3 说的"降级"就是这个意思。
+
+### 13.2 独立性门：九条规则 + 15 个自测用例
+
+| 规则 | 挡住的 |
+|---|---|
+| `EXTERNAL_IMPORT` | 相对导入或 `@` 别名指到 `icespark/` 之外（偷偷 import 旧前端） |
+| `FORBIDDEN_PACKAGE` | element-plus / prismjs / refractor / axios 等旧前端专有依赖 |
+| `UNDECLARED_PACKAGE` | 用了没在 `package.json` 声明的包 |
+| `UNAPPROVED_PACKAGE` | 声明了但不在架构选型白名单里 |
+| `STATIC_EDITOR_IMPORT` | `@milkdown/*` 被静态 import（编辑器会混进阅读 bundle） |
+| `LAYER_VIOLATION` | `signal/` 反向 import `machine/` |
+| `STORAGE_KEY` | 存储键没带 `synthspark` 前缀 |
+| `LEGACY_NAMING` | 废弃命名残留（与 AGENTS.md 第 1 节同一口径） |
+| `APP_IS_NOT_STANDALONE` | 引 workspace / 包名不对 / 依赖指向仓库里别的目录（`file:../frontend`） |
+
+三条口径值得记下来：
+
+- **白名单是"预先批准"，不是"当前用到"**：pinia、markdown-it、highlight.js、`@milkdown/*`、playwright、vitest 现在就写进白名单，
+  下一轮加依赖不必回头改门；反过来，只要出现白名单外的包就失败 —— 生态污染在第一天就堵住。
+- **门自己要有自测**：`--selftest` 把 15 个反例/正例喂给同一套判定函数。
+  **它第一次跑就抓到了门自己的 bug**：自测里的文件路径多拼了一层 `src/`，导致"逃出 icespark"这条反例反而不被判出来。
+  一个永远打 PASS 的门比没有门更危险 —— 因为它会让人以为查过了。
+- **已知边界写在脚本注释里**：存储键门只看字面量（`localStorage.setItem('x')`），
+  常量传递的键靠 P2 的运行时门（枚举 localStorage）兜底，不假装自己全覆盖。
+
+### 13.3 契约漂移门
+
+实测契约：**63 paths / 89 operations / 50 schemas**，生成物 6179 行，`sha256:c0a63327…`。
+生成物进仓库、进 review；指纹算在**规范化 JSON** 上，后端换序列化格式不会误报，任何一个字段变化都会变。
+
+退出码分三档，对 CI 意义不同：`0` 一致 · `1` 漂移或生成物缺失 · `2` 拿不到契约（后端没跑 / 路径不对）。
+把"后端没跑"和"契约变了"混成一个失败码，是这类门最常见的坏味道。
+
+### 13.4 反例验证：门真的会响
+
+本轮不只跑绿灯，还往真实树上注入了三次**故意**的错误，确认每条门各自会失败：
+
+| 注入 | 门 | 结果 |
+|---|---|---|
+| 往 `schema.d.ts` 追加一行类型 | 契约漂移门 | `FAIL 第 6180 行起（行数 6181 → 6179）` |
+| 在 `src/api/client.ts` 里 import `../../../frontend/src/api/http` | 独立性门 | `FAIL src 内零外部 import —— 1 处` |
+| 在 e2e 用例里写 `const n: number = 'x'` | vue-tsc（含 `tsconfig.e2e.json`） | `error TS2322` |
+
+三次注入后逐字节还原并复验绿灯。**只跑绿灯的门等于没门**：它证明不了"坏了会被发现"。
+
+### 13.5 顺手定下的细节
+
+- **e2e 从第一天就在**（7 条，连跑三次稳定）：验真 URL、后退键、404 兜底与回显原地址、表现层归属、正文可选中且整页无 canvas、`/api` 没被 SPA 回退吃掉、运行期无 JS 报错。
+  其中一条写过一版**假断言**（"兜底页是懒加载 chunk"永远为真），已删 —— 骨架用例只留能失败的断言。
+- **依赖口径**：全部 `--save-exact`，版本与仓库已有版本对齐（vue 3.5.41 / vite 7.3.6 / vue-tsc 3.3.9 / vue-router 5.2.0 / playwright 1.61.1）。
+  `jiti`（eslint 读 TS 配置的硬需求）、`@types/node` 是实测缺了就跑不起来才补的，版本抄的旧前端。
+- **`.prettierignore` 把生成物排除**，`format` 改成 `prettier --write .`：
+  漂移门是逐字节比对，谁顺手 prettier 一下 `schema.d.ts`，门就会全红 —— 这类"工具互相打架"要提前掐掉。
+- 端口 5175（5173 样机 / 5174 被同机别的项目占用），写在 §8。
+
+### 13.6 没做的事（明确留给下一轮）
+
+- **P1 设计系统**：tokens.ts → tokens.generated.css（构建期生成）、像素字体子集、pixel.css / crt.css、`machine/` `frame/` `signal/` 三个目录与对应 lint 规则。
+- **配色门 / parity / a11y**：都依赖真实样式与交互，跟 P1、P2 一起做；现在写只能是空转。
+- **vitest**：本轮没有可单测的东西，装上就是摆设。
+- **三个菜单链接的落点**（`/write`、`/profile?tab=settings`、`/profile?tab=siteConfig`）：查询参数还是独立路由，等 Profile 视图动工时再定。
+- **调色板 A/B 终选**：仍挂在 `design/README.md` 的待定项里。

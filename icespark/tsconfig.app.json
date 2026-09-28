@@ -1,0 +1,16 @@
+{
+  "extends": "@vue/tsconfig/tsconfig.dom.json",
+  "include": ["env.d.ts", "src/**/*", "src/**/*.vue"],
+  "compilerOptions": {
+    // 数组/对象下标访问也要求判空：路由参数、API 响应里最容易出这种错
+    "noUncheckedIndexedAccess": true,
+
+    // 路径别名，与 vite.config.ts 的 resolve.alias 保持一致
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
+    // vue-tsc --build 的增量信息写进 node_modules，别污染仓库根目录
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.app.tsbuildinfo"
+  }
+}

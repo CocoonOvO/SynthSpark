@@ -1,0 +1,11 @@
+// e2e 用例的 tsconfig：既要 DOM（page.evaluate 的回调在浏览器里跑），也要 Node 类型
+{
+  "extends": "@vue/tsconfig/tsconfig.dom.json",
+  "include": ["e2e/**/*.ts", "playwright.config.ts"],
+  "compilerOptions": {
+    // @vue/tsconfig 默认把 types 清空，这里只补 Node（playwright 的 API 是显式 import 的）
+    "types": ["node"],
+    "noEmit": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.e2e.tsbuildinfo"
+  }
+}
