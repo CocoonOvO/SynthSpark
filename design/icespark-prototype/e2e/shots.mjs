@@ -256,6 +256,20 @@ async function focusRow(page, id) {
   await page.close()
 }
 
+// 17b. 真实接口（LIVE）文章列表：这里才有「真上传的封面 + 无封面文字卡」混排
+// （真实库要先用 scripts/seed-live-posts.py 补几篇带封面的文章，否则整页都是文字卡）
+{
+  const page = await newPage()
+  await boot(page, { demo: false })
+  await page.keyboard.press('Tab')
+  await page.waitForTimeout(2200)
+  await shoot(page, '17b-posts-live')
+  await page.keyboard.press('PageDown')
+  await page.waitForTimeout(1200)
+  await shoot(page, '17c-posts-live-page2')
+  await page.close()
+}
+
 // 18. 窄屏（移动端）：验证「左侧竖列改横排」之后文章页是否还能读
 {
   const page = await newPage({ width: 430, height: 900 })

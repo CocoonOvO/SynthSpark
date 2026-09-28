@@ -283,7 +283,7 @@ node e2e/smoke.mjs     # 交互回归：59 项（带 PROBE_USER/PROBE_PW 则 63 
 node e2e/gates.mjs     # 回归门：21 项，全通过
 node e2e/round5.mjs    # 第五轮 8 条：41 项，全通过
 node e2e/round6.mjs    # 第六轮 5 条 + 第七轮：50 项，全通过（含超管菜单、TAB 遍历、无封面版式、标题不截断）
-node e2e/shots.mjs     # 出图 29 张 → design/icespark-shots-v3/
+node e2e/shots.mjs     # 出图 31 张 → design/icespark-shots-v3/
 ```
 
 `smoke.mjs` 覆盖：
@@ -464,17 +464,21 @@ node e2e/shots.mjs     # 出图 29 张 → design/icespark-shots-v3/
    现在走的是同一条 `vue-router` 历史
 7. 评论提交、文章编辑仍是演示入口：`POST /api/comments` 匿名可用，编辑器未实现（本轮只保留入口）
 
-### 截图（`design/icespark-shots-v3/`，共 29 张）
+### 截图（`design/icespark-shots-v3/`，共 31 张）
 
 `1-boot` / `2-home` / `3-home-focus-group` / `4-posts` / `4b-card-focus-closeup` /
 `4c-group-row-focus` / `4d-jump-box` / `4e-foot` / `5-page-turn-mid` / `5b-page-2` /
 `6-tabbar-focus` / `7-article-top` / `8-article-markdown` / `9-article-actions-focus` /
 `9b-article-chips-focus` / `10-article-comments` / `10b-keybar` / `11-links` / `12-about` /
 `13-pause` / `13b-pause-closeup` / `14-search` / `15-settings` / `16-login-error` /
-`16b-card-no-cover` / `16c-cards-mixed` / `17-home-live` / `18-mobile-posts` / `19-mobile-article`。
+`16b-card-no-cover` / `16c-cards-mixed` / `17-home-live` / `17b-posts-live` / `17c-posts-live-page2` /
+`18-mobile-posts` / `19-mobile-article`。
 
 第六轮新增 `16b-card-no-cover`；第七轮把它改成**文字卡特写**，并加一张 `16c-cards-mixed`
 （同一张图里左文字卡、右封面卡，一眼能看出是两套排版而不是「有的卡缺图」）。
+第七轮还加了 `17b-posts-live` / `17c-posts-live-page2`：**真实接口**的文章列表
+（要先用 `scripts/seed-live-posts.py` 补几篇带封面的文章，否则整页都是文字卡）——
+这两张才是「真上传的封面 + 无封面文字卡」混排的样子。
 `e2e/round5.mjs` 与 `e2e/round6.mjs` 另把交互过程截图写到
 `design/icespark-shots-v3/round5/`（14 张）与 `round6/`（8 张，含超管菜单、TAB 焦点、无封面文字卡列表）。
 
