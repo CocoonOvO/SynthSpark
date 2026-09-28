@@ -196,6 +196,20 @@ function submitJump() {
   goPage(target - 1, target - 1 > pageIndex.value ? 1 : -1)
 }
 
+/**
+ * 筛选条是单行横向滚动（换取「绝不多占一行高度」）。
+ * 代价是超出的芯片要靠横向滚动才够得到，所以把滚轮借过来：
+ * 在筛选条上滚轮 = 横向滚这一条；这一条没得滚时立刻放手，让页面正常纵向滚动。
+ */
+function onRowWheel(e: WheelEvent) {
+  const el = e.currentTarget as HTMLElement
+  if (el.scrollWidth <= el.clientWidth) return
+  const d = Math.abs(e.deltaY) > Math.abs(e.deltaX) ? e.deltaY : e.deltaX
+  if (!d) return
+  e.preventDefault()
+  el.scrollLeft += d
+}
+
 // ── 键盘 ──
 
 const off = onPad((a) => {
@@ -398,7 +412,7 @@ const rangeText = computed(() => {
 
     <!-- 分组选择：一等公民，单独一行 -->
     <div class="frows">
-      <div class="frow" data-testid="group-row">
+      <div class="frow" data-testid="group-row" @wheel="onRowWheel">
         <span class="frow-cap px">分组</span>
         <button
           v-for="(o, i) in groupOptions"
@@ -414,7 +428,7 @@ const rangeText = computed(() => {
       </div>
 
       <!-- 标签行 -->
-      <div class="frow" data-testid="tag-row">
+      <div class="frow" data-testid="tag-row" @wheel="onRowWheel">
         <span class="frow-cap px">标签</span>
         <button
           v-for="(o, i) in tagOptions"

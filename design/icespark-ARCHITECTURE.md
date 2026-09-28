@@ -219,7 +219,8 @@ icespark/
   （没有这条规则，同一个方向键会既切标签又移动列表光标。）
 - 消费语义：handler 返回 `true` 才算被消费，**只有被消费才 `preventDefault`**，没接管的键还给浏览器。
 - `ensureFocusedVisible()`：焦点是自绘的（class，不是 DOM focus），浏览器不会帮忙滚动；
-  每次按键被消费后用 `requestAnimationFrame` 检查 `.is-focused` 是否在 `.screen-inner` 视野内，不在才 `scrollIntoView({ block: 'nearest' })`。
+  每次按键被消费后在 `requestAnimationFrame` 里 `scrollIntoView({ block: 'nearest', inline: 'nearest' })`。
+  （第 5 轮修正：原来只量纵向可见性，横条里的芯片滚不进来 —— 见 §11.5。）
 
 键位（正式版沿用）：
 
@@ -406,3 +407,10 @@ type Handler = (a: PadAction, consumed: boolean) => boolean | void
   修法不是调一处颜色，而是**把它写进焦点门**：已选中项被聚焦时底色必须变化。
 - **用例会过期，产品不一定有缺陷**：第 5 轮接上路由后，「减动效」用例仍假设「刷新回主页」，
   而刷新停在原地址恰恰是新行为。区别「用例过期」与「真回归」的证据是**控制台 + URL**，不是猜测。
+- **可见性是两个轴**：列表筛选条用 `overflow-x: auto` 换取「绝不多占一行高度」，
+  而 `ensureFocusedVisible` 当时只量纵向 —— 样张只有 9 个标签、不溢出，所以样机自测全绿；
+  换成真实数据（14 个标签、`scrollWidth` 1802 > `clientWidth` 1358）立刻暴露。
+  → 交给自己量就容易只量一半，交给 `scrollIntoView({ block: 'nearest', inline: 'nearest' })`
+  反而更省心：它逐层处理可滚动祖先，且已可见时是空操作。
+- **同一份数据源要覆盖到**：这条缺陷只在真实数据下出现、在样张下消失，
+  所以门里现在**两种数据源都跑**（样张验形态，真实数据验溢出与边界）。

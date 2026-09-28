@@ -147,6 +147,40 @@ await page.waitForTimeout(1400)
   check('已选中的分组芯片被聚焦时底色确实变了（选中态不吞焦点）', isFocused && unfocused !== focused, `${unfocused} -> ${focused}`)
 }
 
+// 焦点门第 7 条：横向滚动的筛选条（真实数据里 14 个标签会溢出），
+// 键盘把焦点移过去时也必须滚进视野 —— 只量纵向可见性是不够的。
+// 用真实数据源（不带 ?demo=1），因为样张只有 9 个标签、不会溢出。
+{
+  await page.goto(`${BASE}posts`, { waitUntil: 'networkidle' })
+  await page.waitForTimeout(2600)
+  const row = await page.evaluate(() => {
+    const el = document.querySelector('[data-testid="tag-row"]')
+    return el ? { sw: el.scrollWidth, cw: el.clientWidth } : null
+  })
+  if (!row) {
+    check('横向滚动的筛选条存在', false)
+  } else if (row.sw <= row.cw + 1) {
+    results.push(`SKIP  筛选条未溢出（${row.sw}/${row.cw}），跳过横向滚动断言`)
+  } else {
+    await page.keyboard.press('t') // 直达标签行
+    await page.waitForTimeout(200)
+    for (let i = 0; i < 15; i += 1) await page.keyboard.press('ArrowRight')
+    await page.waitForTimeout(400)
+    const vis = await page.evaluate(() => {
+      const el = document.querySelector('[data-testid="tag-row"]')
+      const chip = document.querySelector('[data-testid^="tag-"].is-focused')
+      if (!chip) return { ok: false, why: 'no-focused-chip' }
+      const a = el.getBoundingClientRect()
+      const b = chip.getBoundingClientRect()
+      return { ok: b.left >= a.left - 1 && b.right <= a.right + 1, why: `${Math.round(b.left)}..${Math.round(b.right)} in ${Math.round(a.left)}..${Math.round(a.right)}` }
+    })
+    check(`横向滚动条里焦点芯片会滚进视野（${row.sw}/${row.cw}）`, vis.ok, vis.why)
+  }
+  // 回到主页：后面的术语门假设自己从主页开始
+  await page.goto(`${BASE}?demo=1`, { waitUntil: 'networkidle' })
+  await page.waitForTimeout(2400)
+}
+
 // ── 3. 术语门 ──
 {
   const GAME_TERMS = [

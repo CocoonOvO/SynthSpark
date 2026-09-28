@@ -122,18 +122,17 @@ function emit(a: PadAction): boolean {
  * 为什么必须有：焦点是我们自己用 class 画的，不是 DOM 焦点，
  * 因此浏览器不会像 Tab 键那样自动把元素滚进视野。
  * 页面一长（主页 / 关于页 / 长文），键盘用户就会「焦点跑到屏幕外面去了」。
- * 只在元素真的看不见时才滚（block: 'nearest'），鼠标划过时元素必然可见，等于空操作。
+ * 写法上直接交给 `scrollIntoView({ block: 'nearest', inline: 'nearest' })`：
+ * 'nearest' 的语义是「已经在视野里就什么也不做」，因此不需要自己量可见性；
+ * 而且它会**逐层处理可滚动祖先** —— 列表的筛选条是单行横向滚动（overflow-x: auto），
+ * 只检查纵向的话，被挤到右边的标签永远滚不进来。
  */
 function ensureFocusedVisible() {
   if (typeof requestAnimationFrame === 'undefined') return
   requestAnimationFrame(() => {
     const el = document.querySelector<HTMLElement>('.screen-inner .is-focused')
     if (!el) return
-    const box = el.getBoundingClientRect()
-    const view = el.closest('.screen-inner')?.getBoundingClientRect()
-    if (!view) return
-    if (box.top >= view.top && box.bottom <= view.bottom) return
-    el.scrollIntoView({ block: 'nearest', behavior: 'auto' })
+    el.scrollIntoView({ block: 'nearest', inline: 'nearest', behavior: 'auto' })
   })
 }
 
