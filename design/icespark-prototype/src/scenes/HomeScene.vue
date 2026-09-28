@@ -474,11 +474,14 @@ const stats = computed(() => store.stats.value)
 
 .post.is-text .post-title {
   font-size: 18px;
-  -webkit-line-clamp: 3;
+  min-height: 0;
+  /* 同上：宁可卡片长高，也不切字 */
+  flex: 0 0 auto;
 }
 
 .post.is-text .post-intro {
-  flex: 1;
+  /* 收缩的是摘要：line-clamp 会补省略号，是有意的截断 */
+  flex: 0 1 auto;
   font-size: 13px;
   -webkit-line-clamp: 6;
 }
@@ -496,10 +499,10 @@ const stats = computed(() => store.stats.value)
   font-size: 15px;
   line-height: 1.45;
   margin: 0;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  /* 标题不截断（用户第七轮反馈）：标题长了卡片就长高，一行三张靠栅格拉伸齐平 */
+  min-height: 2.9em;
+  display: block;
+  overflow-wrap: break-word;
 }
 
 .post-intro {

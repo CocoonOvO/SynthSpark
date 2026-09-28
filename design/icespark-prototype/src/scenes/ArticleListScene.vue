@@ -718,15 +718,20 @@ const rangeText = computed(() => {
 }
 
 .grid {
-  flex: 1;
+  /* 不伸缩、也不收缩：卡片按内容排，多出来的高度留给 .foot 的 margin-top:auto（翻页条贴底）。
+     早先写的是 flex:1 + min-height:0 —— 内容比可用高度高时，栅格盒子会**比内容矮**，
+     超出的卡片会画到翻页条上面去（窄屏 + 长标题就能复现）。 */
+  flex: 0 0 auto;
   display: grid;
   /* 两列不变（用户要求），但卡片改成横向：1440 下一格宽 640+，
      竖排卡片会把封面撑到 360px 高，两行直接吃掉整屏 —— 横排才是这个宽度该有的形态 */
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  /* 行高按内容走：卡片被拉伸到整行高的话，卡片里会留一大块空白，很难看 */
-  grid-auto-rows: auto;
+  /* 行高按内容走：卡片被拉伸到整行高的话，卡片里会留一大块空白，很难看。
+     必须是 max-content 而不是 auto —— auto 轨道在「内容装不下栅格高度」时会被压缩，
+     卡片内容随之被 overflow:hidden 切掉（第七轮：窄屏 + 长标题就撞上了）。
+     max-content 不会被压缩，装不下就让整页滚。 */
+  grid-auto-rows: max-content;
   gap: 12px;
-  min-height: 0;
   align-content: start;
 }
 
@@ -878,19 +883,21 @@ const rangeText = computed(() => {
   font-size: 17px;
   line-height: 1.4;
   margin: 0;
-  /* 高度锁死两行：标题一行还是两行，卡片高度都一样，栅格才齐 */
+  /* 标题**不截断**（用户第七轮反馈：标题被吃掉比卡片高一点更糟）。
+     只给最矮两行的占位，标题写长了就让卡片按需要长高 —— 同一行由栅格拉伸对齐，
+     所以「卡片会长高」这件事不会把栅格弄乱，只是那一行整体变高。 */
   min-height: 2.8em;
-  display: -webkit-box;
-  -webkit-line-clamp: 2;
-  -webkit-box-orient: vertical;
-  overflow: hidden;
+  display: block;
+  /* 万一标题里是一长串没有空格的字符（URL 之类），也要在框内换行而不是横着溢出去 */
+  overflow-wrap: break-word;
 }
 
 /* 文字卡没有封面分担视线，标题可以更大、可以占三行 */
 .card.is-text .card-title {
   font-size: 24px;
   min-height: 0;
-  -webkit-line-clamp: 3;
+  /* 关键：标题不参与收缩。容器不够高时宁可把卡片顶高，也不能把字切掉 */
+  flex: 0 0 auto;
 }
 
 .card-intro {
@@ -910,6 +917,8 @@ const rangeText = computed(() => {
   font-size: 14px;
   min-height: 0;
   -webkit-line-clamp: 5;
+  /* 空间不够时收缩的是摘要（line-clamp 会补省略号，是有意的截断），不是标题 */
+  flex: 0 1 auto;
 }
 
 .card-foot {

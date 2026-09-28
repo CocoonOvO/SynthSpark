@@ -166,3 +166,5 @@ design/icespark-prototype/node_modules/
 design/icespark-prototype/dist/
 design/icespark-prototype/*.mjs
 design/icespark-prototype/public/fonts/*.woff2
+# 补数据脚本现画的封面（每次跑都重新生成）
+design/icespark-prototype/scripts/_covers/

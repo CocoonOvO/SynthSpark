@@ -223,6 +223,67 @@ try {
     homeCards.map((c) => `${c.h}@${c.top}`).join(' ')
   )
 
+  // 标题绝不能被裁：样张第 2 页放了一条 67 字的标题（无封面）与一条长标题（有封面），
+  // 在几个典型宽度下都要「一行不落」。这是用户第七轮反馈的直接回归。
+  const widthSweep = []
+  for (const w of [1440, 1280, 1100, 980]) {
+    await page.setViewportSize({ width: w, height: 900 })
+    await page.goto(`${BASE}/posts${DEMO}&page=2`, { waitUntil: 'networkidle' })
+    await page.waitForTimeout(1500)
+    const rows = await page.evaluate(() =>
+      Array.from(document.querySelectorAll('[data-testid="post-card"]')).map((c) => {
+        const t = c.querySelector('.card-title')
+        return {
+          cut: t.scrollHeight - t.clientHeight,
+          lines: Math.round(t.scrollHeight / parseFloat(getComputedStyle(t).lineHeight)),
+          kind: c.classList.contains('is-text') ? 'text' : 'img',
+          chars: t.textContent.trim().length,
+        }
+      })
+    )
+    widthSweep.push({ w, rows })
+  }
+  const cuts = widthSweep.flatMap((s) => s.rows.map((r) => r.cut))
+  check(
+    '④ 标题在任何宽度下都不被裁（第七轮反馈的直接回归）',
+    cuts.every((c) => c <= 1),
+    widthSweep.map((s) => `${s.w}:${Math.max(...s.rows.map((r) => r.cut))}px`).join(' ')
+  )
+  const worst = widthSweep.find((s) => s.w === 980)
+  check(
+    '④ 这条长标题确实超过了旧的 3 行上限（断言不是空转）',
+    Math.max(...worst.rows.map((r) => r.lines)) >= 4 &&
+      Math.max(...worst.rows.map((r) => r.chars)) >= 60,
+    `980 下最多 ${Math.max(...worst.rows.map((r) => r.lines))} 行 / ${Math.max(...worst.rows.map((r) => r.chars))} 字`
+  )
+  // 卡片长高之后不能画到翻页条上去：窄屏下量几何关系（盒子高 == 内容高，且卡片底 ≤ 翻页条顶）
+  const geometry = []
+  for (const w of [980, 900, 820, 760, 600]) {
+    await page.setViewportSize({ width: w, height: 900 })
+    await page.goto(`${BASE}/posts${DEMO}&page=2`, { waitUntil: 'networkidle' })
+    await page.waitForTimeout(1500)
+    geometry.push({
+      w,
+      ...(await page.evaluate(() => {
+        const grid = document.querySelector('.grid')
+        const foot = document.querySelector('.foot')
+        const cards = [...document.querySelectorAll('[data-testid="post-card"]')]
+        return {
+          box: grid.clientHeight,
+          content: grid.scrollHeight,
+          bottom: Math.round(Math.max(...cards.map((c) => c.getBoundingClientRect().bottom))),
+          footTop: Math.round(foot.getBoundingClientRect().top),
+        }
+      })),
+    })
+  }
+  check(
+    '④ 卡片不会长到翻页条上面（窄屏几何）',
+    geometry.every((g) => g.bottom <= g.footTop + 1 && g.content <= g.box + 1),
+    geometry.map((g) => `${g.w}:${g.bottom}/${g.footTop}`).join(' ')
+  )
+  await page.setViewportSize({ width: 1440, height: 900 })
+
   // ══ 第 2 条：设置里只留展示相关项 ══
   await openMenu()
   check('② 未登录时菜单 6 行', (await rowCount()) === 6, String(await rowCount()))

@@ -145,7 +145,20 @@ await page.waitForTimeout(500)
 check('进入文章详情', (await page.locator('[data-testid="md-body"]').count()) === 1)
 check('markdown 渲染出标题', (await page.locator('[data-testid="md-body"] h2').count()) >= 2)
 check('markdown 渲染出代码块', (await page.locator('[data-testid="md-body"] .md-fence').count()) >= 1)
-check('markdown 渲染出表格', (await page.locator('[data-testid="md-body"] table').count()) >= 1)
+// 表格这项不能挂在「真实库里第一篇恰好有表格」上（数据库是可变的，第七轮补数据时这条就假失败了）：
+// 样张正文是仓库里的固定夹具，用它断言渲染器支持表格；另开一张临时页，免得动到主流程的历史栈。
+{
+  const probe = await browser.newPage({ viewport: { width: 1440, height: 900 } })
+  await probe.goto('http://127.0.0.1:5173/post/where-memory-lives?demo=1', {
+    waitUntil: 'networkidle',
+  })
+  await probe.waitForTimeout(1400)
+  check(
+    'markdown 渲染出表格（样张夹具）',
+    (await probe.locator('[data-testid="md-body"] table').count()) >= 1
+  )
+  await probe.close()
+}
 check('快捷键指南常驻', await page.locator('[data-testid="keybar"]').isVisible())
 check('左侧竖列已消失', (await page.locator('.side').count()) === 0)
 check('操作条是横向的', await page.evaluate(() => {
