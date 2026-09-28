@@ -6,7 +6,7 @@
  * 2. 设置只保留展示相关项；菜单去掉前进/后退，登录后加编辑文章 / 个人信息编辑，
  *    超管再多一条站点管理
  * 3. 文章页 TAB 按 DOM 顺序遍历链接（用户批准）
- * 4. 无封面的文章不再放马赛克块，改成排版封面
+ * 4. 无封面的文章不占图片位（第七轮第 1 条：连空画框也不要），改用另一套排版
  * 5. 超管账号可登录（前台登录接口，不是 /api/admin/login）
  *
  * 用法：node e2e/round6.mjs
@@ -122,55 +122,106 @@ try {
   await page.evaluate(() => localStorage.removeItem('synthspark-token'))
   await page.evaluate(() => localStorage.removeItem('synthspark-icespark-user'))
 
-  // ══ 第 4 条：无封面不再是马赛克块，改成排版封面 ══
-  const covers = await page.evaluate(() => {
-    const cards = Array.from(document.querySelectorAll('[data-testid="post-card"]'))
-    return cards.map((c) => ({
-      title: (c.querySelector('.card-title')?.textContent || '').trim(),
-      coverH: Math.round(c.querySelector('.card-cover')?.getBoundingClientRect().height || 0),
-      ph: !!c.querySelector('.card-cover .img-ph-box'),
-      phBox: (() => {
-        const el = c.querySelector('.card-cover .img-ph-box')
-        if (!el) return null
-        const r = el.getBoundingClientRect()
-        const cover = c.querySelector('.card-cover').getBoundingClientRect()
-        return {
-          w: Math.round(r.width),
-          h: Math.round(r.height),
-          centered: Math.abs((r.left + r.right) / 2 - (cover.left + cover.right) / 2) <= 1,
-        }
-      })(),
-      img: !!c.querySelector('.card-cover img'),
-    }))
+  // ══ 第 4 条：无封面换版式（不摆空图片位、不摆任何占位记号）══
+  // 第七轮第 1 条改过一次：马赛克 → 空画框 → 最初直接不要画框，改用另一套排版
+  const cards = await page.evaluate(() => {
+    const round = (n) => Math.round(n)
+    return Array.from(document.querySelectorAll('[data-testid="post-card"]')).map((c) => {
+      const box = c.getBoundingClientRect()
+      const side = c.querySelector('.card-side')
+      const title = c.querySelector('.card-title')
+      return {
+        text: c.classList.contains('is-text'),
+        top: round(box.top),
+        h: round(box.height),
+        hasCoverBox: !!c.querySelector('.card-cover'),
+        hasFrame: !!c.querySelector('.img-frame'),
+        hasSide: !!side,
+        sideH: side ? round(side.getBoundingClientRect().height) : 0,
+        hasGroup: !!c.querySelector('.card-group'),
+        titlePx: title ? parseFloat(getComputedStyle(title).fontSize) : 0,
+        img: c.querySelector('.img-frame img')?.naturalWidth || 0,
+      }
+    })
   })
-  const withPh = covers.filter((c) => c.ph)
-  const withImg = covers.filter((c) => c.img)
+  const textCards = cards.filter((c) => c.text)
+  const imgCards = cards.filter((c) => !c.text)
   check(
     '④ 同一页上「有封面 / 无封面」混排',
-    covers.length >= 4 && withPh.length >= 1 && withImg.length >= 1,
-    `共 ${covers.length}：有封面 ${withImg.length} / 无封面 ${withPh.length}`
+    cards.length >= 4 && textCards.length >= 1 && imgCards.length >= 1,
+    `共 ${cards.length}：有封面 ${imgCards.length} / 无封面 ${textCards.length}`
   )
   check('④ 旧马赛克占位已彻底移除', (await page.locator('.img-fallback').count()) === 0)
-  const coverLoaded = await page.evaluate(() =>
-    Array.from(document.querySelectorAll('.card-cover img')).map((i) => i.naturalWidth)
+  check(
+    '④ 无封面卡不占图片位（没有画框、没有占位记号）',
+    (await page.locator('.card.is-text .card-cover').count()) === 0 &&
+      (await page.locator('.card.is-text .img-frame').count()) === 0 &&
+      (await page.locator('.img-ph-box').count()) === 0 &&
+      (await page.locator('.img-ph-glyph').count()) === 0
   )
+  check(
+    '④ 无封面卡换的是另一套排版（右侧数据脊 + 顶部分组行 + 更大标题）',
+    textCards.length > 0 &&
+      textCards.every((c) => c.hasSide && c.hasGroup && c.titlePx >= 20) &&
+      textCards.every((c) => c.sideH >= c.h * 0.7) &&
+      imgCards.every((c) => !c.hasSide),
+    '数据脊 ' +
+      textCards.map((c) => `${c.sideH}/${c.h}`).join(' ') +
+      ' · 标题 ' +
+      textCards.map((c) => c.titlePx).join('/') +
+      'px'
+  )
+  const loaded = imgCards.map((c) => c.img)
   check(
     '④ 样张封面真的加载出来了（不依赖外网）',
-    coverLoaded.length >= 1 && coverLoaded.every((w) => w > 0),
-    `naturalWidth=${coverLoaded.join(',')}`
+    loaded.length >= 1 && loaded.every((w) => w > 0),
+    `naturalWidth=${loaded.join(',')}`
+  )
+  const rowHeights = Object.values(
+    cards.reduce((m, c) => {
+      ;(m[c.top] ||= new Set()).add(c.h)
+      return m
+    }, {})
   )
   check(
-    '④ 无封面用的是空画框记号（方块太阳 + 地平线，横向居中）',
-    withPh.length > 0 && withPh.every((c) => c.phBox && c.phBox.w > 0 && c.phBox.h > 0 && c.phBox.centered),
-    withPh.map((c) => `${c.phBox.w}×${c.phBox.h}${c.phBox.centered ? '' : '(未居中)'}`).join(' / ')
-  )
-  check('④ 放大标题首字的水印方案已撤掉（点阵字放大后读不出来）', (await page.locator('.img-ph-glyph').count()) === 0)
-  check(
-    '④ 封面区高度仍然一致（有无封面都不参差）',
-    new Set(covers.map((c) => c.coverH)).size === 1,
-    covers.map((c) => c.coverH).join(', ')
+    '④ 同一行里有无封面都不参差',
+    rowHeights.length >= 2 && rowHeights.every((hs) => hs.size === 1),
+    cards.map((c) => `${c.h}@${c.top}`).join(' ')
   )
   await shot('1-list-no-cover')
+
+  // 首页小卡同样换版式（顶部分组 / 日期头，正文撑满）
+  await page.goto(`${BASE}/${DEMO}`, { waitUntil: 'networkidle' })
+  await page.waitForTimeout(1800)
+  const homeCards = await page.evaluate(() =>
+    Array.from(document.querySelectorAll('[data-testid^="home-post-"]')).map((c) => ({
+      text: c.classList.contains('is-text'),
+      top: Math.round(c.getBoundingClientRect().top),
+      h: Math.round(c.getBoundingClientRect().height),
+      hasThumb: !!c.querySelector('.post-thumb'),
+      hasFrame: !!c.querySelector('.img-frame'),
+      hasHead: !!c.querySelector('.post-head'),
+    }))
+  )
+  const homeText = homeCards.filter((c) => c.text)
+  const homeImg = homeCards.filter((c) => !c.text)
+  check(
+    '④ 首页混排：有封面卡保留缩略图，无封面卡没有空图位',
+    homeText.length >= 1 && homeImg.length >= 1,
+    `共 ${homeCards.length}：有封面 ${homeImg.length} / 无封面 ${homeText.length}`
+  )
+  check(
+    '④ 首页无封面卡顶部有分组 / 日期头',
+    homeText.every((c) => c.hasHead && !c.hasThumb && !c.hasFrame) &&
+      homeImg.every((c) => c.hasThumb && !c.hasHead),
+    homeText.map((c) => `${c.hasHead ? '头' : '无'}`).join(',')
+  )
+  check(
+    '④ 首页一行三张等高',
+    new Set(homeCards.map((c) => c.top)).size === 1 &&
+      new Set(homeCards.map((c) => c.h)).size === 1,
+    homeCards.map((c) => `${c.h}@${c.top}`).join(' ')
+  )
 
   // ══ 第 2 条：设置里只留展示相关项 ══
   await openMenu()

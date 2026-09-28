@@ -30,6 +30,7 @@ import {
 } from '../data/api'
 import SceneHead from '../ui/SceneHead.vue'
 import ImageFrame from '../ui/ImageFrame.vue'
+import { coverOk, markCoverFailed, stampParts } from '../ui/cover'
 
 usePad()
 const { clock, stop } = useStatusBar()
@@ -42,6 +43,11 @@ onMounted(() => {
   void loadStats()
 })
 onUnmounted(stop)
+
+/** 无封面的文章换版式（第七轮第 1 条），判断口径与列表 / 文章页一致 */
+function hasCover(p: PostListItem) {
+  return coverOk(p.cover_image)
+}
 
 const latest = computed(() => store.posts.value.slice(0, 3))
 const groups = computed(() => store.groups.value)
@@ -214,23 +220,45 @@ const stats = computed(() => store.stats.value)
           :key="p.id"
           class="post focusable"
           :data-testid="`home-post-${i}`"
-          :class="{ 'is-focused': isAt(0, i) }"
+          :class="{ 'is-focused': isAt(0, i), 'is-text': !hasCover(p) }"
           @mouseenter="hoverPost(i)"
           @click="clickPost(p, i)"
         >
-          <div class="post-thumb">
-            <ImageFrame :src="p.cover_image" :alt="p.title" ratio="21 / 9" empty-label="无图" />
+          <!-- 有封面：图在上、文在下 -->
+          <div v-if="hasCover(p)" class="post-thumb">
+            <ImageFrame
+              :src="p.cover_image"
+              :alt="p.title"
+              ratio="21 / 9"
+              @error="markCoverFailed(p.cover_image)"
+            />
           </div>
+
+          <!-- 无封面：不摆空图片位，改在卡片顶部横一条「分组 / 日期」头，
+               标题与正文因此拿到整张卡的高度（正文 flex 撑开、行数放宽），
+               卡片被拉满而不是上半张图空着 -->
+          <div v-else class="post-head px">
+            <span class="head-group">{{ p.group_name || '未分组' }}</span>
+            <span class="head-date num">
+              {{ stampParts(p.created_at).y }}.{{ stampParts(p.created_at).m }}.{{
+                stampParts(p.created_at).d
+              }}
+            </span>
+          </div>
+
           <div class="post-main">
             <h3 class="post-title">{{ p.title }}</h3>
             <p class="post-intro read">{{ p.introduction || '（暂无简介）' }}</p>
             <div class="post-meta px">
               <span>{{ p.author_name }}</span>
-              <span class="dot">·</span>
-              <span>{{ shortDate(p.created_at) }}</span>
+              <!-- 文字卡的日期已经在顶部头里，页脚不重复摆 -->
+              <template v-if="hasCover(p)">
+                <span class="dot">·</span>
+                <span>{{ shortDate(p.created_at) }}</span>
+              </template>
               <span class="dot">·</span>
               <span>{{ p.view_count }} 阅读</span>
-              <span v-if="p.group_name" class="tag">{{ p.group_name }}</span>
+              <span v-if="p.group_name && hasCover(p)" class="tag">{{ p.group_name }}</span>
             </div>
           </div>
         </article>
@@ -416,9 +444,43 @@ const stats = computed(() => store.stats.value)
   cursor: pointer;
 }
 
-/* 缩略图区高度固定：有图无图都占同样高度，四张卡不会参差 */
 .post-thumb {
   flex: 0 0 auto;
+}
+
+/* 无封面版式的顶部头：分组在左、日期在右，下面压一条细线，
+   和页面里其它「标题行」用同一套语言 */
+.post-head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  border-bottom: 2px solid var(--blue-200);
+  padding-bottom: 6px;
+}
+
+.head-group {
+  color: var(--blue-700);
+}
+
+.head-date {
+  margin-left: auto;
+  color: var(--ink-faint);
+}
+
+/* 文字卡没有缩略图，正文把剩下的高度整个吃掉，卡片不会上紧下空 */
+.post.is-text .post-main {
+  flex: 1;
+}
+
+.post.is-text .post-title {
+  font-size: 18px;
+  -webkit-line-clamp: 3;
+}
+
+.post.is-text .post-intro {
+  flex: 1;
+  font-size: 13px;
+  -webkit-line-clamp: 6;
 }
 
 .post-main {

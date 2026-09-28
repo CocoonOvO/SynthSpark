@@ -236,13 +236,15 @@ async function focusRow(page, id) {
   await page.close()
 }
 
-// 16b. 无封面卡片：第 6 轮把马赛克块换成空画框记号，单独出一张细节图
+// 16b. 无封面卡片：第 7 轮起不占图片位（连空画框也不要），改用文字卡版式，单出一张细节图
 {
   const page = await newPage()
   await boot(page)
   await page.keyboard.press('Tab')
   await page.waitForTimeout(1400)
   await shootEl(page, '[data-testid="post-card"]', '16b-card-no-cover', 6)
+  // 同一张图里要有对照：左边文字卡、右边封面卡，一眼能看出是两套排版
+  await shootEl(page, '.grid', '16c-cards-mixed', 8)
   await page.close()
 }
 

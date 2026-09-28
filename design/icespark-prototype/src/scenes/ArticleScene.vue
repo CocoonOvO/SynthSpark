@@ -22,6 +22,7 @@ import { store, loadPost, shortDate } from '../data/api'
 import PixelAvatar from '../ui/PixelAvatar.vue'
 import PixelDialog from '../ui/PixelDialog.vue'
 import ImageFrame from '../ui/ImageFrame.vue'
+import { coverOk, markCoverFailed } from '../ui/cover'
 import MarkdownBody from '../ui/MarkdownBody.vue'
 import SceneHead from '../ui/SceneHead.vue'
 import { AVATAR_PALETTE } from '../styles/tokens'
@@ -314,12 +315,14 @@ function closeDialog() {
         </button>
       </div>
 
+      <!-- 封面：没有（或加载失败）就整块不渲染，正文直接顶上来 -->
       <ImageFrame
-        v-if="post.cover_image"
+        v-if="coverOk(post.cover_image)"
         class="doc-cover"
         :src="post.cover_image"
         :alt="post.title"
         ratio="21 / 9"
+        @error="markCoverFailed(post.cover_image)"
       />
 
       <!-- 横向操作条：取代左侧竖列，窄屏自然折行 -->

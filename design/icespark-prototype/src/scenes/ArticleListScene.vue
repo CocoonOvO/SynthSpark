@@ -35,6 +35,7 @@ import {
 } from '../data/api'
 import PixelAvatar from '../ui/PixelAvatar.vue'
 import ImageFrame from '../ui/ImageFrame.vue'
+import { coverOk, markCoverFailed, stampParts } from '../ui/cover'
 import SceneHead from '../ui/SceneHead.vue'
 import { AVATAR_PALETTE } from '../styles/tokens'
 
@@ -43,6 +44,11 @@ const { clock, stop } = useStatusBar()
 const route = useRoute()
 
 const COLS = 2
+
+/** 封面状态与日期戳见 ui/cover.ts（列表 / 首页 / 文章页共用同一套判断） */
+function hasCover(p: { cover_image?: string | null }) {
+  return coverOk(p.cover_image)
+}
 
 onMounted(() => {
   scrollScreenTop()
@@ -465,17 +471,50 @@ const rangeText = computed(() => {
         :key="p.id"
         class="card focusable"
         data-testid="post-card"
-        :class="{ 'is-focused': zone === 2 && gridFocus.index.value === i }"
+        :class="{
+          'is-focused': zone === 2 && gridFocus.index.value === i,
+          'is-text': !hasCover(p),
+        }"
         @mouseenter="hoverCard(i)"
         @click="clickCard(p, i)"
       >
-        <div class="card-cover">
-          <ImageFrame :src="p.cover_image" :alt="p.title" ratio="3 / 2" />
+        <!-- 有封面：左图右文（封面区尺寸固定，混排时行高一致） -->
+        <div v-if="hasCover(p)" class="card-cover">
+          <ImageFrame
+            :src="p.cover_image"
+            :alt="p.title"
+            ratio="3 / 2"
+            @error="markCoverFailed(p.cover_image)"
+          />
         </div>
 
         <div class="card-body">
-          <h3 class="card-title">{{ p.title }}</h3>
-          <p class="card-intro read">{{ p.introduction || '（暂无简介）' }}</p>
+          <span v-if="!hasCover(p)" class="card-group px">
+            <i class="group-mark">▌</i>{{ p.group_name || '未分组' }}
+          </span>
+
+          <div class="card-text">
+            <h3 class="card-title">{{ p.title }}</h3>
+            <p class="card-intro read">{{ p.introduction || '（暂无简介）' }}</p>
+          </div>
+
+          <!-- 无封面：不摆空图片位，改在右侧立一列「数据脊」——
+               日期在上、阅读与点赞在下，撑满整张卡的高度，
+               正文栏也因此收窄、字号放大，卡片不会显得空
+               （用户第七轮第 1 条：无封面要换布局，不能空旷） -->
+          <div v-if="!hasCover(p)" class="card-side px">
+            <span class="side-date">
+              <i class="side-ym">{{ stampParts(p.created_at).m }} / {{ stampParts(p.created_at).y }}</i>
+              <!-- 日号是这张卡的图形：像素字体只在 12 的倍数下锐利，所以走 px-48 档位 -->
+              <b class="side-day px-48 px-display">{{ stampParts(p.created_at).d }}</b>
+            </span>
+            <span class="side-rule" />
+            <span class="side-stats">
+              <i class="side-stat num">◉ {{ p.view_count }}</i>
+              <i class="side-stat num">♥ {{ p.like_count }}</i>
+            </span>
+          </div>
+
           <div class="card-foot px">
             <PixelAvatar
               :src="p.author_avatar"
@@ -485,9 +524,12 @@ const rangeText = computed(() => {
               :palette="AVATAR_PALETTE"
             />
             <span class="author">{{ p.author_name }}</span>
-            <span class="faint">{{ shortDate(p.created_at) }}</span>
-            <span class="faint num">◉ {{ p.view_count }}</span>
-            <span class="faint num">♥ {{ p.like_count }}</span>
+            <!-- 文字卡把日期 / 阅读 / 点赞挪进了左侧日期戳，页脚不重复摆一遍 -->
+            <template v-if="hasCover(p)">
+              <span class="faint">{{ shortDate(p.created_at) }}</span>
+              <span class="faint num">◉ {{ p.view_count }}</span>
+              <span class="faint num">♥ {{ p.like_count }}</span>
+            </template>
             <span v-if="p.group_name" class="tag">{{ p.group_name }}</span>
           </div>
         </div>
@@ -700,12 +742,91 @@ const rangeText = computed(() => {
   overflow: hidden;
 }
 
-/* 封面区尺寸固定：有封面与无封面卡片混排时高度完全一致（用户反馈第 6 条） */
+/* 封面区尺寸固定：有封面卡片之间混排时高度完全一致（用户反馈第 6 条） */
 .card-cover {
   flex: 0 0 320px;
   min-width: 0;
   /* 画框自己保持 3:2，不跟着文字列拉伸 */
   align-self: flex-start;
+}
+
+/* ── 无封面卡片：换一套版式（用户第七轮第 1 条）──
+   不摆空的图片位，也不在卡片里留洞：正文栏收窄、标题放大，
+   右侧立一列「数据脊」（日期在上、阅读与点赞在下，上下两簇撑满整列）。
+   整张卡的分量因此从「中间一块图」挪到「左边文字 + 右边数字」。 */
+.card.is-text .card-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  grid-template-rows: auto 1fr auto;
+  grid-template-areas:
+    'group side'
+    'text  side'
+    'foot  foot';
+  gap: 6px 18px;
+  padding-left: 16px;
+}
+
+.card.is-text .card-group {
+  grid-area: group;
+}
+
+.card.is-text .card-text {
+  grid-area: text;
+  justify-content: center;
+}
+
+.card-side {
+  grid-area: side;
+  min-width: 96px;
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  /* 上簇（日期）与下簇（计数）分居两端：这一列自己不空 */
+  justify-content: space-between;
+  padding-left: 14px;
+  /* 左侧一道竖色带：档案卡的语言，没有图也立得住 */
+  border-left: 4px solid var(--blue-300);
+}
+
+.card.is-text .card-foot {
+  grid-area: foot;
+}
+
+.side-date {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 2px;
+}
+
+.side-day {
+  font-weight: 400;
+  color: var(--blue-500);
+}
+
+.side-ym {
+  font-style: normal;
+  color: var(--ink-soft);
+}
+
+.side-rule {
+  width: 74%;
+  height: 3px;
+  background: var(--blue-200);
+}
+
+.side-stats {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-end;
+  gap: 3px;
+}
+
+.side-stat {
+  font-family: 'ArkPixel', 'Noto Sans Mono', monospace;
+  font-style: normal;
+  font-size: 12px;
+  color: var(--ink-soft);
 }
 
 .card-body {
@@ -715,6 +836,40 @@ const rangeText = computed(() => {
   display: flex;
   flex-direction: column;
   gap: 5px;
+}
+
+/* 文字卡的正文区：三段式（分组名 / 正文 / 页脚），正文块在中间垂直居中，
+   这样简介只有两行时也不会在卡片下半截留一个洞 */
+.card.is-text .card-body {
+  display: grid;
+  grid-template-rows: auto 1fr auto;
+  gap: 6px;
+  padding-left: 14px;
+}
+
+.card-text {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-height: 0;
+}
+
+.card.is-text .card-text {
+  justify-content: center;
+  gap: 8px;
+}
+
+.card-group {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 12px;
+  color: var(--blue-600);
+}
+
+.group-mark {
+  color: var(--blue-400);
+  font-style: normal;
 }
 
 .card-title {
@@ -731,6 +886,13 @@ const rangeText = computed(() => {
   overflow: hidden;
 }
 
+/* 文字卡没有封面分担视线，标题可以更大、可以占三行 */
+.card.is-text .card-title {
+  font-size: 24px;
+  min-height: 0;
+  -webkit-line-clamp: 3;
+}
+
 .card-intro {
   margin: 0;
   font-size: 13px;
@@ -741,6 +903,13 @@ const rangeText = computed(() => {
   -webkit-line-clamp: 2;
   -webkit-box-orient: vertical;
   overflow: hidden;
+}
+
+/* 文字卡的正文栏比有封面的窄（右列让给了数据脊），字号略大、多给几行 */
+.card.is-text .card-intro {
+  font-size: 14px;
+  min-height: 0;
+  -webkit-line-clamp: 5;
 }
 
 .card-foot {

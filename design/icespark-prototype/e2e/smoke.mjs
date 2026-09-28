@@ -77,7 +77,14 @@ await page.click('[data-testid="tab-posts"]')
 await page.waitForTimeout(420)
 const cards = await page.locator('[data-testid="post-card"]').count()
 check('文章列表有卡片', cards > 0, `cards=${cards}`)
-check('封面容器存在', (await page.locator('[data-testid="img-frame"]').count()) >= cards)
+// 第七轮起：无封面的卡不占图片位（改走文字卡版式），所以不能再要求「每张卡都有画框」
+const framed = await page.locator('[data-testid="img-frame"]').count()
+const textCards = await page.locator('.card.is-text').count()
+check(
+  '每张卡要么有封面图、要么走文字卡版式（没有空图位）',
+  framed + textCards === cards,
+  `cards=${cards} 画框=${framed} 文字卡=${textCards}`
+)
 await shot('3-posts')
 
 // ── 视觉相邻导航：从 0 出发按 ↓ 应该到 index 2（下一行同一列） ──
