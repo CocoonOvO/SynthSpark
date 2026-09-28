@@ -10,6 +10,10 @@
  * 7. 文章详情：U 回顶部、分组/标签可跳列表、G / L 快捷键聚焦
  * 8. 路由：URL 直达、未知路径回主页、前进后退可用
  *
+ * 第六轮回来改了两处：
+ * - 第 2 条：TAB 在文章详情页不再「消费但不动作」，改为按 DOM 顺序遍历链接
+ * - 第 5 条：菜单里的「返回上一页 / 转到下一页」两行按用户要求移除（Q / E 不变）
+ *
  * 用法：node e2e/round5.mjs
  */
 import { chromium } from 'playwright'
@@ -251,7 +255,8 @@ try {
   check('⑤ 无历史时 Q 不白屏', (await page.locator('.doc-title, [data-testid="tabbar"]').count()) > 0, url())
   await shot('11-q-no-history')
 
-  // ── 菜单里的前进/后退行也是真的（必须在应用内导航之后看，刷新会把历史清空）──
+  // ── 菜单里的前进/后退行（第 6 轮按用户要求移除；这里改成断言它确实没了）──
+  // 历史能力本身不缩水：Q / E 就是浏览器历史的两个方向，只是不再在菜单里摆两行。
   await page.goto(`${BASE}/posts${DEMO}`, { waitUntil: 'networkidle' })
   await page.waitForTimeout(2400)
   await page.keyboard.press('Enter') // 应用内前进到文章
@@ -259,11 +264,22 @@ try {
   const hardLoadDisabled = await page.evaluate(() => document.querySelectorAll('[data-testid="pager-prev"]').length)
   await page.keyboard.press('Escape')
   await page.waitForTimeout(260)
-  const backRow = await page.locator('[data-row="back"]').getAttribute('class')
-  check('⑤ 应用内导航后，菜单「返回上一页」可用', /disabled/.test(backRow || '') === false, `${backRow} / 列表控件${hardLoadDisabled}`)
-  await shot('11b-menu-history')
-  await page.keyboard.press('Escape')
-  await page.waitForTimeout(200)
+  check(
+    '⑤ 菜单里已没有「返回上一页 / 转到下一页」两行',
+    (await page.locator('[data-row="back"]').count()) === 0 &&
+      (await page.locator('[data-row="forward"]').count()) === 0,
+    `列表控件${hardLoadDisabled}`
+  )
+  await shot('11b-menu-no-history-rows')
+  // 行没了，键还在：菜单里按 Q 依然后退（并且顺手把菜单关掉）
+  const beforeMenuQ = url()
+  await page.keyboard.press('q')
+  await settle(620)
+  check(
+    '⑤ 菜单里按 Q 仍然后退，且菜单随之关闭',
+    path() === '/posts' && url() !== beforeMenuQ && (await page.locator('[data-testid="pause"]').count()) === 0,
+    `${beforeMenuQ} → ${url()}`
+  )
 
   // ── 鼠标路径：分组行 + 跳页按钮都点得到 ──
   await page.goto(`${BASE}/posts${DEMO}`, { waitUntil: 'networkidle' })

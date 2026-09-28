@@ -4,12 +4,19 @@
  *
  * 它一次补上 web 最缺的三件事：全局导航、全局设置入口、输入等价性兜底。
  * 行序按「最常用在上」排列：
- *   继续 / 搜索 / 音效 / 返回上一页 / 转到下一页 / 登录（退出登录）/ 编辑文章 / 设置 / 返回主菜单
+ *   继续 / 搜索 / 音效 / 退出登录 / 编辑文章 / 个人信息编辑 / [站点管理] / 设置 / 返回主菜单
+ * 方括号那行只有超管能看到（is_superuser）。
+ *
+ * 第六轮按用户要求动过两处：
+ * - **删掉「返回上一页 / 转到下一页」两行**：历史前进后退是全站能力，
+ *   交给 Q / E 与浏览器按钮，菜单里不必再放一份（Q/E 在菜单里依然有效，见 onAction）
+ * - **登录后才出现的不是一行「编辑」占位，而是三行真链接**：
+ *   编辑文章 / 个人信息编辑，超管再加站点管理；都是 `<a href>`，
+ *   可以复制链接、中键新开标签，正式版前端直接吃这些路径
  *
  * 与上一版的区别：
  * - 游戏术语清空（不再有 PAUSED / TITLE / RESUME 之类的玩家黑话）
  * - 搜索栏不是摆设：弹内直接检索 /api/search/，结果可点可键盘选
- * - 返回上一页 / 转到下一页 接的是**浏览器历史**（见 ui/nav.ts），和 Q / E 键同一条路径
  * - 登录与设置是与本菜单同级的独立弹窗，开子弹窗时本菜单不再响应按键（避免一次按键走两层）
  * - 信号强度设置已移除，只在设置弹窗脚注里说明固定为最高档
  */
@@ -19,7 +26,7 @@ import { useFocusGroup } from './focus'
 import { playSfx, previewSfx } from './sfx'
 import { soundEnabled, setSound } from './prefs'
 import { goBack, goForward, goTab, goArticle, canGoBack, canGoForward } from './nav'
-import { isLoggedIn, displayName, logout } from './auth'
+import { isLoggedIn, isSuperuser, displayName, logout } from './auth'
 import { searchPosts, postKey, type SearchHit } from '../data/api'
 import LoginDialog from './LoginDialog.vue'
 import SettingsDialog from './SettingsDialog.vue'
@@ -30,8 +37,35 @@ interface Row {
   id: string
   en: string
   cn: string
-  kind: 'action' | 'sound' | 'account'
-  disabled?: boolean
+  kind: 'action' | 'sound' | 'account' | 'link'
+  /** 只有 kind === 'link' 有：正式版前端的真实路径 */
+  href?: string
+}
+
+/**
+ * 菜单里的三个链接指向正式版前端已有的路径（对齐旧版 frontend/src/router/index.ts）：
+ *   /write                  写作 / 编辑文章（旧版 requiresAuth）
+ *   /profile?tab=settings   个人信息编辑（旧版 ProfileView 的「设置」tab）
+ *   /profile?tab=siteConfig 站点管理（旧版 ProfileView 的「站点设置」tab，仅业务库超管可见）
+ * 演示版没有这三张页面，所以点击只给一句说明，不真跳转（跳到 catch-all 会变成首页，看着像坏了）。
+ * 下一轮实现时把 tab 参数接上即可，路径本身就是交付契约。
+ */
+const LINK_ROWS: Record<'edit' | 'profile' | 'site', Row> = {
+  edit: { id: 'edit', en: 'WRITE', cn: '编辑文章', kind: 'link', href: '/write' },
+  profile: {
+    id: 'profile',
+    en: 'PROFILE',
+    cn: '个人信息编辑',
+    kind: 'link',
+    href: '/profile?tab=settings',
+  },
+  site: {
+    id: 'site',
+    en: 'SITE',
+    cn: '站点管理',
+    kind: 'link',
+    href: '/profile?tab=siteConfig',
+  },
 }
 
 const rows = computed<Row[]>(() => {
@@ -40,20 +74,6 @@ const rows = computed<Row[]>(() => {
     { id: 'search', en: 'SEARCH', cn: '搜索文章', kind: 'action' },
     { id: 'sound', en: 'SOUND', cn: '音效', kind: 'sound' },
     {
-      id: 'back',
-      en: 'BACK',
-      cn: '返回上一页',
-      kind: 'action',
-      disabled: !canGoBack.value,
-    },
-    {
-      id: 'forward',
-      en: 'FORWARD',
-      cn: '转到下一页',
-      kind: 'action',
-      disabled: !canGoForward.value,
-    },
-    {
       id: 'account',
       en: 'ACCOUNT',
       cn: isLoggedIn.value ? `退出登录（${displayName.value}）` : '登录',
@@ -61,7 +81,8 @@ const rows = computed<Row[]>(() => {
     },
   ]
   if (isLoggedIn.value) {
-    list.push({ id: 'edit', en: 'EDIT', cn: '编辑文章', kind: 'action' })
+    list.push(LINK_ROWS.edit, LINK_ROWS.profile)
+    if (isSuperuser.value) list.push(LINK_ROWS.site)
   }
   list.push({ id: 'settings', en: 'SETTINGS', cn: '设置', kind: 'action' })
   list.push({ id: 'home', en: 'HOME', cn: '返回主菜单', kind: 'action' })
@@ -92,10 +113,6 @@ function adjust(dir: 1 | -1) {
 function activate() {
   const row = current.value
   if (!row) return false
-  if (row.disabled) {
-    hint.value = row.id === 'back' ? '已经在最早的一页了' : '还没有下一页'
-    return true
-  }
   if (row.kind === 'sound') return adjust(1)
 
   playSfx('confirm')
@@ -105,14 +122,6 @@ function activate() {
       break
     case 'search':
       openSearch()
-      break
-    case 'back':
-      emit('close')
-      goBack()
-      break
-    case 'forward':
-      emit('close')
-      goForward()
       break
     case 'account':
       if (isLoggedIn.value) {
@@ -124,7 +133,10 @@ function activate() {
       }
       break
     case 'edit':
-      hint.value = '编辑页在下一轮实现，这里只保留入口'
+    case 'profile':
+    case 'site':
+      // 链接行的 href 是真的，只是演示版还没有这张页面
+      hint.value = `演示版没有这张页面，正式版路径 ${row.href}`
       break
     case 'settings':
       hint.value = ''
@@ -155,11 +167,11 @@ function onAction(a: PadAction): boolean {
   if (a === 'left') return adjust(-1) || true
   if (a === 'right') return adjust(1) || true
   if (a === 'confirm') return activate()
-  // Q / E 与菜单行同义：在菜单里也能直接翻历史（不必先选中那一行）
+  // Q / E 的全局含义是浏览器历史，菜单开着也不该失效。
+  // 行已按用户要求从菜单里去掉，所以这里直接走历史，不再找行。
   if (a === 'back' || a === 'forward') {
-    const id = a === 'back' ? 'back' : 'forward'
-    const row = rows.value.find((r) => r.id === id)
-    if (row?.disabled) {
+    const can = a === 'back' ? canGoBack.value : canGoForward.value
+    if (!can) {
       hint.value = a === 'back' ? '已经在最早的一页了' : '还没有下一页'
       return true
     }
@@ -307,15 +319,18 @@ function clickHit(i: number) {
       <!-- ── 菜单态 ── -->
       <template v-if="mode === 'menu'">
         <div class="pause-rows">
-          <button
+          <!-- 链接行渲染成真 <a>（可复制、可中键新开），其余行是 button -->
+          <component
+            :is="row.href ? 'a' : 'button'"
             v-for="(row, i) in rows"
             :key="row.id"
             class="row focusable"
             :data-row="row.id"
             :data-testid="`pause-${row.id}`"
-            :class="{ 'is-focused': focus.index.value === i, disabled: row.disabled }"
+            :href="row.href"
+            :class="{ 'is-focused': focus.index.value === i }"
             @mouseenter="hoverRow(i)"
-            @click="clickRow(i)"
+            @click.prevent="clickRow(i)"
           >
             <span class="row-en">{{ row.en }}</span>
             <span class="row-cn">{{ row.cn }}</span>
@@ -340,9 +355,8 @@ function clickHit(i: number) {
               </b>
             </span>
 
-            <span v-else-if="row.disabled" class="row-arrow off">—</span>
-            <span v-else class="row-arrow">▶</span>
-          </button>
+            <span v-else class="row-arrow">{{ row.href ? '↗' : '▶' }}</span>
+          </component>
         </div>
       </template>
 
@@ -464,10 +478,8 @@ function clickHit(i: number) {
   color: var(--ink);
   text-align: left;
   cursor: pointer;
-}
-
-.row.disabled {
-  color: var(--ink-faint);
+  /* 链接行是真 <a>，去掉浏览器默认下划线（颜色已被上面的 color 覆盖） */
+  text-decoration: none;
 }
 
 .row-en {
@@ -488,10 +500,6 @@ function clickHit(i: number) {
 .row-arrow {
   margin-left: auto;
   color: var(--blue-500);
-}
-
-.row-arrow.off {
-  color: var(--ink-faint);
 }
 
 /* 分段控件：音效开关（旧的信号刻度已移除） */

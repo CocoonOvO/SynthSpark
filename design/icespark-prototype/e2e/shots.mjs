@@ -7,6 +7,8 @@
  *
  * 第 5 轮新增：分组行焦点、跳页框、文章页分组/标签芯片焦点（带 URL 变化的交互都另有
  * round5.mjs 做数值断言，截图只负责让人看一眼长什么样）。
+ * 第 6 轮新增：无封面卡片的空画框细节图；样张封面换成本地像素图，
+ * 所以这些图不依赖外网，断网评审也长得一样。
  */
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
@@ -59,6 +61,20 @@ async function shootEl(page, sel, name, pad = 8) {
     },
   })
   console.log(`  · ${name}.png`)
+}
+
+/** 按 data-row 定位菜单行：不数行数，菜单加减行都不会让出图脚本走错 */
+async function focusRow(page, id) {
+  for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowUp')
+  for (let i = 0; i < 16; i++) {
+    const cur = await page.evaluate(
+      () => document.querySelector('.pause-rows .row.is-focused')?.dataset.row || ''
+    )
+    if (cur === id) return true
+    await page.keyboard.press('ArrowDown')
+    await page.waitForTimeout(30)
+  }
+  return false
 }
 
 // 1. 开机自检
@@ -202,16 +218,14 @@ async function shootEl(page, sel, name, pad = 8) {
 
   await page.keyboard.press('Escape')
   await page.waitForTimeout(160)
-  for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowUp')
-  for (let i = 0; i < 6; i++) await page.keyboard.press('ArrowDown')
+  await focusRow(page, 'settings')
   await page.keyboard.press('Enter')
   await page.waitForTimeout(300)
   await shoot(page, '15-settings')
 
   await page.keyboard.press('Escape')
   await page.waitForTimeout(200)
-  for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowUp')
-  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowDown')
+  await focusRow(page, 'account')
   await page.keyboard.press('Enter')
   await page.waitForTimeout(300)
   await page.fill('[data-testid="login-username"]', '不存在的账号')
@@ -219,6 +233,16 @@ async function shootEl(page, sel, name, pad = 8) {
   await page.click('[data-testid="login-submit"]')
   await page.waitForTimeout(1000)
   await shoot(page, '16-login-error')
+  await page.close()
+}
+
+// 16b. 无封面卡片：第 6 轮把马赛克块换成空画框记号，单独出一张细节图
+{
+  const page = await newPage()
+  await boot(page)
+  await page.keyboard.press('Tab')
+  await page.waitForTimeout(1400)
+  await shootEl(page, '[data-testid="post-card"]', '16b-card-no-cover', 6)
   await page.close()
 }
 

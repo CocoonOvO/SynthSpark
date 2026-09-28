@@ -95,8 +95,12 @@ const offGlobal = onPad((a, consumed) => {
   if (a === 'tabNext' || a === 'tabPrev') {
     if (consumed) return false
     if (inModal) return true
-    // 没有标签栏的页面（文章详情）不参与标签页切换：手动按下 Tab 也不该跳页
-    if (!onTabScene.value) return true
+    // 没有标签栏的页面（文章详情）不参与标签页切换。
+    // 第六轮按用户要求改成**把 Tab 还给浏览器**：浏览器原生 Tab 就是
+    // 「按 DOM 顺序遍历可聚焦元素」，芯片 → 操作条 → 正文链接，Shift+Tab 反向、
+    // 自动滚进视野、回车自动激活，全都免费且不会写错。
+    // 配合同一套焦点的 `:focus-visible` 分支，原生焦点照样是 8bit 光标。
+    if (!onTabScene.value) return false
     cycleTab(a === 'tabNext' ? 1 : -1)
     return true
   }

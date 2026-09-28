@@ -260,6 +260,11 @@ body {
    · 不再叠「粗描边 / outline / inset 描边」—— 焦点同时出现边框与光标会互相打架
    · 光标画在盒子**内部**（垂直居中、贴左右内壁），不溢出到相邻元素上
    · 所有场景/对话框只加 .focusable 与 .is-focused，禁止自己再写一套焦点样式
+   · **第六轮补充**：同一个视觉也接原生 `:focus-visible`。
+     文章详情页的 Tab 交还给浏览器（按 DOM 顺序遍历链接），
+     原生焦点若不画出来就是「看不见的焦点」，回车会莫名其妙触发它。
+     写成 `:is(.is-focused, :focus-visible)` 而不是复制一份样式，
+     保证「一套视觉」这条规则不被破坏。
    ══════════════════════════════════════════════ */
 
 .focusable {
@@ -267,12 +272,12 @@ body {
   position: relative;
 }
 
-.focusable.is-focused {
+.focusable:is(.is-focused, :focus-visible) {
   background-color: var(--blue-200);
 }
 
-.focusable.is-focused::before,
-.focusable.is-focused::after {
+.focusable:is(.is-focused, :focus-visible)::before,
+.focusable:is(.is-focused, :focus-visible)::after {
   content: '';
   position: absolute;
   top: 50%;
@@ -284,12 +289,12 @@ body {
   pointer-events: none;
 }
 
-.focusable.is-focused::before { left: 3px; }
-.focusable.is-focused::after { right: 3px; }
+.focusable:is(.is-focused, :focus-visible)::before { left: 3px; }
+.focusable:is(.is-focused, :focus-visible)::after { right: 3px; }
 
 /* 小尺寸控件（软按键、标签）里的光标缩短一点，别顶满 */
-.focusable.mini.is-focused::before,
-.focusable.mini.is-focused::after {
+.focusable.mini:is(.is-focused, :focus-visible)::before,
+.focusable.mini:is(.is-focused, :focus-visible)::after {
   height: 8px;
   margin-top: -4px;
   width: 6px;
@@ -327,18 +332,6 @@ body {
   pointer-events: none;
   background-image: radial-gradient(rgba(18, 58, 82, 0.14) 1px, transparent 1px);
   background-size: 3px 3px;
-}
-
-/* 无封面时的占位：纯抖动图案块，尺寸与真封面一致，混排才不参差 */
-.img-fallback {
-  width: 100%;
-  height: 100%;
-  background-color: var(--blue-100);
-  background-image:
-    linear-gradient(45deg, var(--blue-300) 25%, transparent 25%, transparent 75%, var(--blue-300) 75%),
-    linear-gradient(45deg, var(--blue-300) 25%, transparent 25%, transparent 75%, var(--blue-300) 75%);
-  background-size: 8px 8px;
-  background-position: 0 0, 4px 4px;
 }
 
 /* ══════════════════════════════════════════════
@@ -411,14 +404,14 @@ body {
 .app[data-motion='off'] .bump,
 .app[data-motion='off'] .turn-next,
 .app[data-motion='off'] .turn-prev,
-.app[data-motion='off'] .focusable.is-focused::before,
-.app[data-motion='off'] .focusable.is-focused::after {
+.app[data-motion='off'] .focusable:is(.is-focused, :focus-visible)::before,
+.app[data-motion='off'] .focusable:is(.is-focused, :focus-visible)::after {
   animation: none !important;
 }
 
 /* 关掉动效时，焦点光标的 ON 态常亮（否则看不见焦点） */
-.app[data-motion='off'] .focusable.is-focused::before,
-.app[data-motion='off'] .focusable.is-focused::after {
+.app[data-motion='off'] .focusable:is(.is-focused, :focus-visible)::before,
+.app[data-motion='off'] .focusable:is(.is-focused, :focus-visible)::after {
   opacity: 1;
 }
 
@@ -446,8 +439,8 @@ body {
   .turn-prev {
     animation: none !important;
   }
-  .focusable.is-focused::before,
-  .focusable.is-focused::after {
+  .focusable:is(.is-focused, :focus-visible)::before,
+  .focusable:is(.is-focused, :focus-visible)::after {
     animation: none !important;
     opacity: 1;
   }

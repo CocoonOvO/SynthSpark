@@ -7,16 +7,31 @@
  * - 正文段落 → 中文黑体 + 舒展行距，长文可读性优先
  *   像素字体只用于「结构性文字」，绝不用于大段正文
  *
+ * 链接（第六轮补齐）：
+ * - 渲染出的链接挂 `.focusable`，好让原生 Tab 焦点吃到全站唯一那套 8bit 光标
+ * - 站内链接（`/` 开头）接管成前端路由跳转，不再整页刷新；
+ *   外链原样交给浏览器。演示参数 `?demo=1` 会被沿用，否则点一篇
+ *   正文里的链接就掉回实时数据，前后不一致。
+ *
  * 安全：markdown-it 以 html:false 渲染，原始 HTML 被转义；
  * 链接协议由 markdown-it 默认的 validateLink 过滤（javascript: / vbscript: 等一律拒绝）。
  * 生产版会再叠一层 DOMPurify（见 design/icespark-ARCHITECTURE.md）。
  */
 import MarkdownIt from 'markdown-it'
 import { computed } from 'vue'
+import { useRouter } from 'vue-router'
 
 const props = defineProps<{ source: string }>()
 
 const md = new MarkdownIt({ html: false, linkify: true, breaks: false, typographer: false })
+
+// 正文链接挂上 .focusable：文章详情页的 Tab 交还给浏览器（按 DOM 顺序遍历），
+// 原生焦点要能吃到全站唯一那套 8bit 焦点视觉（见 styles/pixel.css）。
+// 注意 link_open 默认没有规则（默认渲染走 renderToken），所以给 self.renderToken 加类。
+md.renderer.rules.link_open = (tokens, idx, options, env, self) => {
+  tokens[idx].attrJoin('class', 'focusable')
+  return self.renderToken(tokens, idx, options)
+}
 
 // 代码块外包一层容器：给「语言标签」一个安身之处，同时方便单独处理横向滚动
 const baseFence = md.renderer.rules.fence!
@@ -27,10 +42,32 @@ md.renderer.rules.fence = (tokens, idx, options, env, self) => {
 }
 
 const html = computed(() => md.render(props.source || ''))
+
+const router = useRouter()
+
+/**
+ * 站内链接走前端路由（不整页刷新）。
+ * 只在链接确实指向站内时接管：`/` 开头且不是 `//`（协议相对 = 站外）。
+ */
+function onBodyClick(e: MouseEvent) {
+  // 新窗口 / 新标签的意图（中键、Ctrl、Cmd、Shift）一律不拦
+  if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return
+  const a = (e.target as HTMLElement | null)?.closest?.('a[href]') as HTMLAnchorElement | null
+  if (!a) return
+  const href = a.getAttribute('href') || ''
+  if (!href.startsWith('/') || href.startsWith('//')) return
+
+  e.preventDefault()
+  const url = new URL(href, window.location.origin)
+  // 站内跳转沿用当前的演示参数，免得正文链接把评审者从样张数据踢回实时数据
+  const demo = new URL(window.location.href).searchParams.get('demo')
+  if (demo && !url.searchParams.has('demo')) url.searchParams.set('demo', demo)
+  void router.push(url.pathname + url.search + url.hash)
+}
 </script>
 
 <template>
-  <div class="md-body" data-testid="md-body" v-html="html" />
+  <div class="md-body" data-testid="md-body" v-html="html" @click="onBodyClick" />
 </template>
 
 <style scoped>

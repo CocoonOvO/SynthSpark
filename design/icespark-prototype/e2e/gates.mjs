@@ -248,15 +248,26 @@ await page.waitForTimeout(1400)
 // ── 4. 存储键门 ──
 {
   // 动一遍三个偏好，让键真的被写出来
-  // 菜单行序：resume / search / sound / back / forward / account / settings / home
+  // 菜单行序（第 6 轮起）：resume / search / sound / account / settings / home
+  // 不数行数，按 data-row 走 —— 以后菜单再加行也不会把这道门带崩
+  const focusRow = async (id) => {
+    for (let i = 0; i < 12; i += 1) await page.keyboard.press('ArrowUp')
+    for (let i = 0; i < 16; i += 1) {
+      const cur = await page.evaluate(
+        () => document.querySelector('.pause-rows .row.is-focused')?.dataset.row || ''
+      )
+      if (cur === id) return true
+      await page.keyboard.press('ArrowDown')
+      await page.waitForTimeout(30)
+    }
+    return false
+  }
   await page.keyboard.press('p')
   await page.waitForTimeout(240)
-  for (let i = 0; i < 10; i += 1) await page.keyboard.press('ArrowUp')
-  await page.keyboard.press('ArrowDown')
-  await page.keyboard.press('ArrowDown')
+  await focusRow('sound')
   await page.keyboard.press('ArrowRight') // 音效：关 → 开
   await page.waitForTimeout(150)
-  for (let i = 0; i < 4; i += 1) await page.keyboard.press('ArrowDown') // → 设置
+  check('存储键门：能走进设置行', await focusRow('settings'))
   await page.keyboard.press('Enter')
   await page.waitForTimeout(260)
   for (let i = 0; i < 10; i += 1) await page.keyboard.press('ArrowUp') // 设置首行

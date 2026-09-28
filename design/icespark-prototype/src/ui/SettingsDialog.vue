@@ -1,9 +1,11 @@
 <script setup lang="ts">
 /**
- * 设置弹窗（登录后才在暂停菜单里出现，但与暂停菜单是同级独立弹窗）
+ * 设置弹窗（与暂停菜单同级的独立弹窗）
  *
- * 三档开关：音效 / 每页条数 / 动效。
- * 信号强度已按用户要求**从设置里移除**，全站固定用最高档（只在该弹窗脚注里说明一句）。
+ * 收口原则（用户第六轮第 2 条）：**设置里只放影响展示效果的项**，
+ * 与展示无关的（数据来源之类）一律移出去，以后有新的展示项再往这里加。
+ * 现在三项：音效 / 每页条数 / 动效。
+ * 信号强度早已按用户要求移除，全站固定最高档（只在该弹窗脚注里说明一句）。
  *
  * 输入等价性：
  * - 键盘：↑↓ 选行，←→ 改值，A/Enter 切换，B/ESC 关闭
@@ -22,7 +24,6 @@ import {
   setMotion,
   SIGNAL_LEVEL,
 } from './prefs'
-import { dataSource } from '../data/api'
 
 const emit = defineEmits<{ (e: 'close'): void }>()
 
@@ -31,7 +32,7 @@ interface Row {
   label: string
   value: string
   hint: string
-  kind: 'toggle' | 'enum' | 'info'
+  kind: 'toggle' | 'enum'
 }
 
 const rows = computed<Row[]>(() => [
@@ -55,13 +56,6 @@ const rows = computed<Row[]>(() => [
     value: motionEnabled.value ? '开' : '关',
     hint: '场景转场、翻页滚动、闪烁光标；关掉后功能一个不少',
     kind: 'toggle',
-  },
-  {
-    key: 'source',
-    label: '数据来源',
-    value: dataSource.value === 'live' ? '实时接口' : dataSource.value === 'loading' ? '读取中' : '离线样张',
-    hint: '后端 /api 可达时用真数据，否则回退内置样张',
-    kind: 'info',
   },
 ])
 
@@ -139,7 +133,7 @@ onUnmounted(off)
           v-for="(r, i) in rows"
           :key="r.key"
           class="row focusable"
-          :class="{ 'is-focused': index === i, info: r.kind === 'info' }"
+          :class="{ 'is-focused': index === i }"
           :data-testid="`set-${r.key}`"
           @mouseenter="hoverRow(i)"
           @click="((hoverRow(i)), change(i, 1))"
@@ -147,16 +141,17 @@ onUnmounted(off)
           <span class="row-label">{{ r.label }}</span>
           <span class="row-hint hint">{{ r.hint }}</span>
           <span class="row-value">
-            <span v-if="r.kind !== 'info'" class="arrow">◀</span>
+            <span class="arrow">◀</span>
             {{ r.value }}
-            <span v-if="r.kind !== 'info'" class="arrow">▶</span>
+            <span class="arrow">▶</span>
           </span>
         </div>
       </div>
 
       <div class="keys hint">↑↓ 选行 · ←→ 改值 · A/ENTER 切换 · ESC 关闭</div>
       <div class="note hint">
-        CRT 强度（信号档 {{ SIGNAL_LEVEL }}）固定为最高档，不再提供调节 —— 设置里只留真正影响使用的三项。
+        这里只留影响展示效果的三项。CRT 强度（信号档 {{ SIGNAL_LEVEL }}）固定最高档、数据来源随接口自动切换，
+        两者都不做成开关。
       </div>
     </div>
   </div>
@@ -221,11 +216,6 @@ onUnmounted(off)
   cursor: pointer;
 }
 
-.row.info {
-  cursor: default;
-  background: var(--paper-alt);
-}
-
 .row-label {
   flex: 0 0 76px;
   color: var(--ink);
@@ -248,10 +238,6 @@ onUnmounted(off)
 
 .arrow {
   color: var(--blue-400);
-}
-
-.row.info .row-value {
-  color: var(--ink-soft);
 }
 
 .keys {

@@ -58,6 +58,8 @@ export const isLoggedIn = computed(() => !!token.value)
 export const displayName = computed(
   () => authUser.value?.display_name || authUser.value?.username || '访客'
 )
+/** 超管判定：菜单里的「站点管理」入口靠它决定出不出现（后端 /api/auth/me 会给 is_superuser） */
+export const isSuperuser = computed(() => authUser.value?.is_superuser === true)
 
 export type LoginResult = { ok: true } | { ok: false; message: string }
 

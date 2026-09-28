@@ -37,6 +37,20 @@ page.on('response', (r) => {
 
 const shot = (n) => page.screenshot({ path: `${OUT}${n}.png` })
 
+/** 顶到第一行再往下数，按 data-row 定位菜单行（行序变了也不会假失败） */
+async function focusRow(id) {
+  for (let i = 0; i < 12; i++) await page.keyboard.press('ArrowUp')
+  for (let i = 0; i < 16; i++) {
+    const cur = await page.evaluate(
+      () => document.querySelector('.pause-rows .row.is-focused')?.dataset.row || ''
+    )
+    if (cur === id) return true
+    await page.keyboard.press('ArrowDown')
+    await page.waitForTimeout(30)
+  }
+  return false
+}
+
 await page.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' })
 await shot('1-boot')
 await page.waitForTimeout(2200)
@@ -172,10 +186,10 @@ check('返回后回到第 1 页（浏览状态保留）', (await pageText()) ===
 await page.keyboard.press('p')
 await page.waitForTimeout(240)
 check('P 打开菜单', (await page.locator('[data-testid="pause"]').count()) === 1)
-check('菜单有 8 行（未登录：无编辑）', (await page.locator('.pause-rows .row').count()) === 8, String(await page.locator('.pause-rows .row').count()))
+check('菜单有 6 行（未登录：无编辑 / 无前进后退）', (await page.locator('.pause-rows .row').count()) === 6, String(await page.locator('.pause-rows .row').count()))
 check('没有信号强度行', (await page.locator('[data-row="signal"]').count()) === 0)
-check('有返回上一页', (await page.locator('[data-row="back"]').count()) === 1)
-check('有转到下一页', (await page.locator('[data-row="forward"]').count()) === 1)
+// 第 6 轮：前进 / 后退两行按用户要求从菜单移除（历史交给 Q / E 与浏览器按钮）
+check('菜单里没有返回上一页 / 转到下一页', (await page.locator('[data-row="back"]').count()) === 0 && (await page.locator('[data-row="forward"]').count()) === 0)
 await shot('9-pause')
 
 // 搜索：菜单第二行
@@ -192,22 +206,22 @@ await page.keyboard.press('Escape')
 await page.waitForTimeout(160)
 check('ESC 回到菜单', (await page.locator('.pause-rows').count()) === 1)
 
-// 设置弹窗（先把焦点顶到第一行，再数下去 —— 免得依赖上一段的状态）
-for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowUp')
-for (let i = 0; i < 6; i++) await page.keyboard.press('ArrowDown')
+// 设置弹窗：按行 id 定位，不再数行数
+await focusRow('settings')
 await page.keyboard.press('Enter')
 await page.waitForTimeout(240)
 check('设置弹窗打开', (await page.locator('[data-testid="settings-dialog"]').count()) === 1)
 check('设置里没有信号强度行', (await page.locator('[data-testid="set-signal"]').count()) === 0)
+check('设置里没有数据来源（第 6 轮：设置只留展示相关项）', (await page.locator('[data-testid="set-source"]').count()) === 0)
 check('设置里有每页条数', (await page.locator('[data-testid="set-pageSize"]').count()) === 1)
+check('设置只有 3 行（音效 / 每页条数 / 动效）', (await page.locator('.rows .row').count()) === 3, String(await page.locator('.rows .row').count()))
 await shot('11-settings')
 await page.keyboard.press('Escape')
 await page.waitForTimeout(200)
 check('ESC 关设置回菜单', (await page.locator('[data-testid="settings-dialog"]').count()) === 0 && (await page.locator('[data-testid="pause"]').count()) === 1)
 
 // 登录弹窗
-for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowUp')
-for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowDown')
+await focusRow('account')
 await page.keyboard.press('Enter')
 await page.waitForTimeout(260)
 check('登录弹窗打开', (await page.locator('[data-testid="login-dialog"]').count()) === 1)
@@ -227,8 +241,7 @@ await page.waitForTimeout(240)
 const PROBE_USER = process.env.PROBE_USER
 const PROBE_PW = process.env.PROBE_PW
 if (PROBE_USER && PROBE_PW) {
-  for (let i = 0; i < 10; i++) await page.keyboard.press('ArrowUp')
-  for (let i = 0; i < 5; i++) await page.keyboard.press('ArrowDown')
+  await focusRow('account')
   await page.keyboard.press('Enter')
   await page.waitForTimeout(240)
   await page.fill('[data-testid="login-username"]', PROBE_USER)
@@ -236,8 +249,19 @@ if (PROBE_USER && PROBE_PW) {
   await page.click('[data-testid="login-submit"]')
   await page.waitForTimeout(1400)
   check('真实账号登录成功', (await page.locator('[data-testid="login-dialog"]').count()) === 0)
-  check('登录后菜单出现「编辑文章」', (await page.locator('[data-row="edit"]').count()) === 1)
-  check('菜单变成 9 行', (await page.locator('.pause-rows .row').count()) === 9, String(await page.locator('.pause-rows .row').count()))
+  check(
+    '登录后菜单出现「编辑文章」「个人信息编辑」两个真链接',
+    (await page.locator('[data-row="edit"]').count()) === 1 &&
+      (await page.locator('[data-row="profile"]').count()) === 1 &&
+      (await page.locator('[data-row="edit"]').evaluate((el) => el.tagName)) === 'A',
+  )
+  const rowsLogged = await page.locator('.pause-rows .row').count()
+  const hasSite = (await page.locator('[data-row="site"]').count()) === 1
+  check(
+    '菜单行数随登录态（8 行；超管再多一条「站点管理」= 9 行）',
+    rowsLogged === 8 || (rowsLogged === 9 && hasSite),
+    `${rowsLogged}${hasSite ? ' 含站点管理' : ''}`
+  )
   check('登录行显示退出登录', /退出登录/.test(await page.locator('[data-row="account"]').innerText()), await page.locator('[data-row="account"]').innerText())
   await shot('12b-logged-in')
   // 登录后刷新仍然保持登录（localStorage 里的 synthspark-token）

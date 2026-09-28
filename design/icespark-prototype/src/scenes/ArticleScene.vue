@@ -39,6 +39,8 @@ const liked = ref(false)
 const heartPop = ref(false)
 const dialogLines = ref<string[] | null>(null)
 const hearts = ref(0)
+/** 本文档根节点：用来判定原生焦点（Tab 遍历）是否落在正文范围内 */
+const rootEl = ref<HTMLElement | null>(null)
 
 const ACTIONS = [
   { key: 'like', label: '点赞' },
@@ -99,8 +101,30 @@ function openChip(i: number) {
   else goPosts({ tag: c.label }, 'wipe')
 }
 
+/**
+ * 原生焦点（Tab 走出来的链接）与自绘焦点（.is-focused）共存的两条规矩：
+ *
+ * 1. 原生焦点在本文档内时，**回车/空格交给浏览器**：它自己会激活那个链接。
+ *    否则一次回车会先被我们的 confirm 分支处理一次、再被浏览器处理一次，
+ *    变成「按一下跳两次」（历史里多出一条）。
+ * 2. 我们自己的焦点一动（方向键 / G / L / 鼠标划过），就把原生焦点收掉，
+ *    保证屏幕上永远只有一个光标。这一条正是第六轮加 Tab 遍历时最容易翻车的地方。
+ */
+function nativeFocusInside(): boolean {
+  const el = document.activeElement as HTMLElement | null
+  return !!el && el !== document.body && !!rootEl.value?.contains(el)
+}
+
+function dropNativeFocus() {
+  if (!nativeFocusInside()) return
+  ;(document.activeElement as HTMLElement).blur()
+}
+
 const off = onPad((a) => {
   if (dialogLines.value) return false // 对话框自己处理按键
+
+  if (a === 'confirm' && nativeFocusInside()) return false
+  dropNativeFocus()
 
   if (a === 'up' || a === 'down') {
     // 方向键始终是「滚动正文」：屏幕是 overflow 容器而不是文档，
@@ -208,11 +232,13 @@ function isChipFocused(i: number) {
 
 function hoverAction(i: number) {
   // hover 在 useFocusGroup 里已经静音（鼠标划过不出声）
+  dropNativeFocus()
   zone.value = 'actions'
   actionFocus.hover(i)
 }
 
 function hoverChip(i: number) {
+  dropNativeFocus()
   zone.value = 'chips'
   chipFocus.hover(i)
 }
@@ -241,7 +267,7 @@ function closeDialog() {
 </script>
 
 <template>
-  <div class="article">
+  <div ref="rootEl" class="article">
     <SceneHead :title="`文章 · ${post?.group_name || '未分组'}`" :clock="clock">
       <span v-if="post" class="head-date hint">{{ shortDate(post.created_at) }}</span>
     </SceneHead>
@@ -366,6 +392,7 @@ function closeDialog() {
       <span class="kb"><i class="kbd">G</i> 分组/标签</span>
       <span class="kb"><i class="kbd">L</i> 点赞评论</span>
       <span class="kb"><i class="kbd">→</i><i class="kbd">←</i> 行内移动</span>
+      <span class="kb"><i class="kbd">TAB</i> 遍历链接</span>
       <span class="kb"><i class="kbd">ENTER</i> 执行</span>
       <span class="kb"><i class="kbd">U</i> 回顶部</span>
       <span class="kb"><i class="kbd">Q</i> 返回</span>

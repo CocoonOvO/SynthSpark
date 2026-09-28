@@ -87,6 +87,24 @@
 - **`?demo=1` 会被列表导航保留**（`goPosts` 只重写 `group` / `tag` / `page`），否则在列表里一翻页
   样张模式就掉了，刷新即变回真数据源。
 
+### 第六轮修订记录（本轮：用户 5 条，逐条落实）
+
+| # | 用户反馈 | 处理 | 落点 |
+|---|----------|------|------|
+| 1 | 「你发的图片用的哪个数据库，怎么和我实际访问看到的文章列表完全不同」 | 不是数据库不同，是**数据源开关**：除 `17-home-live` 一张外，所有截图都跑在 `?demo=1`（内置样张）上；真实库里 6 篇里有 5 篇同标题、且没有一张封面图，做设计评审看不出形态。这一条写进截图小节的显著位置 | `e2e/shots.mjs`、本文件 §7 |
+| 2 | 设置只留展示相关项；菜单去掉 back / forward；登录后加编辑文章 + 个人信息编辑，超管再加站点管理 | 设置收口为**音效 / 每页条数 / 动效**三项（「数据来源」这类非展示项移出）；菜单删掉前进 / 后退两行；登录后出现 **编辑文章 `/write`**、**个人信息编辑 `/profile?tab=settings`**，`is_superuser` 再多一条 **站点管理 `/profile?tab=siteConfig`**。三者都是真 `<a href>`（可复制、可中键开新标签），菜单行数 6（未登录）/ 8（登录）/ 9（超管） | `ui/PauseMenu.vue`、`ui/SettingsDialog.vue`、`ui/auth.ts` |
+| 3 | 文章页 TAB 按 DOM 顺序遍历链接（用户批准「这个可以做」） | 从「消费但不动作」改为**把 Tab 还给浏览器**：原生 Tab 天然按 DOM 顺序走（芯片 → 操作条 → 正文链接），`Shift+Tab` 反向、自动滚进视野、回车自动激活全部免费。为此把原生 `:focus-visible` 并进**唯一那套焦点视觉**，并用 `nativeFocusInside()` 保证「原生激活」与「手柄确认」不会双触发 | `App.vue`、`styles/pixel.css`、`scenes/ArticleScene.vue`、`ui/MarkdownBody.vue` |
+| 4 | 没有封面的文章放马赛克图太丑，要更优雅的策略 | 改成**空画框记号**（外框 + 方块太阳 + 地平线，纯蓝色阶、硬边、无圆角，形状跟随画框自身宽高比）：语义仍是「这里是图片位」，但长在这套像素语言里。曾经试过「放大标题首字做水印」，`ArkPixel` 是 12px 点阵字体，放大到 94px 后笔画被拉开、再加灰度抗锯齿，一个字会被看成两团碎块 —— 已放弃并记录 | `ui/ImageFrame.vue`、`styles/pixel.css` |
+| 5 | 给管理员账号和密码测试 | 业务库里建了两个演示账号（前台 `/api/auth/token` 可登录）：`icespark_admin` / `icespark2026`（`is_superuser=true`，显示名「演示管理员」）与 `icespark_user` / `icespark2026`（普通用户）。配置库超管 `admin` / `123456` 只作用于 `/api/admin/login`，**登不进这个前台** | `e2e/round6.mjs` 的登录用例 |
+
+顺带做掉的两件小事：
+
+- **样张封面改为本地像素图**（`public/demo-cover-a|b.png`，16×9）。原来指向 `picsum.photos`，
+  评审环境没外网时六张卡片全变成占位图 —— 恰恰把「有封面 / 无封面混排」这个最该看的形态弄没了，
+  而且 `img` 报错会往控制台写错误，混淆真正的 JS 错误。
+- **正文链接接管为前端路由**（`/` 开头才接管，外链照旧；`?demo=1` 会被沿用）。
+  为此给样张正文补了一节「相关的两篇」，文章页才有真实可 Tab 到的正文链接。
+
 ---
 
 ## 3. 样机结构
@@ -94,10 +112,12 @@
 ```
 design/icespark-prototype/
 ├── public/fonts/               # Ark Pixel 12px 像素字体（gitignored，约 738KB）
-├── e2e/smoke.mjs               # 交互回归：纯键盘路线 / 纯鼠标路线 / 减动效（58 项断言）
-├── e2e/gates.mjs               # 回归门：配色 / 焦点 / 术语 / 存储键 / 独立性（20 项断言）
-├── e2e/round5.mjs              # 第五轮 8 条交互优化的专项验收（40 项断言）
-├── e2e/shots.mjs               # 出图脚本（26 张）
+├── public/demo-cover-a|b.png   # 样张封面（16×9 像素图，不依赖外网）
+├── e2e/smoke.mjs               # 交互回归：纯键盘路线 / 纯鼠标路线 / 减动效（59 项断言，带账号 63 项）
+├── e2e/gates.mjs               # 回归门：配色 / 焦点 / 术语 / 存储键 / 独立性（21 项断言）
+├── e2e/round5.mjs              # 第五轮 8 条交互优化的专项验收（41 项断言）
+├── e2e/round6.mjs              # 第六轮 5 条的专项验收（44 项断言，含超管菜单与 TAB 遍历）
+├── e2e/shots.mjs               # 出图脚本（28 张）
 ├── src/styles/tokens.ts        # 唯一调色板（白底浅蓝）+ 场景定义
 ├── src/styles/pixel.css        # 像素铁律 + CRT 质感 + 唯一焦点样式 + 图片画框 + 翻页动效
 ├── src/data/api.ts             # 数据层：真接口 + 离线样张回退 + ?demo=1 开关
@@ -106,16 +126,16 @@ design/icespark-prototype/
 ├── src/ui/pad.ts               # 输入层：手柄键位、两趟派发（consumed）、焦点分区、焦点自动滚入视野
 ├── src/ui/scene.ts             # 表现层：路由→场景帧 + 整屏像素转场（不再持有历史）
 ├── src/ui/tabs.ts              # 标签页定义；当前标签由路由推出，标签栏光标独立（鼠标划过只预览）
-├── src/ui/auth.ts              # 登录态：POST /api/auth/token（form-urlencoded）+ GET /api/auth/me
+├── src/ui/auth.ts              # 登录态：POST /api/auth/token（form-urlencoded）+ /api/auth/me + isSuperuser
 ├── src/ui/focus.ts             # 共享焦点模型 + 栅格「视觉相邻」移动
 ├── src/ui/prefs.ts             # 音效 / 每页条数 / 动效（信号强度已移除，固定最高档）
 ├── src/ui/sfx.ts               # WebAudio 方波音效（零音频资源）
 ├── src/ui/TabBar.vue           # 8bit 标签栏
-├── src/ui/PauseMenu.vue        # 菜单九行 + 弹内搜索
+├── src/ui/PauseMenu.vue        # 菜单（6/8/9 行随登录态与超管变化）+ 弹内搜索 + 站内链接行
 ├── src/ui/LoginDialog.vue      # 登录弹窗（真实接口，失败显示后端 detail）
-├── src/ui/SettingsDialog.vue   # 设置弹窗（音效 / 每页条数 / 动效）
-├── src/ui/MarkdownBody.vue     # markdown-it 渲染 + 像素外壳样式
-├── src/ui/ImageFrame.vue       # 像素画框图片容器（无图时同尺寸占位）
+├── src/ui/SettingsDialog.vue   # 设置弹窗（只留展示相关：音效 / 每页条数 / 动效）
+├── src/ui/MarkdownBody.vue     # markdown-it 渲染 + 像素外壳样式 + 站内链接走前端路由
+├── src/ui/ImageFrame.vue       # 像素画框图片容器（无图时同尺寸「空画框」记号）
 ├── src/ui/SceneHead.vue        # 场景页头（时钟 + 页面名）
 ├── src/ui/PixelAvatar.vue      # 头像降采样 + 色彩量化
 ├── src/ui/PixelDialog.vue      # RPG 对话框
@@ -218,13 +238,15 @@ cd design/icespark-prototype && npm install && npm run dev
 
 ### 第四轮：七条反馈验收（本轮）
 
-两个可执行套件（都需要 5173 的 dev server）：
+四个可执行套件（都需要 5173 的 dev server）：
 
 ```bash
 cd design/icespark-prototype
-node e2e/smoke.mjs     # 交互回归：57 项，全通过
-node e2e/gates.mjs     # 回归门：18 项，全通过
-node e2e/shots.mjs     # 出图 23 张 → design/icespark-shots-v3/
+node e2e/smoke.mjs     # 交互回归：59 项（带 PROBE_USER/PROBE_PW 则 63 项），全通过
+node e2e/gates.mjs     # 回归门：21 项，全通过
+node e2e/round5.mjs    # 第五轮 8 条：41 项，全通过
+node e2e/round6.mjs    # 第六轮 5 条：44 项，全通过（含超管菜单与文章页 TAB 遍历）
+node e2e/shots.mjs     # 出图 28 张 → design/icespark-shots-v3/
 ```
 
 `smoke.mjs` 覆盖：
@@ -236,9 +258,9 @@ node e2e/shots.mjs     # 出图 23 张 → design/icespark-shots-v3/
 | 翻页 | PgDn 从 PAGE 1/2 到 2/2，PgUp 回来；返回文章后页码不丢 |
 | 标签栏 | `↑` 顶到标签栏、`←→` 选页、Enter 进入、`Q/E` 直接切页 |
 | 文章页 | markdown 真的渲染出标题/代码块/表格；左侧竖列已删；操作条是横排；快捷键指南常驻且贴在屏幕底部（y+h > 800） |
-| 暂停菜单 | 8 行（未登录）/ 9 行（登录后）；无信号强度行；有返回上一页 / 转到下一页 |
+| 暂停菜单 | 6 行（未登录）/ 8 行（登录后）/ 9 行（超管）；无信号强度行；**已无返回上一页 / 转到下一页**；登录后出现「编辑文章」「个人信息编辑」两个真链接，超管多一条「站点管理」 |
 | 搜索 | 菜单内输入关键词出 6 条结果（真调 `/api/search/`） |
-| 设置 | 音效 / 每页条数 / 动效三项；无信号强度行 |
+| 设置 | 音效 / 每页条数 / 动效三项（第 6 轮起只留展示相关项）；无信号强度行、无数据来源行 |
 | 登录 | 错账号 → 显示后端 `用户名或密码错误`；真账号 → 成功、菜单多出「编辑文章」、刷新后仍登录 |
 | 无障碍 | `prefers-reduced-motion` 下切页与导航照常可用 |
 | 纯鼠标 | 全程不碰键盘：切页 → 进文章 → 返回 → 翻页 → 开菜单 |
@@ -249,9 +271,9 @@ node e2e/shots.mjs     # 出图 23 张 → design/icespark-shots-v3/
 | 门 | 断言 |
 |----|------|
 | 配色门 | 枚举样式表里全部 `var()`（16 个）逐个可解析；屏幕与卡片边框真的画出来；底色是白不是透明 |
-| 焦点门 | 焦点移动有**像素级差异**；底色浅蓝；左右各 8px 实心块；`blink-step` 关键帧；**无额外 outline、边框仍为 3px**；已选中项被聚焦时底色必须变；**横向滚动条里的焦点芯片必须滚进视野**（用真实数据测） |
+| 焦点门 | 焦点移动有**像素级差异**；底色浅蓝；左右各 8px 实心块；`blink-step` 关键帧；**无额外 outline、边框仍为 3px**；已选中项被聚焦时底色必须变；**横向滚动条里的焦点芯片必须滚进视野**（用真实数据测）；原生 Tab 焦点（`:focus-visible`）走的是同一套视觉 |
 | 术语门 | 主页 / 文章 / 关联 / 关于 / 文章详情 / 菜单六个页面扫描 19 个禁用词表，零命中 |
-| 存储键门 | `localStorage` 键全部带 `synthspark` 前缀；动效开关真的改变 `data-motion` |
+| 存储键门 | 能按 `data-row` 走进设置行（不数行数）；`localStorage` 键全部带 `synthspark` 前缀；动效开关真的改变 `data-motion` |
 | 独立性门 | 运行期资源请求都落在本站 `/api`，前端不猜后端内部实现 |
 
 ### 第三轮：输入等价性 + 配色门（历史记录）
@@ -305,8 +327,8 @@ node e2e/shots.mjs     # 出图 23 张 → design/icespark-shots-v3/
 | 1 | ESC 开菜单 | 按 ESC 出现菜单、再按一次关闭；**分层消费**也验了：跳页框里、文章芯片区里按 ESC 只退一层，不会又弹菜单 |
 | 2 | TAB 切标签页 | TAB 依次 `/?demo=1 → /posts → /links → /about → /`，SHIFT+TAB 反向；每一步都同时断言**地址栏与高亮标签** |
 | 3 | 分组选择 | 列表有独立分组行 + 标签行；`G` 聚焦「全部分组」、`→` 移到下一个分组、回车筛选；筛完逐张卡片比对该分组名；高亮芯片在视口内 |
-| 4 | 无标签栏不切页 | 文章详情页连按 TAB / SHIFT+TAB，地址栏一动不动 |
-| 5 | Q / E 历史 | 列表 → 文章后 `Q` 回列表、`E` 回文章（比对 URL）；深链接进入时 `Q` 不白屏；菜单「返回上一页」行可用性随真实历史变化 |
+| 4 | 无标签栏不切页 | 文章详情页连按 TAB / SHIFT+TAB，地址栏一动不动（**第六轮起 TAB 改为遍历页面内的链接**，仍不换页） |
+| 5 | Q / E 历史 | 列表 → 文章后 `Q` 回列表、`E` 回文章（比对 URL）；深链接进入时 `Q` 不白屏；~~菜单「返回上一页」行可用性~~ → **第六轮该行已删除**，改为断言「两行确实不在 + 菜单里按 Q 仍然后退」 |
 | 6 | 跳页 | `J` 开出跳页框；输 `99` 收敛到最后一页、URL 带 `page=2`；输 `1` 回到第 1 页且**不写** `page` 参数；鼠标点开 + 点「跳转」同样生效 |
 | 7 | 文章详情 | `U` 把 `scrollTop` 从 720 归零；`L` 聚焦点赞按钮；`G` 聚焦芯片；回车跳到对应列表且列表里该分组是选中态 |
 | 8 | 路由 | `/about`、`/post/aesthetic-bias` 直接打开（标题正确）；`/no-such-page` 回主页不白屏；文章详情页确实没有标签栏 |
@@ -326,6 +348,29 @@ node e2e/shots.mjs     # 出图 23 张 → design/icespark-shots-v3/
 | 18 | 真实数据下筛选条右侧的标签键盘够不到 | 焦点可见性只量了**纵向**（`box.top/bottom`），而筛选条是 `overflow-x: auto` 的单行横条，被挤到右边的芯片永远滚不进来 | `ensureFocusedVisible()` 改成两轴交给 `scrollIntoView({ block: 'nearest', inline: 'nearest' })`（它会逐层处理可滚动祖先，且已可见时是空操作）—— 顺带把「自己量可见性」那段删了；焦点门新增一条用**真实数据**（14 个标签、1802/1358 溢出）的断言 |
 | 19 | 筛选条溢出时鼠标很难横向滚 | 单行横条换行会把卡片挤出屏幕，不换行又够不到右边的芯片 | 把滚轮借过来：在筛选条上滚轮 = 横向滚这一条，这一条没得滚时立刻放手、页面照常纵向滚动 |
 | 20 | 「减动效」用例突然失败 | 刷新后停在刷新前的地址（**这正是路由该有的行为**），用例还按「刷新回主页」写 | 用例显式回主页再测；这是用例过期，不是产品缺陷 |
+
+### 第六轮验收（`e2e/round6.mjs`，44 项全绿）
+
+| # | 用例 | 断言内容 |
+|---|------|----------|
+| 2 | 设置只留展示项 | 设置弹窗恰好 3 行，且 `data-testid` 序列就是 `set-sound / set-pageSize / set-motion`；无 `set-source`、无 `set-signal`；每页条数仍改得动（键盘 ←→） |
+| 2 | 菜单去掉前进后退 | 未登录菜单 6 行；`[data-row="back"]`、`[data-row="forward"]` 计数为 0；菜单里按 `Q` 仍然后退并关掉菜单 |
+| 2 | 登录后菜单出现链接 | 普通用户 8 行、含 `edit` / `profile`、无 `site`；超管 9 行且 `site` 存在；三行都是 `A` 标签、`href` 分别为 `/write`、`/profile?tab=settings`、`/profile?tab=siteConfig`；点一下只给正式版路径说明、**URL 不变**；刷新后仍认得超管（`/api/auth/me` 回填 `is_superuser`） |
+| 3 | 文章页 TAB 遍历 | 落点序列与 `document.querySelectorAll('.article a[href], .chip, .act')` **逐项相等**（芯片 → 操作条 → 正文链接，共 8 个）；每个落点 `el.matches(':focus-visible')` 为真；最后一个落点确实在屏幕可视区内（浏览器自动滚入）；`SHIFT+TAB` 回到上一个；回车打开正文链接后 `history.length` **只加 1**（证明原生激活与手柄确认没有双触发），且是站内路由（`navigation` 计数仍为 1，没有整页刷新）；芯片同理 |
+| 4 | 无封面策略 | 同一页混排「有封面 2 / 无封面 2」；本地封面 `naturalWidth > 0`（不依赖外网）；`.img-fallback` 计数为 0；无封面卡片画的是 `.img-ph-box`（方块太阳 + 地平线）且横向居中；`.img-ph-glyph` 计数为 0（放大字方案已撤）；四张卡片封面区高度完全相同（213/213/213/213） |
+| 5 | 超管账号 | `icespark_admin` 能通过前台登录并拿到超管菜单（`/api/auth/token` → `/api/auth/me` 全链路） |
+
+### 第六轮修掉的真实缺陷与踩到的坑
+
+| # | 问题 | 根因 | 处理 |
+|---|------|------|------|
+| 21 | 「无封面」块太丑（用户点名） | 那是抖动马赛克占位块，与真封面同尺寸但质感完全不同 —— 像图挂了 | 换成**空画框记号**（外框 + 太阳 + 地平线，全方块、无圆角、纯蓝色阶），形状跟随画框宽高比；封面区尺寸规则不变，网格依旧不参差 |
+| 22 | 试做「放大标题首字」水印失败 | `ArkPixel` 是按 **12px** 设计的点阵字体；放大到 94px 后笔画之间被拉开、边缘又被灰度抗锯齿糊住，一个字被看成两团碎块 | 放弃该方案并在 `ImageFrame.vue` 顶部记下来，避免下次再撞 |
+| 23 | 六张卡片全变占位图，控制台还有 `ERR_CONNECTION_CLOSED` | 样张封面指向 `picsum.photos` 外链，评审环境没有外网 | 换成本地 16×9 像素图 `public/demo-cover-a|b.png`（画框自带 `image-rendering: pixelated`，放大就是 8bit 方颗粒） |
+| 24 | 原生 TAB 焦点**没有任何视觉** | `.focusable { outline: none }` 是为自绘焦点准备的，原生焦点一旦进来就是「看不见的焦点」，回车会莫名其妙触发它 | 把 `:focus-visible` 并进**唯一那套焦点视觉**（用 `:is(.is-focused, :focus-visible)` 写，不复制样式），动效关闭与减动效分支同步覆盖 |
+| 25 | 回车可能触发两次导航 | 原生焦点在链接上时，浏览器会激活它，我们的 `confirm` 分支也会再跑一次 | 加 `nativeFocusInside()`：原生焦点在本文档内时 `confirm` 直接放手；其余动作（方向键 / G / L / 鼠标划过）反过来收掉原生焦点，保证同一时刻只有一个光标。用 `history.length` 只加 1 做断言 |
+| 26 | 加完 TAB 遍历后「一次按键」要复查 | 焦点体系从「全自绘」变成「自绘 + 原生」两套，最容易出现双高亮 / 双触发 | 两条规矩写进 `ArticleScene.vue` 的注释，并由 round6 断言（落点可见性 + 历史只加 1）兜住 |
+| 27 | 门里两条断言因菜单行数变化而失败 | 用例按「数行数」定位菜单行（`ArrowDown × 4`），第六轮删掉两行后数到了别的行 | 三套脚本统一改成按 `data-row` 定位（`focusRow()`）；这是**用例过期**，不是产品缺陷 |
 
 ### 第四轮修掉的真实缺陷
 
@@ -353,21 +398,25 @@ node e2e/shots.mjs     # 出图 23 张 → design/icespark-shots-v3/
    现在走的是同一条 `vue-router` 历史
 7. 评论提交、文章编辑仍是演示入口：`POST /api/comments` 匿名可用，编辑器未实现（本轮只保留入口）
 
-### 第五轮截图（`design/icespark-shots-v3/`，共 26 张）
+### 截图（`design/icespark-shots-v3/`，共 28 张）
 
 `1-boot` / `2-home` / `3-home-focus-group` / `4-posts` / `4b-card-focus-closeup` /
 `4c-group-row-focus` / `4d-jump-box` / `4e-foot` / `5-page-turn-mid` / `5b-page-2` /
 `6-tabbar-focus` / `7-article-top` / `8-article-markdown` / `9-article-actions-focus` /
 `9b-article-chips-focus` / `10-article-comments` / `10b-keybar` / `11-links` / `12-about` /
 `13-pause` / `13b-pause-closeup` / `14-search` / `15-settings` / `16-login-error` /
-`17-home-live` / `18-mobile-posts` / `19-mobile-article`。
+`16b-card-no-cover` / `17-home-live` / `18-mobile-posts` / `19-mobile-article`。
 
-本轮新增：`4c-group-row-focus`（分组行独立成行且焦点可见）、`4d-jump-box`（跳页框与页脚同排不换行）、
-`4e-foot`（页脚特写）、`9b-article-chips-focus`（分组/标签芯片可点跳列表）。
-`e2e/round5.mjs` 另把交互过程截图写到 `design/icespark-shots-v3/round5/`（12 张）。
+第六轮新增 `16b-card-no-cover`（无封面的空画框记号特写）。
+`e2e/round5.mjs` 与 `e2e/round6.mjs` 另把交互过程截图写到
+`design/icespark-shots-v3/round5/`（12 张）与 `round6/`（8 张，含超管菜单、TAB 焦点、空画框列表）。
 
-其中 `17-home-live` 用的是真实后端（`● LIVE`），其余为 `?demo=1` 样张数据源 —— 真实库里是
-5 篇同标题的测试数据、且没有封面图，用它做设计评审看不出形态。
+> **⚠️ 这些截图不是实时接口的结果（用户第 1 条疑问）。**
+> 除 `17-home-live` 一张外，**全部**跑在 `?demo=1`（内置样张）上：真实库里 6 篇里有 5 篇同标题、
+> 而且**没有一张封面图**（`● LIVE` 时页面上就是这么朴素），
+> 而设计评审要看的恰恰是「有封面 / 无封面混排」「长文排版」「分组 / 标签多到溢出」这些形态。
+> 所以：**截图 ≠ 你直接打开站点看到的样子**，两者差的不是数据库，是数据源开关。
+> 想看到截图里的样子：地址后面加 `?demo=1`；想看真实数据：去掉它（或看 `17-home-live`）。
 
 ## 8. 尚待确定
 
@@ -378,7 +427,9 @@ node e2e/shots.mjs     # 出图 23 张 → design/icespark-shots-v3/
 - 移动端形态：窄屏下已做单列回退（`18-mobile-posts` 实测可用），但未做触摸手势
 - 每页条数是否要重新开放 8（需要先解决「焦点移动带动滚动」之外的整屏容量问题）
 - 密码输入目前只有用户名 / 密码两项，未做注册与找回入口
-- **待用户确认**：「设置」目前任何状态都能进（只有「编辑文章」是登录后才出现）。若「设置」也应登录后才显示，是一行改动
+- ~~**待用户确认**：「设置」是否要登录后才显示~~ → **已确认（第六轮）**：设置任何状态都能进，只是内容收窄为展示相关项
 - 标签行在窄屏是**横向滚动条**（`18-mobile-posts` 右侧会切掉一两个标签），是否要改成两行折行 / 折叠「更多」
-- TAB 在文章详情页被消费但不动作（不换页、也不移动原生焦点）。若希望 TAB 在详情页按 DOM 顺序遍历链接，需要另一套规则
+- ~~TAB 在文章详情页被消费但不动作~~ → **已确认并实现（第六轮）**：TAB 按 DOM 顺序遍历页面内链接
+- **菜单里那三个链接的落点**（`/write`、`/profile?tab=settings`、`/profile?tab=siteConfig`）沿用旧版路径；
+  旧版 `ProfileView` 还不认 `?tab=`，正式版要么让 Profile 读这个参数，要么换成独立路由（`/admin/site` 之类）—— 需要维护者定一套
 - 路由现在是 `createWebHistory`（真路径）。为兼容静态托管，是否改用 hash 模式（`#/posts`）需要部署方式定下来才能决定
