@@ -12,6 +12,12 @@
  * 「方向键被全局吞掉导致键盘用户无法滚动长文」的缺陷。
  *
  * 作用域（scope）：暂停菜单打开时屏蔽场景层监听，避免按键穿透。
+ *
+ * **两趟派发（第 5 轮新增）**：
+ * 第一趟只给「当前作用域」的监听器（scene 或 pause），第二趟才给 'any' 监听器，
+ * 并附带 `consumed` 参数说明第一趟是否已经用掉了这个键。
+ * 为什么需要：Esc 在暂停菜单里是「关菜单」，在场景里是「开菜单」，
+ * 若两者无序并发，关完菜单后全局监听会立刻再把它打开（同一按键一次生效原则被破坏）。
  */
 import { ref, onMounted, onUnmounted } from 'vue'
 import { playSfx } from './sfx'
@@ -27,11 +33,24 @@ export type PadAction =
   /** 上一页 / 下一页：PageUp / PageDown（列表翻页专用，与方向键的焦点移动分开） */
   | 'pagePrev'
   | 'pageNext'
-  /** 切标签页：Q / E（任何场景下都可用，保证键盘能到达标签栏） */
+  /** 切标签页：Tab / Shift+Tab（只在「有标签栏的页面」生效，文章详情页不切换） */
   | 'tabPrev'
   | 'tabNext'
+  /** 历史前进 / 后退：Q / E */
+  | 'back'
+  | 'forward'
+  /** 跳页：J（文章列表） */
+  | 'jump'
+  /** 聚焦分组选择：G（列表的筛选区 / 文章页的分组·标签芯片） */
+  | 'focusGroup'
+  /** 聚焦标签行：T（文章列表） */
+  | 'focusTag'
+  /** 聚焦点赞·评论栏：L（文章详情） */
+  | 'focusLike'
+  /** 回到文章顶部：U（文章详情） */
+  | 'toTop'
 
-/** 输入作用域：any 永远接收（用于 START 这类全局键） */
+/** 输入作用域：any 永远接收（用于 START 这类全局键），但排在第二趟 */
 export type PadScope = 'scene' | 'pause' | 'any'
 
 /** 全局焦点索引（场景内单选列表用） */
@@ -51,7 +70,12 @@ export const inputLocked = ref(false)
  */
 export const focusZone = ref<'tabs' | 'content'>('content')
 
-type Handler = (a: PadAction) => boolean | void
+/**
+ * 监听器签名。第二个参数 `consumed` 只对作用域 'any' 有意义：
+ * 第一趟（当前作用域的监听器）已经处理掉这个键时为 true，
+ * 全局监听器据此让位（例如暂停菜单已经吃掉了 Esc，全局就别再开菜单）。
+ */
+type Handler = (a: PadAction, consumed: boolean) => boolean | void
 
 const listeners = new Map<Handler, PadScope>()
 
@@ -60,17 +84,34 @@ export function onPad(handler: Handler, scope: PadScope = 'scene'): () => void {
   return () => listeners.delete(handler)
 }
 
+/** 按插入顺序遍历某一批监听器，返回是否被消费 */
+function runPass(pred: (scope: PadScope) => boolean, a: PadAction, consumed: boolean): boolean {
+  let used = false
+  listeners.forEach((scope, fn) => {
+    if (!pred(scope)) return
+    if (fn(a, consumed || used) === true) used = true
+  })
+  return used
+}
+
 /** 派发事件，返回是否被消费 */
 function emit(a: PadAction): boolean {
   if (inputLocked.value && a !== 'start') return false
-  let consumed = false
-  listeners.forEach((scope, fn) => {
-    if (scope !== 'any' && scope !== activeScope.value) return
-    // 焦点在标签栏上时，内容层屏蔽输入：同一按键不能既走标签又走列表
-    if (scope === 'scene' && focusZone.value === 'tabs') return
-    const r = fn(a)
-    if (r === true) consumed = true
-  })
+
+  // 第一趟：当前作用域的监听器。焦点停在标签栏上时，内容层收不到按键
+  // （否则一次按键会同时移动标签高亮和列表光标）。
+  // 注意作用域在此刻取值，第二趟再取可能已经被改（关菜单会把作用域切回 scene）。
+  const scope = activeScope.value
+  const skipScene = focusZone.value === 'tabs'
+  let consumed = runPass(
+    (s) => s === scope && !(s === 'scene' && skipScene),
+    a,
+    false
+  )
+
+  // 第二趟：全局监听器（标签栏切换、启动键、Esc 开菜单…）
+  if (runPass((s) => s === 'any', a, consumed)) consumed = true
+
   if (consumed) ensureFocusedVisible()
   return consumed
 }
@@ -96,7 +137,12 @@ function ensureFocusedVisible() {
   })
 }
 
-/** 按键映射 */
+/**
+ * 按键映射
+ *
+ * 单字符键一律小写（handler 里做过归一化），
+ * Tab 需要在 handler 里单独处理（要区分 Shift+Tab）。
+ */
 const KEYMAP: Record<string, PadAction> = {
   ArrowUp: 'up',
   ArrowDown: 'down',
@@ -110,25 +156,30 @@ const KEYMAP: Record<string, PadAction> = {
   ' ': 'confirm',
   z: 'confirm',
   Escape: 'cancel',
-  Backspace: 'cancel',
-  x: 'cancel',
+  Backspace: 'back', // 返回上一页（与 Q 同义：历史后退）
+  x: 'back',
   p: 'start',
-  P: 'start',
   PageUp: 'pagePrev',
   PageDown: 'pageNext',
-  q: 'tabPrev',
-  Q: 'tabPrev',
-  e: 'tabNext',
-  E: 'tabNext',
+  Tab: 'tabNext', // Shift+Tab 在 handler 里改成 tabPrev
+  q: 'back', // 返回上一页（历史后退）
+  e: 'forward', // 回到下一页（历史前进）
+  j: 'jump', // 跳页
+  g: 'focusGroup',
+  t: 'focusTag',
+  l: 'focusLike',
+  u: 'toTop',
 }
 
 /** 在组件中使用：自动挂载/卸载键盘监听 */
 export function usePad() {
   function handler(e: KeyboardEvent) {
     const t = e.target as HTMLElement | null
-    const inField = !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
+    const inField =
+      !!t && (t.tagName === 'INPUT' || t.tagName === 'TEXTAREA' || t.isContentEditable)
 
     // 输入框内不劫持按键：只保留 Esc 交给上层处理
+    // （登录框 / 设置框 / 跳页输入框里的 Tab、字母、回车都归浏览器与表单本身）
     if (inField) {
       if (e.key === 'Escape') {
         e.preventDefault()
@@ -137,8 +188,19 @@ export function usePad() {
       return
     }
 
-    const action = KEYMAP[e.key]
+    // 单字符键归一化小写，否则开着大写锁定或按住 Shift 时会静默失效
+    const key = e.key.length === 1 ? e.key.toLowerCase() : e.key
+    let action = KEYMAP[key]
+    if (key === 'Tab' && e.shiftKey) action = 'tabPrev'
     if (!action) return
+
+    // 转场遮罩期间不接管按键（屏幕还是旧画面），但 Tab 必须吞掉：
+    // 放任它，浏览器会把原生焦点挪到某个按钮上 —— 那个焦点没有任何视觉指示，
+    // 而且之后按回车会「莫名其妙」触发它。
+    if (inputLocked.value && (action === 'tabNext' || action === 'tabPrev')) {
+      e.preventDefault()
+      return
+    }
 
     // 只有被消费才阻止默认行为，否则把按键还给浏览器（原生滚动等）
     if (emit(action)) e.preventDefault()

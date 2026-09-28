@@ -9,7 +9,7 @@
  * 与上一版的区别：
  * - 游戏术语清空（不再有 PAUSED / TITLE / RESUME 之类的玩家黑话）
  * - 搜索栏不是摆设：弹内直接检索 /api/search/，结果可点可键盘选
- * - 返回上一页 / 转到下一页 接的是真正的历史栈（见 ui/scene.ts）
+ * - 返回上一页 / 转到下一页 接的是**浏览器历史**（见 ui/nav.ts），和 Q / E 键同一条路径
  * - 登录与设置是与本菜单同级的独立弹窗，开子弹窗时本菜单不再响应按键（避免一次按键走两层）
  * - 信号强度设置已移除，只在设置弹窗脚注里说明固定为最高档
  */
@@ -18,16 +18,9 @@ import { onPad, activeScope, type PadAction } from './pad'
 import { useFocusGroup } from './focus'
 import { playSfx, previewSfx } from './sfx'
 import { soundEnabled, setSound } from './prefs'
-import {
-  resetTo,
-  pushScene,
-  popScene,
-  goForward,
-  canGoBack,
-  canGoForward,
-} from './scene'
+import { goBack, goForward, goTab, goArticle, canGoBack, canGoForward } from './nav'
 import { isLoggedIn, displayName, logout } from './auth'
-import { searchPosts, type SearchHit } from '../data/api'
+import { searchPosts, postKey, type SearchHit } from '../data/api'
 import LoginDialog from './LoginDialog.vue'
 import SettingsDialog from './SettingsDialog.vue'
 
@@ -114,12 +107,12 @@ function activate() {
       openSearch()
       break
     case 'back':
-      popScene('wipe')
       emit('close')
+      goBack()
       break
     case 'forward':
-      goForward('wipe')
       emit('close')
+      goForward()
       break
     case 'account':
       if (isLoggedIn.value) {
@@ -138,8 +131,8 @@ function activate() {
       sub.value = 'settings'
       break
     case 'home':
-      resetTo('home', 'shake')
       emit('close')
+      goTab('home', 'shake')
       break
   }
   return true
@@ -162,6 +155,19 @@ function onAction(a: PadAction): boolean {
   if (a === 'left') return adjust(-1) || true
   if (a === 'right') return adjust(1) || true
   if (a === 'confirm') return activate()
+  // Q / E 与菜单行同义：在菜单里也能直接翻历史（不必先选中那一行）
+  if (a === 'back' || a === 'forward') {
+    const id = a === 'back' ? 'back' : 'forward'
+    const row = rows.value.find((r) => r.id === id)
+    if (row?.disabled) {
+      hint.value = a === 'back' ? '已经在最早的一页了' : '还没有下一页'
+      return true
+    }
+    emit('close')
+    if (a === 'back') goBack()
+    else goForward()
+    return true
+  }
   if (a === 'cancel' || a === 'start') {
     emit('close')
     return true
@@ -250,11 +256,10 @@ function openHit(i: number) {
   const hit = hits.value[i]
   if (!hit) return
   playSfx('confirm')
-  // 顺序要紧：先关菜单（否则 pause 作用域还在），再把根页换成文章列表，最后压入详情。
-  // resetTo 用 'none' 不产生转场，只有最后一次压栈走闪白，不会两个转场打架。
+  // 顺序要紧：先关菜单（否则 pause 作用域还在），再跳文章。
+  // 搜索命中的是后端 id，但地址栏要可读，所以能拿到 slug 就用 slug。
   emit('close')
-  resetTo('posts', 'none')
-  pushScene('article', hit.id, 'flash')
+  goArticle(postKey({ id: hit.id, slug: hit.slug }), 'flash')
 }
 
 // 打开期间把输入作用域切到 pause，避免按键穿透到背后的场景

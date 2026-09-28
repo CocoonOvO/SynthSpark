@@ -272,10 +272,18 @@ export const DEMO_POST: Post = {
  * 标题 / 作者 / 封面取被点开的那一篇，正文用同一份 —— 样机要验的是排版与渲染器，
  * 不是内容本身，因此不假装有六份不同的长文。
  */
-export function demoPostFor(id?: string): Post {
-  const base = DEMO_POSTS.find((p) => p.id === id)
+export function demoPostFor(key?: string): Post {
+  const base = DEMO_POSTS.find((p) => p.id === key || p.slug === key)
   if (!base) return DEMO_POST
   return { ...DEMO_POST, ...base }
+}
+
+/**
+ * 文章在 URL 里的标识：优先 slug（可读、可分享），没有才退回 id。
+ * 列表页、搜索命中、文章页互相跳转都必须用它，否则同一个标题会有两种地址。
+ */
+export function postKey(p: { id: string; slug?: string | null }): string {
+  return p.slug || p.id
 }
 
 export const DEMO_COMMENTS: Comment[] = [
@@ -381,23 +389,45 @@ export async function loadPosts(limit = 24): Promise<void> {
   }
 }
 
-export async function loadPost(id?: string): Promise<void> {
-  if (forceDemo || !id || id === 'all') {
+/**
+ * 加载文章。`key` 来自 URL（/post/:key），可能是 id 也可能是 slug。
+ *
+ * 真实库的 id 是 UUID，slug 是中文可读串，因此按形状先选对接口：
+ * 正常路径只发一次请求（不先打一个注定 404 的探测请求 —— 那会在控制台留红字）。
+ * 猜错时再退到另一个接口，仍然鲁棒。
+ */
+export async function loadPost(key?: string): Promise<void> {
+  if (forceDemo || !key || key === 'all') {
     if (forceDemo) dataSource.value = 'demo'
-    store.post.value = demoPostFor(id)
+    store.post.value = demoPostFor(key)
     store.comments.value = DEMO_COMMENTS
     return
   }
+
+  const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+  const looksLikeId = UUID.test(key)
+  const idPath = `/api/posts/${encodeURIComponent(key)}`
+  const slugPath = `/api/posts/slug/${encodeURIComponent(key)}`
+
+  const fetchPost = async (): Promise<Post> => {
+    try {
+      return await get<Post>(looksLikeId ? idPath : slugPath)
+    } catch {
+      return await get<Post>(looksLikeId ? slugPath : idPath)
+    }
+  }
+
   try {
-    const p = await get<Post>(`/api/posts/${id}`)
+    const p = await fetchPost()
     store.post.value = p
+    // 评论要用文章真实 id，不能用 URL 上的 slug
     const c = await get<{ total: number; comments: Comment[] }>(
-      `/api/comments/?post_id=${id}&page=1&page_size=20`
+      `/api/comments/?post_id=${p.id}&page=1&page_size=20`
     )
     store.comments.value = c.comments || []
     dataSource.value = 'live'
   } catch {
-    store.post.value = DEMO_POST
+    store.post.value = demoPostFor(key)
     store.comments.value = DEMO_COMMENTS
     dataSource.value = 'demo'
   }

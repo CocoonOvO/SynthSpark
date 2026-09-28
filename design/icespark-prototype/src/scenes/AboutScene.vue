@@ -5,7 +5,7 @@
  * 内容本身也用 markdown 渲染 —— 关于页是最好的渲染器验收样本
  * （标题 / 列表 / 引用 / 表格 / 代码块五种结构一次性看全）。
  *
- * 键盘：↑↓ 逐行滚动，PgUp / PgDn 整屏滚动，ESC 回标签栏。
+ * 键盘：↑↓ 逐行滚动，PgUp / PgDn 整屏滚动，U 回顶部，ESC 打开菜单。
  */
 import { onMounted, onUnmounted } from 'vue'
 import { onPad, usePad } from '../ui/pad'
@@ -47,11 +47,18 @@ icespark 是它的前端试验分支：外壳是一台 8bit 显像管，本体�
 
 | 操作 | 键盘 | 鼠标 |
 | --- | --- | --- |
-| 切换标签页 | Q / E，或 ↑ 顶到标签栏 | 点击标签栏 |
+| 切换标签页 | TAB / SHIFT+TAB，或 ↑ 顶到标签栏 | 点击标签栏 |
 | 选择卡片 | ↑↓←→ 按视觉相邻移动 | 划过即选中，点击进入 |
 | 列表翻页 | PgUp / PgDn | 点击上一页 / 下一页 |
-| 打开菜单 | P 或 START | 点底部软按键 |
+| 跳到指定页 | J 打开跳页框，输页码回车 | 点「跳页 (J)」 |
+| 列表筛选 | G 分组行 · T 标签行 | 直接点分组 / 标签芯片 |
+| 文章页定位 | G 分组标签 · L 点赞评论 · U 回顶部 | 点击芯片 / 按钮 |
+| 前进后退 | Q 返回上一页 · E 回到下一页 | 菜单里的返回 / 下一页 |
+| 打开菜单 | P 或 ESC | 点底部软按键 |
 | 阅读正文 | ↑↓ / PgUp / PgDn | 滚轮 |
+
+**地址栏也是入口**：/posts?group=观念&page=2、/post/where-memory-lives 都能直接打开，
+浏览器前进后退与站内 Q / E 走的是同一条历史。
 
 > 键盘移动焦点会发出方波音，鼠标划过则始终静音 —— 划过不是离散事件，出声会变成噪音轰炸。
 
@@ -101,7 +108,7 @@ onUnmounted(off)
 <template>
   <div class="about">
     <SceneHead title="关于 · ABOUT" :clock="clock">
-      <span class="hint">↑↓ 滚动 · PgUp/PgDn 整屏 · ESC 回标签栏</span>
+      <span class="hint">↑↓ 滚动 · PgUp/PgDn 整屏 · U 回顶部 · ESC 菜单</span>
     </SceneHead>
 
     <div class="about-wrap">

@@ -1,5 +1,6 @@
 import { createApp } from 'vue'
 import App from './App.vue'
+import { router } from './router'
 import './styles/pixel.css'
 import { ROLES } from './styles/tokens'
 
@@ -16,4 +17,7 @@ for (const [name, value] of Object.entries(ROLES)) {
   document.documentElement.style.setProperty(name, value)
 }
 
-createApp(App).mount('#app')
+createApp(App)
+  // 路由必须在挂载前装上：App 的场景帧要靠它解析出来（含深链接）
+  .use(router)
+  .mount('#app')

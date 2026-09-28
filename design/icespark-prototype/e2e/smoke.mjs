@@ -27,6 +27,13 @@ page.on('console', (m) => {
   errors.push(t)
 })
 page.on('pageerror', (e) => errors.push(`pageerror: ${e.message}`))
+// 4xx/5xx 也算错误，但「故意用错密码」那条 401 是预期内的
+page.on('response', (r) => {
+  if (r.status() < 400) return
+  const u = r.url()
+  if (u.includes('/api/auth/token')) return
+  errors.push(`HTTP ${r.status()} ${u}`)
+})
 
 const shot = (n) => page.screenshot({ path: `${OUT}${n}.png` })
 
@@ -88,10 +95,12 @@ await page.keyboard.press('PageUp')
 await page.waitForTimeout(420)
 check('PgUp 回到第一页', (await pageText()) === p1)
 
-// ── ↑ 到标签栏 ──
-await page.keyboard.press('ArrowUp') // 0 -> 筛选行
+// ── ↑ 到标签栏（第 5 轮起中间多了「标签行 / 分组行」两层） ──
+await page.keyboard.press('ArrowUp') // 卡片 -> 标签行
 await page.waitForTimeout(120)
-await page.keyboard.press('ArrowUp') // 筛选首项 -> 标签栏
+await page.keyboard.press('ArrowUp') // 标签行 -> 分组行
+await page.waitForTimeout(120)
+await page.keyboard.press('ArrowUp') // 分组行 -> 标签栏
 await page.waitForTimeout(160)
 check('↑ 顶到标签栏', (await page.evaluate(() => document.querySelector('.app').dataset.zone)) === 'tabs')
 await page.keyboard.press('ArrowRight')
@@ -103,10 +112,11 @@ await page.waitForTimeout(420)
 check('ENTER 进入关联页', (await page.locator('[data-testid="links-grid"]').count()) === 1)
 await shot('6-links')
 
-// ── Q/E 切页 ──
-await page.keyboard.press('q')
+// ── TAB 切页（第 5 轮：Q/E 改成历史前进后退） ──
+await page.keyboard.press('Shift+Tab')
 await page.waitForTimeout(420)
-check('Q 切回文章页', (await page.locator('[data-testid="post-grid"]').count()) === 1)
+check('Shift+TAB 切回文章页', (await page.locator('[data-testid="post-grid"]').count()) === 1)
+check('切页写进 URL', page.url().endsWith('/posts'), page.url())
 
 // ── 打开文章 ──
 await page.keyboard.press('Enter')
@@ -132,6 +142,18 @@ const kbBox = await page.locator('[data-testid="keybar"]').boundingBox()
 check('指南贴在屏幕底部', kbBox.y + kbBox.height > 800, JSON.stringify(kbBox))
 await shot('8-article-scrolled')
 
+// ── 第 7 条：G / L 快捷键聚焦 + U 回顶部 ──
+await page.keyboard.press('g')
+await page.waitForTimeout(160)
+check('G 聚焦分组/标签芯片', /is-focused/.test((await page.locator('[data-testid^="chip-"]').first().getAttribute('class')) || ''))
+await page.keyboard.press('l')
+await page.waitForTimeout(160)
+check('L 聚焦点赞/评论栏', (await page.locator('[data-testid="action-like"]').getAttribute('class')).includes('is-focused'))
+const scrollBefore = await page.evaluate(() => document.querySelector('.screen-inner').scrollTop)
+await page.keyboard.press('u')
+await page.waitForTimeout(200)
+check('U 回到文章顶部', (await page.evaluate(() => document.querySelector('.screen-inner').scrollTop)) === 0, `from ${scrollBefore}`)
+
 // ── 操作条键盘路径 ──
 await page.keyboard.press('ArrowRight')
 await page.waitForTimeout(140)
@@ -140,10 +162,10 @@ await page.keyboard.press('ArrowDown')
 await page.waitForTimeout(140)
 check('↓ 退出操作条并滚动', !(await page.locator('[data-testid="action-like"]').getAttribute('class')).includes('is-focused'))
 
-// ── 返回：ESC ──
-await page.keyboard.press('Escape')
-await page.waitForTimeout(460)
-check('ESC 返回列表', (await page.locator('[data-testid="post-grid"]').count()) === 1)
+// ── 返回列表：Q（历史后退）。第 5 轮起 ESC 是「开菜单」，不再兼任返回 ──
+await page.keyboard.press('q')
+await page.waitForTimeout(560)
+check('Q 返回列表', (await page.locator('[data-testid="post-grid"]').count()) === 1)
 check('返回后回到第 1 页（浏览状态保留）', (await pageText()) === p1, await pageText())
 
 // ── 暂停菜单 ──
@@ -232,12 +254,13 @@ if (PROBE_USER && PROBE_PW) {
 
 // ── 减动效 ──
 await page.emulateMedia({ reducedMotion: 'reduce' })
-await page.reload({ waitUntil: 'networkidle' })
+// 第 5 轮起刷新会停在刷新前的地址上（这是路由该有的行为），所以显式回到主页再测
+await page.goto('http://127.0.0.1:5173/', { waitUntil: 'networkidle' })
 await page.waitForTimeout(2600)
-check('减动效下仍能进入主页', (await page.locator('[data-testid="tabbar"]').count()) === 1)
-await page.keyboard.press('e')
+check('减动效下仍能进入主页', (await page.locator('[data-testid="tabbar"]').count()) === 1 && page.url().endsWith('/'))
+await page.keyboard.press('Tab')
 await page.waitForTimeout(500)
-check('减动效下切页正常', (await page.locator('[data-testid="post-grid"]').count()) === 1)
+check('减动效下切页正常', (await page.locator('[data-testid="post-grid"]').count()) === 1, page.url())
 await shot('13-reduced-motion')
 
 // ── 仅鼠标：整个流程不碰键盘 ──
@@ -255,6 +278,7 @@ check('纯鼠标：能返回', (await page.locator('[data-testid="post-grid"]').
 await page.click('[data-testid="pager-next"]')
 await page.waitForTimeout(420)
 check('纯鼠标：能翻页', (await pageText()) !== p1)
+check('纯鼠标：翻页写进 URL', /page=2/.test(page.url()), page.url())
 await page.getByRole('button', { name: '菜单 (P)' }).click()
 await page.waitForTimeout(240)
 check('纯鼠标：能开菜单', (await page.locator('[data-testid="pause"]').count()) === 1)

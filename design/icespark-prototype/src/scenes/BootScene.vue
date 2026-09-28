@@ -8,7 +8,7 @@
  */
 import { ref, onMounted, onUnmounted } from 'vue'
 import { onPad, usePad } from '../ui/pad'
-import { resetTo } from '../ui/scene'
+import { finishBoot } from '../ui/scene'
 import { loadStats, dataSource } from '../data/api'
 
 usePad()
@@ -28,11 +28,15 @@ const LOG = [
 
 let timers: number[] = []
 
-/** 进入主页：只允许进一次（清空历史，开机帧不该留在返回栈里） */
+/**
+ * 结束开机自检：只允许进一次。
+ * 开机不是一条路由，因此不会在浏览器历史里留下「开机页」，后退不会退回到自检画面；
+ * 深链接（如 /post/xxx）也在这一刻被解析 —— 自检播完直接落在用户要的那一页。
+ */
 function goHome(skip = false) {
   if (entered) return
   entered = true
-  resetTo('home', skip ? 'flash' : 'none')
+  finishBoot(skip)
 }
 
 onMounted(() => {
@@ -54,8 +58,11 @@ onUnmounted(() => {
   timers.forEach((t) => window.clearTimeout(t))
 })
 
-// 按任意键可跳过开机动画
-const off = onPad(() => goHome(true))
+// 按任意键可跳过开机动画（消费掉，避免同一次按键又触发页面里的其它行为）
+const off = onPad(() => {
+  goHome(true)
+  return true
+})
 onUnmounted(off)
 </script>
 

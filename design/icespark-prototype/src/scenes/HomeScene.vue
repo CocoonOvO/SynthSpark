@@ -11,8 +11,9 @@
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { onPad, usePad } from '../ui/pad'
-import { pushScene, useStatusBar, scrollScreenTop } from '../ui/scene'
-import { switchTab, focusTabs, postsView } from '../ui/tabs'
+import { useStatusBar, scrollScreenTop } from '../ui/scene'
+import { focusTabs } from '../ui/tabs'
+import { goPosts, goArticle } from '../ui/nav'
 import { playSfx } from '../ui/sfx'
 import {
   store,
@@ -24,6 +25,7 @@ import {
   dataSource,
   shortDate,
   shortNum,
+  postKey,
   type PostListItem,
 } from '../data/api'
 import SceneHead from '../ui/SceneHead.vue'
@@ -106,8 +108,8 @@ function activate() {
   if (zone.value === 0) {
     const p = latest.value[idx.value]
     if (!p) {
-      // 「查看全部」：切到文章标签页
-      switchTab('posts')
+      // 「查看全部」：切到文章标签页（不带筛选）
+      clickAll()
       return
     }
     openPost(p)
@@ -116,21 +118,28 @@ function activate() {
   if (zone.value === 1) {
     const g = groups.value[idx.value]
     if (!g) return
-    postsView.value = { page: 0, group: g.name, tag: '' }
-    playSfx('confirm')
-    switchTab('posts')
+    openGroup(g.name)
     return
   }
   const t = tags.value[idx.value]
   if (!t) return
-  postsView.value = { page: 0, group: '', tag: t.name }
+  openTag(t.name)
+}
+
+/** 分组 / 标签都跳文章列表：筛选条件写进 URL，因此可分享、可后退 */
+function openGroup(name: string) {
   playSfx('confirm')
-  switchTab('posts')
+  goPosts({ group: name })
+}
+
+function openTag(name: string) {
+  playSfx('confirm')
+  goPosts({ tag: name })
 }
 
 function openPost(p: PostListItem) {
   playSfx('confirm')
-  pushScene('article', p.id, 'flash')
+  goArticle(postKey(p), 'flash')
 }
 
 /** 鼠标路径 */
@@ -146,7 +155,7 @@ function clickPost(p: PostListItem, i: number) {
 function clickAll() {
   zone.value = 0
   idx.value = latest.value.length
-  switchTab('posts')
+  goPosts()
 }
 function clickGroup(i: number) {
   zone.value = 1
@@ -286,7 +295,7 @@ const stats = computed(() => store.stats.value)
     </section>
 
     <div class="home-foot px hint">
-      ↑↓ 跨段 · ←→ 段内 · ENTER 打开 · ↑ 到顶后可上标签栏 · P 打开菜单
+      ↑↓ 跨段 · ←→ 段内 · ENTER 打开 · ↑ 到顶后可上标签栏 · TAB 切页 · P / ESC 打开菜单
     </div>
   </div>
 </template>

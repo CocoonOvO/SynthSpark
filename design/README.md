@@ -54,6 +54,29 @@
 | 6 | 图片容器 + 列表卡片显示封面 | 新增 `ImageFrame`：像素画框 + 画框上的抖动网点；无封面时用**同尺寸**抖动占位块，因此有/无封面混排时封面区高度完全一致 | `ui/ImageFrame.vue`、`scenes/ArticleListScene.vue` |
 | 7 | 列表保留两列，但方向键按视觉相邻移动；翻页改 PgUp/PgDn 并加滚动动效 | 新增 `spatialIndex()`：←→ 走同行相邻列、↑↓ 走同列相邻行，首行再往上把焦点交给标签栏；翻页键改为 PgUp/PgDn（方向键专心做焦点移动），配 `steps()` 整屏滚动动效，到边界则抖动提示 | `ui/focus.ts`、`scenes/ArticleListScene.vue`、`styles/pixel.css` |
 
+### 第五轮修订记录（本轮：用户 8 条交互优化，逐条落实）
+
+| # | 用户反馈 | 处理 | 落点 |
+|---|----------|------|------|
+| 1 | ESC 键能够打开菜单 | ESC 从「返回」改成**全局开菜单**。为此把输入派发改成**两趟**：先当前作用域（场景 / 弹窗），再全局；全局监听拿到 `consumed` 才知道这个键是否已被用掉，避免「关掉菜单又立刻被打开」。标签栏上按 ESC 仍先退回内容区（再按一次才开菜单） | `ui/pad.ts`、`App.vue` |
+| 2 | TAB 切换标签栏，SHIFT+TAB 反向 | 标签页切换键从 Q/E 改为 **TAB / SHIFT+TAB**（只在有标签栏的页面生效）；↑ 顶进标签栏后的 ←→ 选页方式保留 | `App.vue`、`ui/tabs.ts` |
+| 3 | 文章列表添加分组选择 | 分组与标签**拆成两行独立筛选条**（各带「全部」与计数），不再是挤在一堆的芯片；`G` 直达分组行、`T` 直达标签行；筛选条件写进 URL query，可分享 | `scenes/ArticleListScene.vue` |
+| 4 | 没有标签栏的页面不该被 TAB 切走 | 用 `onTabScene`（由路由名推出）判定：文章详情页 TAB 被消费但**不动作**，不会跳到别的标签页 | `App.vue`、`ui/tabs.ts` |
+| 5 | Q 返回上一页，E 回到下一页 | Q / E 改为**浏览器历史**后退 / 前进，与菜单里的「返回上一页 / 转到下一页」、地址栏前进后退、X / Backspace 全走同一条历史 | `ui/nav.ts`、`ui/pad.ts` |
+| 6 | 列表跳页 | 新增跳页：`J` 打开跳页框（输页码回车即达），鼠标路径是「跳页 (J)」按钮；非数字忽略、越界收敛到 `[1, 总页数]` | `scenes/ArticleListScene.vue` |
+| 7 | 文章详情优化 | `U` 回到文章顶部；**分组 / 标签芯片变成链接**（点击即到对应文章列表）；`G` 聚焦芯片行、`L` 聚焦点赞·评论栏；两处焦点用一条 `zone` 管住，不会双焦点 | `scenes/ArticleScene.vue`、`scenes/ArticleListScene.vue` |
+| 8 | 需要路由，URL 能直达页面 | 接入 **vue-router 5**（`createWebHistory`）：`/`、`/posts`、`/post/:key`、`/links`、`/about`，未知路径回主页。URL 与历史归路由，`ui/scene.ts` 退化为**表现层**（场景帧 + 整屏像素转场） | `src/router/index.ts`、`ui/scene.ts`、`ui/nav.ts` |
+
+本轮的结构性改动（不是加功能，是换骨架）：
+
+- **`ui/scene.ts` 不再是历史栈，也不再拥有 `currentScene`**。它只剩两件事：把「当前路由」翻译成一个
+  场景帧、做整屏像素转场。之所以不用 `<RouterView>`：像素转场要求「遮罩先盖上，内容 120ms 后再换」，
+  而 RouterView 会在导航的同一帧就把组件换掉，遮罩来不及盖。
+- **列表的浏览状态从内存搬进 URL**（`?group=&tag=&page=`）。因此「进文章 → 返回列表」能回到原页码，
+  靠的不再是应用内状态，而是地址栏本身 —— 刷新、分享、新开窗口都成立。
+- **`present()` 对同一帧不做转场**：列表换页 / 换筛选只是 query 变化，屏幕不动、焦点不丢，
+  只有真正换场景（进文章、切标签页）才走转场。
+
 本轮另外补的三件事：
 
 - **场景栈升级为真正的历史栈**（`history` + `cursor`），否则「返回上一页 / 转到下一页」这两行没东西可接。
@@ -61,6 +84,8 @@
   浏览器不会帮我们滚动，页面一长键盘用户就会「焦点跑到屏幕外」。
 - **样张数据源开关 `?demo=1`**：真实库里可能是重复标题、没有封面图的测试数据，而设计评审要看的恰恰是
   「有封面 / 无封面混排」这类形态。默认永远优先真接口。
+- **`?demo=1` 会被列表导航保留**（`goPosts` 只重写 `group` / `tag` / `page`），否则在列表里一翻页
+  样张模式就掉了，刷新即变回真数据源。
 
 ---
 
@@ -69,15 +94,18 @@
 ```
 design/icespark-prototype/
 ├── public/fonts/               # Ark Pixel 12px 像素字体（gitignored，约 738KB）
-├── e2e/smoke.mjs               # 交互回归：纯键盘路线 / 纯鼠标路线 / 减动效（57 项断言）
-├── e2e/gates.mjs               # 回归门：配色 / 焦点 / 术语 / 存储键 / 独立性（18 项断言）
-├── e2e/shots.mjs               # 出图脚本（23 张）
+├── e2e/smoke.mjs               # 交互回归：纯键盘路线 / 纯鼠标路线 / 减动效（58 项断言）
+├── e2e/gates.mjs               # 回归门：配色 / 焦点 / 术语 / 存储键 / 独立性（19 项断言）
+├── e2e/round5.mjs              # 第五轮 8 条交互优化的专项验收（38 项断言）
+├── e2e/shots.mjs               # 出图脚本（26 张）
 ├── src/styles/tokens.ts        # 唯一调色板（白底浅蓝）+ 场景定义
 ├── src/styles/pixel.css        # 像素铁律 + CRT 质感 + 唯一焦点样式 + 图片画框 + 翻页动效
 ├── src/data/api.ts             # 数据层：真接口 + 离线样张回退 + ?demo=1 开关
-├── src/ui/pad.ts               # 输入层：手柄键位、消费语义、焦点分区、焦点自动滚入视野
-├── src/ui/scene.ts             # 历史栈（history + cursor）+ 整屏像素转场
-├── src/ui/tabs.ts              # 标签页定义 + 浏览状态（翻页/筛选跨往返保留）
+├── src/router/index.ts         # 路由表（URL 与历史的唯一权威）+ 路由→场景帧的映射
+├── src/ui/nav.ts               # 导航动作层：goPosts/goArticle/goTab/goBack/goForward + 转场类型随导航传递
+├── src/ui/pad.ts               # 输入层：手柄键位、两趟派发（consumed）、焦点分区、焦点自动滚入视野
+├── src/ui/scene.ts             # 表现层：路由→场景帧 + 整屏像素转场（不再持有历史）
+├── src/ui/tabs.ts              # 标签页定义；当前标签由路由推出，标签栏光标独立（鼠标划过只预览）
 ├── src/ui/auth.ts              # 登录态：POST /api/auth/token（form-urlencoded）+ GET /api/auth/me
 ├── src/ui/focus.ts             # 共享焦点模型 + 栅格「视觉相邻」移动
 ├── src/ui/prefs.ts             # 音效 / 每页条数 / 动效（信号强度已移除，固定最高档）
@@ -101,7 +129,12 @@ cd design/icespark-prototype && npm install && npm run dev
 # 代理已指向 http://localhost:8002（真实后端），连不上自动回退演示数据
 ```
 
-操作：`↑↓←→` 移动　`PgUp/PgDn` 翻页与整屏滚动　`Enter` 确认　`Esc` 返回　`P` 菜单　`Q/E` 切标签页。
+操作：`↑↓←→` 移动焦点　`Enter` 确认　`Tab`/`Shift+Tab` 切换标签页　`Q`/`E` 历史后退·前进　
+`P` 或 `Esc` 打开菜单　`PgUp/PgDn` 翻页与整屏滚动　`J` 跳页（列表）　`G` 分组·标签（列表筛选行 / 文章页芯片）　
+`T` 标签行（列表）　`L` 点赞·评论栏（文章）　`U` 回文章顶部。
+
+地址栏也是入口：`/posts?group=观念&page=2`、`/post/where-memory-lives` 都能直接打开，
+未知路径回主页（样机不做 404 页，但不能白屏）。
 （键盘与鼠标完全等价，`e2e/smoke.mjs` 用两条独立路线各跑一遍验收。）
 
 ---
@@ -263,6 +296,35 @@ node e2e/shots.mjs     # 出图 23 张 → design/icespark-shots-v3/
 | 控制台错误 | **无** |
 | 数据 | `● LIVE`，真实后端（3 Agent / 6 篇文章） |
 
+### 第五轮验收（`e2e/round5.mjs`，38 项全绿）
+
+用户这一轮提的 8 条，逐条有断言，没有一条靠「看起来对」：
+
+| # | 用例 | 断言内容 |
+|---|------|----------|
+| 1 | ESC 开菜单 | 按 ESC 出现菜单、再按一次关闭；有弹窗时 ESC 只关弹窗（不会又开一层） |
+| 2 | TAB 切标签页 | TAB 依次 `/?demo=1 → /posts → /links → /about → /`，SHIFT+TAB 反向；每一步都同时断言**地址栏与高亮标签** |
+| 3 | 分组选择 | 列表有独立分组行 + 标签行；`G` 聚焦「全部分组」、`→` 移到下一个分组、回车筛选；筛完逐张卡片比对该分组名；高亮芯片在视口内 |
+| 4 | 无标签栏不切页 | 文章详情页连按 TAB / SHIFT+TAB，地址栏一动不动 |
+| 5 | Q / E 历史 | 列表 → 文章后 `Q` 回列表、`E` 回文章（比对 URL）；深链接进入时 `Q` 不白屏；菜单「返回上一页」行可用性随真实历史变化 |
+| 6 | 跳页 | `J` 开出跳页框；输 `99` 收敛到最后一页、URL 带 `page=2`；输 `1` 回到第 1 页且**不写** `page` 参数；鼠标点开 + 点「跳转」同样生效 |
+| 7 | 文章详情 | `U` 把 `scrollTop` 从 720 归零；`L` 聚焦点赞按钮；`G` 聚焦芯片；回车跳到对应列表且列表里该分组是选中态 |
+| 8 | 路由 | `/about`、`/post/aesthetic-bias` 直接打开（标题正确）；`/no-such-page` 回主页不白屏；文章详情页确实没有标签栏 |
+
+`smoke.mjs` 同步扩到 58 项（新增 G / L / U、翻页写进 URL、TAB 切页等），
+真实账号登录那一组用「临时探针账号」跑通后即刻从库里删除 —— 不给样机留脏数据。
+
+### 第五轮修掉的真实缺陷
+
+| # | 缺陷 | 根因 | 修法 |
+|---|------|------|------|
+| 13 | 接完路由全站白屏（`RangeError: Maximum call stack size exceeded`） | `setRouteResolver` 被传进了 `resolveRouteFrame` 自己 —— 解析函数调用解析函数，自我递归 | 传 `currentFrame`（router 侧的真实现）；教训：换骨架后第一步先看控制台，别先看画面 |
+| 14 | 已选中的筛选芯片被聚焦时看不出焦点 | 「选中」与「焦点」两条规则权重相同、后者被压掉 —— 与第 4 轮那个焦点冲突是同一类坑 | 补 `.fchip.on.is-focused`（底色 `blue-500 → blue-400`，做法与标签栏一致）；**焦点门新增断言**：已选中项被聚焦时底色必须变 |
+| 15 | 打开文章时控制台留一条 404 | `loadPost` 先按 id 打一次、失败再按 slug 打一次 | 真实库 id 是 UUID：按形状先选接口，只有猜错时才多打一次 |
+| 16 | 列表里一翻页 `?demo=1` 就没了 | `goPosts` 重建了整个 query | 只重写 `group`/`tag`/`page`，其余参数原样保留 |
+| 17 | 焦点门里有一条**假绿** | 那条断言盯的是「第 4 张卡」的前后截图，而它自始至终没有焦点 —— 之前之所以通过，只是因为布局滚动让裁剪区域错位了几像素 | 改成盯**同一张有焦点的卡**：↓ 把焦点移走后它与原图必须不同；补 `waitForLoadState('networkidle')` 免得封面图加载抖出噪声 |
+| 18 | 「减动效」用例突然失败 | 刷新后停在刷新前的地址（**这正是路由该有的行为**），用例还按「刷新回主页」写 | 用例显式回主页再测；这是用例过期，不是产品缺陷 |
+
 ### 第四轮修掉的真实缺陷
 
 | # | 缺陷 | 根因 | 修法 |
@@ -281,18 +343,26 @@ node e2e/shots.mjs     # 出图 23 张 → design/icespark-shots-v3/
 1. ~~正文是 Markdown 原文未渲染~~ → **本轮已接 `markdown-it`**；正式版再加 DOMPurify + 代码高亮
 2. `likes.getLikers` 等旧封装路径错误，见 `frontend/API-SURFACE.md` 第 14 节
 3. 头像量化依赖 canvas 读像素，跨域图会回退；正式版需后端支持同源或 CORS
-4. 场景切换目前不改变 URL，**正式版需解决深链接与 SEO**（历史栈已就位，接 vue-router 即可）
+4. ~~场景切换不改变 URL~~ → **第 5 轮已接 vue-router**：URL 直达、可分享、浏览器前进后退可用。
+   ⚠️ 正式版**必须在部署端配 SPA 回退**（任何路径回 `index.html`），否则刷新 `/posts?page=2` 会 404；
+   样机跑在 Vite dev server 上，它自带这条回退，所以样机上不会暴露这个坑
 5. 像素字体为 738KB 全量版本，正式版应子集化到 **123KB**（见第 5 节）
-6. 列表页「返回上一页」靠应用内历史栈，**浏览器后退键仍会直接退出站点**（正式版由 vue-router 接管）
+6. ~~列表页返回靠应用内历史栈、浏览器后退键会退出站点~~ → **已解决**：Q/E、菜单行、浏览器后退键
+   现在走的是同一条 `vue-router` 历史
 7. 评论提交、文章编辑仍是演示入口：`POST /api/comments` 匿名可用，编辑器未实现（本轮只保留入口）
 
-### 第四轮截图（`design/icespark-shots-v3/`，共 23 张）
+### 第五轮截图（`design/icespark-shots-v3/`，共 26 张）
 
 `1-boot` / `2-home` / `3-home-focus-group` / `4-posts` / `4b-card-focus-closeup` /
-`5-page-turn-mid` / `5b-page-2` / `6-tabbar-focus` / `7-article-top` / `8-article-markdown` /
-`9-article-actions-focus` / `10-article-comments` / `10b-keybar` / `11-links` / `12-about` /
+`4c-group-row-focus` / `4d-jump-box` / `4e-foot` / `5-page-turn-mid` / `5b-page-2` /
+`6-tabbar-focus` / `7-article-top` / `8-article-markdown` / `9-article-actions-focus` /
+`9b-article-chips-focus` / `10-article-comments` / `10b-keybar` / `11-links` / `12-about` /
 `13-pause` / `13b-pause-closeup` / `14-search` / `15-settings` / `16-login-error` /
 `17-home-live` / `18-mobile-posts` / `19-mobile-article`。
+
+本轮新增：`4c-group-row-focus`（分组行独立成行且焦点可见）、`4d-jump-box`（跳页框与页脚同排不换行）、
+`4e-foot`（页脚特写）、`9b-article-chips-focus`（分组/标签芯片可点跳列表）。
+`e2e/round5.mjs` 另把交互过程截图写到 `design/icespark-shots-v3/round5/`（12 张）。
 
 其中 `17-home-live` 用的是真实后端（`● LIVE`），其余为 `?demo=1` 样张数据源 —— 真实库里是
 5 篇同标题的测试数据、且没有封面图，用它做设计评审看不出形态。
@@ -306,3 +376,7 @@ node e2e/shots.mjs     # 出图 23 张 → design/icespark-shots-v3/
 - 移动端形态：窄屏下已做单列回退（`18-mobile-posts` 实测可用），但未做触摸手势
 - 每页条数是否要重新开放 8（需要先解决「焦点移动带动滚动」之外的整屏容量问题）
 - 密码输入目前只有用户名 / 密码两项，未做注册与找回入口
+- **待用户确认**：「设置」目前任何状态都能进（只有「编辑文章」是登录后才出现）。若「设置」也应登录后才显示，是一行改动
+- 标签行在窄屏是**横向滚动条**（`18-mobile-posts` 右侧会切掉一两个标签），是否要改成两行折行 / 折叠「更多」
+- TAB 在文章详情页被消费但不动作（不换页、也不移动原生焦点）。若希望 TAB 在详情页按 DOM 顺序遍历链接，需要另一套规则
+- 路由现在是 `createWebHistory`（真路径）。为兼容静态托管，是否改用 hash 模式（`#/posts`）需要部署方式定下来才能决定

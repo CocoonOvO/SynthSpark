@@ -4,6 +4,9 @@
  *
  * 默认带 ?demo=1：样张数据源，能同时看到「有封面 / 无封面」混排与长文排版。
  * 另出一张真实接口（LIVE）的图，避免只展示样张造成误判。
+ *
+ * 第 5 轮新增：分组行焦点、跳页框、文章页分组/标签芯片焦点（带 URL 变化的交互都另有
+ * round5.mjs 做数值断言，截图只负责让人看一眼长什么样）。
  */
 import { chromium } from 'playwright'
 import { mkdirSync } from 'node:fs'
@@ -85,12 +88,21 @@ async function shootEl(page, sel, name, pad = 8) {
 {
   const page = await newPage()
   await boot(page)
-  await page.keyboard.press('e')
+  await page.keyboard.press('Tab')
   await page.waitForTimeout(520)
   await page.waitForLoadState('networkidle') // 等封面图真的落下来，否则画框里还是占位图案
   await page.waitForTimeout(600)
   await shoot(page, '4-posts')
   await shootEl(page, '[data-testid="post-card"]', '4b-card-focus-closeup', 14)
+  // 分组选择独立成行（用户第 3 条）：G 键直达
+  await page.keyboard.press('g')
+  await page.waitForTimeout(200)
+  await shoot(page, '4c-group-row-focus')
+  // 跳页框（用户第 6 条）：J 键打开
+  await page.keyboard.press('j')
+  await page.waitForTimeout(260)
+  await shoot(page, '4d-jump-box')
+  await shootEl(page, '.foot', '4e-foot', 8)
   await page.close()
 }
 
@@ -98,7 +110,7 @@ async function shootEl(page, sel, name, pad = 8) {
 {
   const page = await newPage()
   await boot(page)
-  await page.keyboard.press('e')
+  await page.keyboard.press('Tab')
   await page.waitForTimeout(520)
   await page.keyboard.press('PageDown')
   await page.waitForTimeout(120)
@@ -112,11 +124,12 @@ async function shootEl(page, sel, name, pad = 8) {
 {
   const page = await newPage()
   await boot(page)
-  await page.keyboard.press('e')
+  await page.keyboard.press('Tab')
   await page.waitForTimeout(520)
   await page.keyboard.press('ArrowUp')
   await page.keyboard.press('ArrowUp')
-  await page.waitForTimeout(200)
+  await page.keyboard.press('ArrowUp')
+  await page.waitForTimeout(220)
   await shootEl(page, '[data-testid="tabbar"]', '6-tabbar-focus', 10)
   await page.close()
 }
@@ -125,7 +138,7 @@ async function shootEl(page, sel, name, pad = 8) {
 {
   const page = await newPage()
   await boot(page)
-  await page.keyboard.press('e')
+  await page.keyboard.press('Tab')
   await page.waitForTimeout(520)
   // 第一张卡有封面
   await page.keyboard.press('ArrowRight')
@@ -140,6 +153,14 @@ async function shootEl(page, sel, name, pad = 8) {
   await page.keyboard.press('ArrowRight')
   await page.waitForTimeout(200)
   await shootEl(page, '[data-testid="actions"]', '9-article-actions-focus', 10)
+  // 分组 / 标签芯片：可点跳列表，G 键直达（用户第 7 条）
+  await page.keyboard.press('PageUp')
+  await page.keyboard.press('PageUp')
+  await page.keyboard.press('PageUp')
+  await page.waitForTimeout(260)
+  await page.keyboard.press('g')
+  await page.waitForTimeout(220)
+  await shootEl(page, '[data-testid="chips"]', '9b-article-chips-focus', 10)
   for (let i = 0; i < 8; i++) await page.keyboard.press('PageDown')
   await page.waitForTimeout(300)
   await shoot(page, '10-article-comments')
@@ -152,12 +173,12 @@ async function shootEl(page, sel, name, pad = 8) {
   const page = await newPage()
   await boot(page)
   // 转场期间会锁输入，切页之间必须留出间隔 —— 连按两次只会切一次
-  await page.keyboard.press('e')
+  await page.keyboard.press('Tab')
   await page.waitForTimeout(460)
-  await page.keyboard.press('e')
+  await page.keyboard.press('Tab')
   await page.waitForTimeout(620)
   await shoot(page, '11-links')
-  await page.keyboard.press('e')
+  await page.keyboard.press('Tab')
   await page.waitForTimeout(620)
   await shoot(page, '12-about')
   await page.close()
@@ -213,7 +234,7 @@ async function shootEl(page, sel, name, pad = 8) {
 {
   const page = await newPage({ width: 430, height: 900 })
   await boot(page)
-  await page.keyboard.press('e')
+  await page.keyboard.press('Tab')
   await page.waitForTimeout(1600)
   await shoot(page, '18-mobile-posts')
   await page.keyboard.press('Enter')

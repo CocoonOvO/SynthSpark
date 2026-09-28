@@ -97,7 +97,8 @@ function hoverRow(i: number) {
 }
 
 const off = onPad((a) => {
-  if (a === 'cancel') {
+  // ESC 关框；X / Backspace（back 动作）在这里同义，免得弹窗里按 ← 类的返回键没反应
+  if (a === 'cancel' || a === 'back') {
     emit('close')
     return true
   }

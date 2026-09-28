@@ -121,7 +121,7 @@ function plate(i: number) {
     </div>
 
     <div class="foot px hint">
-      ↑↓←→ 按位置移动 · ENTER / 点击打开 · ESC 回标签栏 · 站内路径在前端切换，绝对链接开新页
+      ↑↓←→ 按位置移动 · ENTER / 点击打开 · TAB 切页 · P / ESC 菜单 · 站内路径在前端切换，绝对链接开新页
     </div>
   </div>
 </template>

@@ -1,21 +1,17 @@
 /**
- * 场景栈（SceneStack）
+ * 场景表现层（presenter）
  *
- * 一屏一个场景，场景之间是整屏像素转场。与上一版的区别：
- * 现在这是一个**真正的历史栈**（history + cursor），而不是只能前进后退的线性栈，
- * 因此「返回上一页 / 转到下一页」可以像浏览器一样来回走。
- *
- * - 标签页（主页 / 文章 / 关联 / 关于）是栈底（resetTo 清空历史）
- * - 文章详情是压在上面的临时页（pushScene）
- * - 前进分支在压入新场景时被截断（浏览器语义）
+ * 路由已经接管了 URL 与历史（见 src/router/index.ts），这里只剩两件事：
+ * 1. **把当前路由翻译成一个待渲染的 SceneFrame**（id + param）
+ * 2. **整屏像素转场**：遮罩先出现（0 延迟反馈），内容在遮罩掩护下切换
  *
  * 转场可被打断，且**不吞按键**：
  * - 遮罩出现到内容切换之间的这段时间（120ms）锁输入 —— 此刻屏幕上还是旧场景
- * - 内容一换完就立刻解锁 —— 用户看到新场景后马上就能操作，不必等淡出动画结束
- * - 同一个目标在转场中被重复触发只算一次（防连点），换一个目标则立刻结算上一次
- *   （「转场期间吞掉输入」是设计禁令，这里用去重 + 可打断替代排队）
+ * - 内容一换完就立刻解锁 —— 看到新画面就能马上操作，不必等淡出动画结束
+ * - 同一目标重复触发只算一次（防连点），换目标则立刻结算上一次（不做输入排队）
  */
 import { ref, computed } from 'vue'
+import type { RouteLocationNormalizedLoaded } from 'vue-router'
 import { inputLocked } from './pad'
 import { playSfx } from './sfx'
 
@@ -23,84 +19,64 @@ export type TransitionKind = 'flash' | 'wipe' | 'shake' | 'none'
 
 export interface SceneFrame {
   id: string
-  /** 场景参数（如文章 id） */
+  /** 场景参数（如文章 id / slug） */
   param?: string
-  transition: TransitionKind
 }
 
-let uidSeq = 0
+/** 当前正在显示的场景帧。开机帧是初始值，等 BootScene 播完再切到真实路由 */
+export const frame = ref<SceneFrame>({ id: 'boot' })
 
-function mk(id: string, param?: string, transition: TransitionKind = 'none'): SceneFrame & { uid: number } {
-  uidSeq += 1
-  return { id, param, transition, uid: uidSeq }
-}
-
-/** 历史栈 + 游标 */
-export const history = ref<Array<SceneFrame & { uid: number }>>([mk('boot')])
-export const cursor = ref(0)
+/** 开机动画是否还没播完（未播完时路由变化只改 URL，不动画面） */
+export const booting = ref(true)
 
 export const isTransitioning = ref(false)
 export const transitionKind = ref<TransitionKind>('none')
 
-export const currentScene = computed(() => history.value[cursor.value])
-export const canGoBack = computed(() => cursor.value > 0)
-export const canGoForward = computed(() => cursor.value < history.value.length - 1)
+/** 组件实例 key：只有「不同文章」才需要重建，列表换页/换筛选不重建（保住焦点与动画） */
+export const sceneKey = computed(() => `${frame.value.id}:${frame.value.param ?? ''}`)
+
+/** 由 router 注册：把一条路由解析成场景帧 */
+let routeResolver: ((r: RouteLocationNormalizedLoaded) => SceneFrame) | null = null
+
+export function setRouteResolver(fn: (r: RouteLocationNormalizedLoaded) => SceneFrame) {
+  routeResolver = fn
+}
 
 /**
- * 场景实例 key：只有「不同文章」才需要重建组件实例。
- * 不用 uid —— 否则从文章返回列表会重建列表，翻页进度就丢了（改由 postsView 记住）。
+ * 路由 → 场景帧。放在 scene.ts 里是为了让 BootScene / router 都能调用，
+ * 而 scene.ts 自己不 import router（避免循环依赖）。
  */
-export const sceneKey = computed(() => {
-  const f = currentScene.value
-  return `${f.id}:${f.param ?? ''}`
-})
+let currentRouteGetter: (() => RouteLocationNormalizedLoaded) | null = null
 
-/** 进入新场景（会截断前进分支，浏览器语义） */
-export function pushScene(id: string, param?: string, transition: TransitionKind = 'flash') {
-  if (currentScene.value.id === id && currentScene.value.param === param) return
-  runTransition(transition, `push:${id}:${param ?? ''}`, () => {
-    history.value = [...history.value.slice(0, cursor.value + 1), mk(id, param, transition)]
-    cursor.value = history.value.length - 1
+export function setRouteGetter(fn: () => RouteLocationNormalizedLoaded) {
+  currentRouteGetter = fn
+}
+
+export function resolveRouteFrame(r?: RouteLocationNormalizedLoaded): SceneFrame | null {
+  const route = r ?? currentRouteGetter?.()
+  if (!route || !routeResolver) return null
+  return routeResolver(route)
+}
+
+/** 切换到场景（同 id 同参数则忽略，防连点） */
+export function present(id: string, param?: string, transition: TransitionKind = 'flash') {
+  if (frame.value.id === id && frame.value.param === param) return
+  runTransition(transition, `present:${id}:${param ?? ''}`, () => {
+    frame.value = { id, param }
   })
 }
 
-/** 返回上一页 */
-export function popScene(transition: TransitionKind = 'wipe') {
-  if (!canGoBack.value) return
-  runTransition(transition, `back:${cursor.value}`, () => {
-    cursor.value -= 1
-  })
+/** 按当前路由展示画面（开机播完、或需要强制对齐时调用） */
+export function presentRoute(transition: TransitionKind = 'none') {
+  const f = resolveRouteFrame()
+  if (f) present(f.id, f.param, transition)
 }
 
-/** 转到下一页（历史里的前进分支） */
-export function goForward(transition: TransitionKind = 'wipe') {
-  if (!canGoForward.value) return
-  runTransition(transition, `forward:${cursor.value}`, () => {
-    cursor.value += 1
-  })
-}
-
-/** 回到某个根场景（标签页切换）：清空历史 */
-export function resetTo(id: string, transition: TransitionKind = 'wipe', param?: string) {
-  if (currentScene.value.id === id && cursor.value === 0) return
-  runTransition(transition, `reset:${id}`, () => {
-    history.value = [mk(id, param)]
-    cursor.value = 0
-  })
-}
-
-/** 回到根场景（开机） */
-export function resetScene(transition: TransitionKind = 'shake') {
-  resetTo('boot', transition)
-}
-
-/** 直接替换当前场景（用于开机被跳过等场景），不产生历史 */
-export function replaceScene(id: string, param?: string) {
-  settleTransition(false)
-  const next = history.value.slice(0, cursor.value)
-  next.push(mk(id, param))
-  history.value = next
-  cursor.value = next.length - 1
+/** 开机动画播完：切到真实路由对应的画面 */
+export function finishBoot(skip = false) {
+  if (!booting.value) return
+  booting.value = false
+  presentRoute(skip ? 'flash' : 'none')
 }
 
 /** 正在进行的转场：key 用于去重，apply 是内容切换，timers 用于打断时清理 */
@@ -176,6 +152,15 @@ export function scrollScreenBy(deltaY: number): boolean {
   const before = el.scrollTop
   el.scrollBy({ top: deltaY, behavior: 'auto' })
   return el.scrollTop !== before
+}
+
+/** 滚到指定位置（文章页的「回到顶部」用） */
+export function scrollScreenTo(top: number): boolean {
+  const el = screenScroller.value
+  if (!el) return false
+  if (el.scrollTop === top) return false
+  el.scrollTo({ top, behavior: 'auto' })
+  return true
 }
 
 /** 滚回顶部（切场景时用） */

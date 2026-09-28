@@ -3,22 +3,31 @@
  * icespark 应用外壳
  *
  * 职责：
- * - 场景渲染 + 整屏像素转场（历史栈见 ui/scene.ts）
+ * - 场景渲染 + 整屏像素转场（URL 与历史归 router，画面归 ui/scene.ts）
  * - 8bit 显像管质感（扫描线 / 荧光点阵 / 暗角 / 辉光 / 开机亮线）
  * - 顶部标签栏（浏览类页面的全局导航）
- * - P 键暂停菜单（全局导航 + 设置入口）
- * - 全局键：Q/E 切标签页
+ * - P / ESC 键菜单（全局导航 + 设置入口）
+ * - 全局键：Tab·Shift+Tab 切标签页、Q·E 历史后退/前进
  * - 音效首次询问
  *
  * 注：塑料机身外壳已移除，画面即屏幕；CRT 强度固定为最高档，用户不再可调。
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
-import { isTransitioning, transitionKind, currentScene, sceneKey, screenScroller } from './ui/scene'
+import {
+  isTransitioning,
+  transitionKind,
+  frame as currentScene,
+  sceneKey,
+  screenScroller,
+  scrollScreenTop,
+  booting,
+} from './ui/scene'
 import { SCENES } from './styles/tokens'
 import { soundEnabled, setSound, soundPromptShown, markSoundPromptShown, motionEnabled } from './ui/prefs'
 import { playSfx, previewSfx } from './ui/sfx'
 import { onPad, activeScope, inputLocked, focusZone } from './ui/pad'
-import { cycleTab, syncTabWithScene, onTabScene, blurTabs } from './ui/tabs'
+import { cycleTab, onTabScene, blurTabs } from './ui/tabs'
+import { goBack, goForward, canGoBack, canGoForward } from './ui/nav'
 import { bootstrapAuth } from './ui/auth'
 import { loadSiteConfig, loadStats, dataSource } from './data/api'
 import PauseMenu from './ui/PauseMenu.vue'
@@ -54,22 +63,68 @@ const SCENE_MAP: Record<string, unknown> = {
 const frame = computed(() => currentScene.value)
 const currentComponent = computed(() => SCENE_MAP[frame.value.id] || HomeScene)
 
-/** 场景变化时同步标签高亮；离开标签页时把焦点收回内容区（否则没人接收按键） */
+/**
+ * 换页时把屏幕滚回顶部。
+ *
+ * 滚动容器是同一个 DOM 节点（场景组件换掉、容器不换），
+ * 不显式归零的话，从长文返回列表会停在半空，看起来像「列表少了一半」。
+ */
 watch(
-  () => frame.value.id,
-  (id) => {
-    syncTabWithScene(id)
-    if (!onTabScene.value) blurTabs()
-  }
+  () => `${frame.value.id}:${frame.value.param ?? ''}`,
+  () => scrollScreenTop()
 )
 
-/** 全局键（any 作用域）：Q / E 切标签页。P 单独在下面处理 */
-const offGlobal = onPad((a) => {
-  if (a !== 'tabPrev' && a !== 'tabNext') return false
-  // 模态打开时不切页：先关掉弹窗再说
-  if (activeScope.value !== 'scene' || pauseOpen.value || promptOpen.value) return true
-  cycleTab(a === 'tabNext' ? 1 : -1)
-  return true
+/** 离开有标签栏的页面时，把焦点收回内容区（否则没人接收按键） */
+watch(onTabScene, (v) => {
+  if (!v) blurTabs()
+})
+
+/**
+ * 全局键（any 作用域，排在场景监听器之后收到事件）
+ *
+ * `consumed` 是第二趟派发的产物：第一趟已经用掉这个键时必须放手，
+ * 否则会出现「Esc 关掉菜单 → 全局监听立刻又打开菜单」这类双触发。
+ */
+const offGlobal = onPad((a, consumed) => {
+  // 已提示过音效询问时，整键盘归询问框所有（它是 pause 作用域，正常情况已消费）
+  if (promptOpen.value) return true
+
+  /** 模态（暂停菜单 / 对话框）打开时，导航类全局键一律不生效 */
+  const inModal = activeScope.value !== 'scene' || pauseOpen.value
+
+  if (a === 'tabNext' || a === 'tabPrev') {
+    if (consumed) return false
+    if (inModal) return true
+    // 没有标签栏的页面（文章详情）不参与标签页切换：手动按下 Tab 也不该跳页
+    if (!onTabScene.value) return true
+    cycleTab(a === 'tabNext' ? 1 : -1)
+    return true
+  }
+
+  if (a === 'cancel') {
+    if (consumed) return false
+    if (inModal) return false
+    // 焦点停在标签栏上时，ESC 先退回内容区，再按一次才呼出菜单
+    if (focusZone.value === 'tabs') return false
+    playSfx('confirm')
+    pauseOpen.value = true
+    return true
+  }
+
+  if (a === 'back' || a === 'forward') {
+    if (consumed) return false
+    if (inModal) return true
+    if (a === 'back') {
+      if (!canGoBack.value) return true
+      goBack()
+    } else {
+      if (!canGoForward.value) return true
+      goForward()
+    }
+    return true
+  }
+
+  return false
 }, 'any')
 
 /** P 是全局键：任何场景下都能呼出暂停菜单 */

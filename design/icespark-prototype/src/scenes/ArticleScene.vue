@@ -14,8 +14,9 @@
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { onPad, usePad } from '../ui/pad'
-import { popScene, currentScene, useStatusBar, scrollScreenBy } from '../ui/scene'
+import { useStatusBar, scrollScreenBy, scrollScreenTo } from '../ui/scene'
 import { useFocusGroup } from '../ui/focus'
+import { goPosts, goBackOrPosts } from '../ui/nav'
 import { playSfx } from '../ui/sfx'
 import { store, loadPost, shortDate } from '../data/api'
 import PixelAvatar from '../ui/PixelAvatar.vue'
@@ -24,6 +25,7 @@ import ImageFrame from '../ui/ImageFrame.vue'
 import MarkdownBody from '../ui/MarkdownBody.vue'
 import SceneHead from '../ui/SceneHead.vue'
 import { AVATAR_PALETTE } from '../styles/tokens'
+import { frame as currentScene } from '../ui/scene'
 
 usePad()
 const { clock, stop } = useStatusBar()
@@ -47,12 +49,31 @@ const ACTIONS = [
 /** 横向操作条：初始 -1 表示未进入，因此进场时 Enter 不会误触第一个动作 */
 const actionFocus = useFocusGroup({ initial: -1 })
 
+/**
+ * 焦点分区（用户第 7 条）：
+ *   'none'    没进任何分区 → 方向键滚动正文
+ *   'chips'   分组 / 标签芯片行（G 键直达，芯片可跳到对应列表）
+ *   'actions' 点赞 / 评论 / 返回 操作栏（L 键直达）
+ * 用一条 zone 管住两块，才不会出现「芯片和操作栏同时高亮」的双焦点。
+ */
+const zone = ref<'none' | 'chips' | 'actions'>('none')
+const chipFocus = useFocusGroup({ initial: -1 })
+
 const post = computed(() => store.post.value)
 const comments = computed(() => store.comments.value)
 
+/** 芯片列表：分组在前，标签在后，顺序与 DOM 一致（焦点索引才对得上） */
+const chips = computed(() => {
+  const list: { kind: 'group' | 'tag'; label: string }[] = []
+  if (post.value?.group_name) list.push({ kind: 'group', label: post.value.group_name })
+  for (const t of post.value?.tags ?? []) list.push({ kind: 'tag', label: t })
+  return list
+})
+
 onMounted(async () => {
-  const id = currentScene.value.param
-  await loadPost(id && id !== 'all' ? id : undefined)
+  // 深链接 /post/:key 能直接进来，所以正文用「路由参数」加载，而不是靠上一层传值
+  const key = currentScene.value.param
+  await loadPost(key && key !== 'all' ? key : undefined)
   hearts.value = post.value?.like_count ?? 0
 })
 onUnmounted(stop)
@@ -60,7 +81,22 @@ onUnmounted(stop)
 function runAction(key: string) {
   if (key === 'like') like()
   else if (key === 'comment') openComment()
-  else popScene('wipe')
+  else backToList()
+}
+
+/** 返回列表：优先走浏览器历史（从列表点进来的），深链接进来时退到列表页 */
+function backToList() {
+  playSfx('cancel')
+  goBackOrPosts(post.value?.group_name || undefined)
+}
+
+/** 芯片 = 链接：分组跳分组列表，标签跳标签列表（用户第 7 条） */
+function openChip(i: number) {
+  const c = chips.value[i]
+  if (!c) return
+  playSfx('confirm')
+  if (c.kind === 'group') goPosts({ group: c.label }, 'wipe')
+  else goPosts({ tag: c.label }, 'wipe')
 }
 
 const off = onPad((a) => {
@@ -69,7 +105,7 @@ const off = onPad((a) => {
   if (a === 'up' || a === 'down') {
     // 方向键始终是「滚动正文」：屏幕是 overflow 容器而不是文档，
     // 浏览器原生方向键滚不动它，所以显式滚一步；滚不动了就把按键交还浏览器
-    if (actionFocus.index.value >= 0) actionFocus.set(-1, true)
+    exitZone()
     return scrollScreenBy(a === 'down' ? SCROLL_STEP : -SCROLL_STEP)
   }
 
@@ -77,46 +113,108 @@ const off = onPad((a) => {
     return scrollScreenBy(a === 'pageNext' ? PAGE_STEP : -PAGE_STEP)
   }
 
-  if (a === 'right') {
-    const i = actionFocus.index.value
-    if (i < 0) actionFocus.set(0)
-    else if (i < ACTIONS.length - 1) actionFocus.set(i + 1)
+  // 回到文章顶部（用户第 7 条）
+  if (a === 'toTop') {
+    exitZone()
+    return scrollScreenTo(0)
+  }
+
+  // 快捷键直达：G 分组 / 标签行，L 点赞评论栏（用户第 7 条）
+  if (a === 'focusGroup') {
+    if (!chips.value.length) return true
+    zone.value = 'chips'
+    if (chipFocus.index.value < 0) chipFocus.set(0)
+    playSfx('move')
+    return true
+  }
+  if (a === 'focusLike') {
+    zone.value = 'actions'
+    if (actionFocus.index.value < 0) actionFocus.set(0)
+    playSfx('move')
     return true
   }
 
-  if (a === 'left') {
-    const i = actionFocus.index.value
-    if (i < 0) return false
-    actionFocus.set(i - 1, i === 0)
+  if (a === 'right' || a === 'left') {
+    const d = a === 'right' ? 1 : -1
+    if (zone.value === 'chips') {
+      const next = chipFocus.index.value + d
+      if (next < 0 || next >= chips.value.length) return false
+      chipFocus.set(next)
+      return true
+    }
+    if (zone.value === 'actions') {
+      const i = actionFocus.index.value
+      if (d < 0 && i === 0) {
+        actionFocus.set(-1, true)
+        zone.value = 'none'
+        return true
+      }
+      if (i < 0) {
+        actionFocus.set(0)
+        return true
+      }
+      if (i >= ACTIONS.length - 1 && d > 0) return false
+      actionFocus.set(i + d)
+      return true
+    }
+    // 还没进任何分区：→ 直接进操作栏，← 不做事
+    if (d < 0) return false
+    zone.value = 'actions'
+    actionFocus.set(0)
+    playSfx('move')
     return true
   }
 
   if (a === 'confirm') {
-    if (actionFocus.index.value < 0) return false
-    runAction(ACTIONS[actionFocus.index.value].key)
-    return true
-  }
-
-  if (a === 'cancel') {
-    if (actionFocus.index.value >= 0) {
-      actionFocus.set(-1, true)
+    if (zone.value === 'chips') {
+      openChip(chipFocus.index.value)
       return true
     }
-    popScene('wipe')
-    return true
+    if (zone.value === 'actions' && actionFocus.index.value >= 0) {
+      runAction(ACTIONS[actionFocus.index.value].key)
+      return true
+    }
+    return false
+  }
+
+  // ESC：先退出当前分区；没进分区时交还给全局（全局用它开菜单）
+  if (a === 'cancel') {
+    if (zone.value !== 'none') {
+      exitZone()
+      return true
+    }
+    return false
   }
 
   return false
 })
+
+/** 退出分区：两块焦点都收回「未进入」态 */
+function exitZone() {
+  if (zone.value === 'none') return
+  zone.value = 'none'
+  actionFocus.set(-1, true)
+  chipFocus.set(-1, true)
+}
 onUnmounted(off)
 
 function isFocused(i: number) {
-  return actionFocus.index.value === i
+  return zone.value === 'actions' && actionFocus.index.value === i
+}
+
+function isChipFocused(i: number) {
+  return zone.value === 'chips' && chipFocus.index.value === i
 }
 
 function hoverAction(i: number) {
   // hover 在 useFocusGroup 里已经静音（鼠标划过不出声）
+  zone.value = 'actions'
   actionFocus.hover(i)
+}
+
+function hoverChip(i: number) {
+  zone.value = 'chips'
+  chipFocus.hover(i)
 }
 
 function like() {
@@ -170,12 +268,24 @@ function closeDialog() {
         <span class="hint">{{ shortDate(post.created_at) }}</span>
         <span class="sep">·</span>
         <span class="hint num">◉ {{ post.view_count }}</span>
-        <template v-if="post.tags.length">
-          <span class="sep">·</span>
-          <span class="tags">
-            <i v-for="t in post.tags" :key="t" class="tag">{{ t }}</i>
-          </span>
-        </template>
+      </div>
+
+      <!-- 分组 / 标签：不只是展示，点一下就到对应列表（G 键直达本行） -->
+      <div v-if="chips.length" class="chips" data-testid="chips">
+        <span class="chips-cap px">归类</span>
+        <button
+          v-for="(c, i) in chips"
+          :key="`${c.kind}:${c.label}`"
+          class="chip focusable mini"
+          :data-testid="`chip-${c.kind}-${i}`"
+          :class="{ 'is-focused': isChipFocused(i), group: c.kind === 'group' }"
+          @mouseenter="hoverChip(i)"
+          @click="((zone = 'chips'), (chipFocus.index = i), openChip(i))"
+        >
+          <span v-if="c.kind === 'group'" class="chip-mark">▣</span>
+          <span v-else class="chip-mark">#</span>{{ c.label }}
+          <span class="chip-go">→</span>
+        </button>
       </div>
 
       <ImageFrame
@@ -217,7 +327,7 @@ function closeDialog() {
           data-testid="action-back"
           :class="{ 'is-focused': isFocused(2) }"
           @mouseenter="hoverAction(2)"
-          @click="((actionFocus.hover(2)), popScene('wipe'))"
+          @click="((actionFocus.hover(2)), backToList())"
         >
           <span class="act-icon">◀</span>
           <span class="act-label">返回列表</span>
@@ -253,11 +363,13 @@ function closeDialog() {
     <div class="keybar px" data-testid="keybar">
       <span class="kb"><i class="kbd">↑</i><i class="kbd">↓</i> 滚动</span>
       <span class="kb"><i class="kbd">PgUp</i><i class="kbd">PgDn</i> 整屏</span>
-      <span class="kb"><i class="kbd">→</i> 操作栏</span>
-      <span class="kb"><i class="kbd">←</i> 退出操作栏</span>
+      <span class="kb"><i class="kbd">G</i> 分组/标签</span>
+      <span class="kb"><i class="kbd">L</i> 点赞评论</span>
+      <span class="kb"><i class="kbd">→</i><i class="kbd">←</i> 行内移动</span>
       <span class="kb"><i class="kbd">ENTER</i> 执行</span>
-      <span class="kb"><i class="kbd">ESC</i> 返回列表</span>
-      <span class="kb tail">P 菜单</span>
+      <span class="kb"><i class="kbd">U</i> 回顶部</span>
+      <span class="kb"><i class="kbd">Q</i> 返回</span>
+      <span class="kb tail"><i class="kbd">P</i>/<i class="kbd">ESC</i> 菜单</span>
     </div>
 
     <PixelDialog
@@ -338,15 +450,48 @@ function closeDialog() {
   font-variant-numeric: tabular-nums;
 }
 
-.tags {
+/* 分组 / 标签芯片行：既是展示也是链接（用户第 7 条） */
+.chips {
   display: flex;
+  align-items: center;
   gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
 }
 
-.tag {
-  font-style: normal;
-  border: 1.5px solid var(--blue-400);
-  padding: 0 5px;
+.chips-cap {
+  color: var(--ink-faint);
+}
+
+.chip {
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--paper);
+  border: 2px solid var(--blue-300);
+  color: var(--blue-700);
+  padding: 2px 8px;
+  cursor: pointer;
+  font-family: 'Source Han Sans CN', 'Noto Sans CJK SC', sans-serif;
+  font-size: 12.5px;
+}
+
+.chip.group {
+  border-color: var(--blue-500);
+}
+
+.chip-mark {
+  color: var(--blue-400);
+}
+
+/* 跳转箭头常显（淡），划过或聚焦时加深 —— 芯片是链接这件事不该靠悬停才发现 */
+.chip-go {
+  color: var(--blue-300);
+}
+
+.chip:hover .chip-go,
+.chip.is-focused .chip-go {
   color: var(--blue-700);
 }
 

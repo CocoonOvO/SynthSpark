@@ -70,7 +70,8 @@ await page.waitForTimeout(2400)
 }
 
 // 卡片边框（border 简写没被 var() 失效重置）
-await page.keyboard.press('e')
+// 第 5 轮：切页是 TAB（Q/E 改成了历史前进后退）
+await page.keyboard.press('Tab')
 await page.waitForTimeout(1400)
 {
   const cardBorder = await page.locator('[data-testid="post-card"]').first().evaluate((el) => {
@@ -82,12 +83,18 @@ await page.waitForTimeout(1400)
 
 // ── 2. 焦点门 ──
 {
-  const card = page.locator('[data-testid="post-card"]').nth(3)
+  // 一定要盯**同一个元素**的前后差异：盯别的卡片时，两边都没焦点，
+  // 之所以曾经「通过」只是因为布局滚动让裁剪区域错位了 —— 那是假绿。
+  // 初始焦点在第一张卡（见 smoke），↓ 之后焦点走到同列下一行，第一张卡失去焦点。
+  await page.waitForLoadState('networkidle')
+  const card = page.locator('[data-testid="post-card"]').first()
   const before = await card.screenshot()
-  for (let i = 0; i < 4; i += 1) await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('ArrowDown')
   await page.waitForTimeout(260)
   const after = await card.screenshot()
-  check('焦点移动在屏幕上真的看得见（像素级差异）', !before.equals(after))
+  check('焦点移走前后，同一张卡片的像素确实变了', !before.equals(after))
+  await page.keyboard.press('ArrowUp') // 焦点收回第一张，后面几条断言依赖它
+  await page.waitForTimeout(200)
 
   const info = await page.evaluate(() => {
     const el = document.querySelector('[data-testid="post-card"].is-focused')
@@ -122,6 +129,24 @@ await page.waitForTimeout(1400)
   check('闪烁光标走的是 blink-step 关键帧（离散闪，不是淡入淡出）', info?.animName === 'blink-step', `${info?.animName} ${info?.animDur}`)
 }
 
+// 焦点门第 6 条：**已选中**的控件被聚焦时也必须看得出差别。
+// 这就是第 4 轮那个「焦点视觉冲突」的同一类坑：选中色把焦点底色压掉，键盘用户找不到焦点。
+{
+  const chipBg = () =>
+    page.evaluate(() => {
+      const el = document.querySelector('[data-testid="group-all"]')
+      return el ? getComputedStyle(el).backgroundColor : null
+    })
+  const unfocused = await chipBg()
+  await page.keyboard.press('g') // 聚焦分组行首项（它同时是「已选中」态）
+  await page.waitForTimeout(220)
+  const focused = await chipBg()
+  const isFocused = await page.evaluate(() =>
+    document.querySelector('[data-testid="group-all"]')?.classList.contains('is-focused')
+  )
+  check('已选中的分组芯片被聚焦时底色确实变了（选中态不吞焦点）', isFocused && unfocused !== focused, `${unfocused} -> ${focused}`)
+}
+
 // ── 3. 术语门 ──
 {
   const GAME_TERMS = [
@@ -154,25 +179,30 @@ await page.waitForTimeout(1400)
   }
 
   await scan(pages[0])
-  await page.keyboard.press('e')
-  await page.waitForTimeout(1400)
+  await page.keyboard.press('Tab')
+  await page.waitForTimeout(1000)
   await scan(pages[1])
-  await page.keyboard.press('e')
+  await page.keyboard.press('Tab')
   await page.waitForTimeout(600)
   await scan(pages[2])
-  await page.keyboard.press('e')
+  await page.keyboard.press('Tab')
   await page.waitForTimeout(600)
   await scan(pages[3])
-  await page.keyboard.press('q')
-  await page.waitForTimeout(900)
+  // 从「关于」用 Shift+TAB 退回「文章」，再回车打开一篇 —— 文章详情必须被真的扫到
+  await page.keyboard.press('Shift+Tab')
+  await page.waitForTimeout(600)
+  await page.keyboard.press('Shift+Tab')
+  await page.waitForTimeout(600)
   await page.keyboard.press('Enter')
-  await page.waitForTimeout(700)
+  await page.waitForTimeout(900)
   await scan(pages[4])
   await page.keyboard.press('p')
   await page.waitForTimeout(300)
   await scan(pages[5])
   await page.keyboard.press('Escape')
   await page.waitForTimeout(200)
+  await page.keyboard.press('q') // 退出文章，避免影响后面的门
+  await page.waitForTimeout(900)
 
   check(
     '六个页面上都没有游戏术语残留（用户要求第 1 条）',

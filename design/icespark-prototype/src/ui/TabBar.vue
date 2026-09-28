@@ -5,20 +5,28 @@
  * 浏览类页面（主页 / 文章 / 关联 / 关于）并列在这个条上，取代「层层深入的页面 + 面包屑」。
  *
  * 输入等价性（用户硬要求：单独鼠标、单独键盘都能完成全部操作）：
- * - 键盘：内容区按 ↑ 顶到首行之上 → 焦点进入标签栏；←→ 选页；A/Enter 进入；↓ 或 B/ESC 退回内容区
- * - 键盘快捷：Q / E 在任何场景下直接前后切页（见 App.vue 的全局键）
- * - 鼠标：划过即共享焦点（静音），点击直接切页；指针移出标签栏时焦点交还内容区
+ * - 键盘：内容区按 ↑ 顶到首行之上 → 焦点进入标签栏；←→ 移动光标；Enter 进入；↓ 或 B/ESC 退回内容区
+ * - 键盘快捷：Tab / Shift+Tab 在任何有标签栏的页面上前后切页（见 App.vue 的全局键）
+ * - 鼠标：划过即共享焦点（静音预览），点击直接切页；指针移出标签栏时焦点交还内容区
  */
 import { onMounted, onUnmounted, ref } from 'vue'
-import { onPad } from './pad'
+import { onPad, activeScope } from './pad'
 import { playSfx } from './sfx'
-import { TABS, activeTab, tabIndex, focusZone, switchTab, focusTabs, blurTabs } from './tabs'
+import {
+  TABS,
+  activeTab,
+  tabCursor,
+  focusZone,
+  switchTab,
+  focusTabs,
+  blurTabs,
+  moveTabCursor,
+} from './tabs'
 
 const navEl = ref<HTMLElement | null>(null)
 
 function hoverTab(i: number) {
   // 鼠标路径：静音移动焦点（共享焦点模型，不给鼠标单独一套 hover 态）
-  if (tabIndex.value !== i) tabIndex.value = i
   focusTabs(i)
 }
 
@@ -44,17 +52,17 @@ function onPointerMove(e: PointerEvent) {
 }
 
 const off = onPad((a) => {
+  if (activeScope.value !== 'scene') return false
   if (focusZone.value !== 'tabs') return false
   if (a === 'left' || a === 'right') {
-    const n = TABS.length
-    const next = (tabIndex.value + (a === 'left' ? -1 : 1) + n) % n
-    tabIndex.value = next
+    moveTabCursor(a === 'left' ? -1 : 1)
     playSfx('move')
     return true
   }
   if (a === 'down' || a === 'confirm') {
-    // 进入当前标签页，焦点交还内容区
-    switchTab(TABS[tabIndex.value].id)
+    // 进入当前光标所在页，焦点交还内容区
+    if (TABS[tabCursor.value].id === activeTab.value) blurTabs()
+    else switchTab(TABS[tabCursor.value].id)
     playSfx('confirm')
     return true
   }
@@ -88,7 +96,7 @@ onUnmounted(() => {
       v-for="(t, i) in TABS"
       :key="t.id"
       class="tab focusable mini"
-      :class="{ on: activeTab === t.id, 'is-focused': focusZone === 'tabs' && tabIndex === i }"
+      :class="{ on: activeTab === t.id, 'is-focused': focusZone === 'tabs' && tabCursor === i }"
       :data-testid="`tab-${t.id}`"
       @mouseenter="hoverTab(i)"
       @click="clickTab(i)"
@@ -98,7 +106,7 @@ onUnmounted(() => {
     </button>
 
     <span class="tabbar-tail">
-      <span class="hint">Q / E 切页 · ↑ 回到标签栏 · ↓ 回到内容</span>
+      <span class="hint">TAB 切页 · ↑ 回到标签栏 · ↓ 回到内容</span>
     </span>
   </nav>
 </template>
