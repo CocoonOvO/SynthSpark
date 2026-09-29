@@ -1,4 +1,4 @@
-import { getJson } from './client'
+import { getJson, request } from './client'
 import type { components } from './schema'
 
 /**
@@ -24,4 +24,23 @@ export type User = components['schemas']['User']
  */
 export async function fetchUserByUsername(username: string): Promise<User> {
   return getJson<User>(`/users/by-username/${encodeURIComponent(username)}`)
+}
+
+/** 更新当前用户的请求体（契约 `UserUpdate`：记录里有的字段只有这四个） */
+export type UserUpdate = components['schemas']['UserUpdate']
+
+/**
+ * 读当前登录用户。
+ *
+ * `GET /api/users/me` —— **需登录**（`auth: true` 由客户端注入 Bearer）。
+ * 个人信息编辑页刷新后要拿的是「后端现在记着的值」，不是登录时那份缓存：
+ * 缓存（`stores/auth.ts` 的 `synthspark-icespark-user`）只是让昵称立刻可见。
+ */
+export async function fetchMe(): Promise<User> {
+  return getJson<User>('/users/me', { auth: true })
+}
+
+/** 保存个人信息（`PUT /api/users/me`，只传要改的字段，返回更新后的整份用户） */
+export async function updateMe(payload: UserUpdate): Promise<User> {
+  return request<User>('/users/me', { method: 'PUT', body: payload, auth: true })
 }

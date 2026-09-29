@@ -26,6 +26,13 @@ import { useAuthStore } from '@/stores/auth'
 
 const emit = defineEmits<{ (e: 'close'): void; (e: 'ok', username: string): void }>()
 
+/**
+ * 框里的一句提示（P5 起）：由外壳转交，内容由请求方决定 ——
+ * 目前只有路由守卫那一句「这个页面要先登录」（未登录深链接进需鉴权页时）。
+ * 从菜单点进来的走的是空串，框里就还是原来那两行，不凭空多出一条。
+ */
+defineProps<{ notice?: string }>()
+
 const auth = useAuthStore()
 
 const username = ref('')
@@ -103,6 +110,9 @@ onUnmounted(() => {
       <p class="panel-desc">
         用项目账号登录后可发表评论、编辑自己的文章。匿名访客也能评论，只是要留一个称呼。
       </p>
+
+      <!-- 守卫送来的提示：只在有内容时出现（从菜单进来的不显示） -->
+      <p v-if="notice" class="panel-notice hint" data-testid="login-notice">{{ notice }}</p>
 
       <form class="form" @submit.prevent="submit">
         <label class="field">

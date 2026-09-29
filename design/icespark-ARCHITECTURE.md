@@ -1413,3 +1413,126 @@ P0–P3 期间的 `NotFoundView` 是占位皮肤（约 19 行），本轮按**�
   eslint → 契约门（**63 paths / 89 operations / 50 schemas**，`sha256:c0a6332757d33c87`）→ `vue-tsc`，
   全部通过；`git status` 里没有生成物。
 - **配色门 / 焦点门 / 键盘与鼠标 parity** 都在上面这 57 条里，未另开套件。
+
+## 23. P5 契约：账号与管理的四张独立页（并行实现的唯一口径）
+
+用户裁定（**2026-09-29**，本轮开工前已确认，含三个问题的答案）：
+
+1. **四张页面各自独立成页**，不再是旧前端 `ProfileView.vue` 那种「一个设置页五个 tab」：
+   `/profile` 个人信息编辑 · `/admin/site` 站点设置 · `/admin/links` 外链管理 · `/admin/audit` 审计日志。
+   **登录仍用现有外壳弹窗**，不建 `/login` 页。
+2. 「我的文章 / 草稿」**不在本轮**，推迟到 **P6**（与 `/write` 一起）。
+3. **鉴权口径**：未登录访问需鉴权页 → **重定向回主页 + 外壳弹出登录框**（附提示）；
+   非超管进超管页 → 页内「**仅超管可见**」提示（不重定向）。
+
+### 23.1 已经落地的公共部分（页面任务不必再碰）
+
+这一节的代码是**主线写好的**，页面任务只消费、不修改 —— 四张页面并行开工时，
+公共文件的写者只有一个，否则会互相覆盖。
+
+| 文件 | 做了什么 |
+|---|---|
+| `src/api/users.ts` | `fetchMe()`（`GET /api/users/me`，带 `auth`）、`updateMe(payload)`（`PUT`，body 是 `UserUpdate`） |
+| `src/api/links.ts` | `createLink` / `updateLink` / `deleteLink`（都带 `auth: true`，路径带尾斜杠） |
+| `src/api/admin.ts` | `fetchAdminSiteConfig` / `saveAdminSiteConfig`、`fetchSiteConfigAuditLogs({limit,offset})`、`uploadAvatar(file)`（multipart，自己拼 `FormData`，不走 `request()`） |
+| `src/stores/shell.ts` | `requestLogin(notice)` / `loginRequested` / `loginNotice` / `clearLoginRequest()`：守卫与外壳之间的传话通道 |
+| `src/router/types.ts` | `meta.requiresAuth` / `meta.requiresSuperuser` 两个字段（语义写在注释里） |
+| `src/router/index.ts` | `installGuards()`：`requiresAuth` 且未登录 → `requestLogin('这个页面要先登录')` + `{ path: '/', replace: true }` |
+| `src/router/routes.ts` | 四条路由（`profile` / `admin-site` / `admin-links` / `admin-audit`），`meta.scene` 与路由名同名 |
+| `src/App.vue` | `SELF_TITLED_SCENES` 加入四个 scene id（这四页**自带可见 h1**）；`loginFromMenu` 区分来源；watch 外壳请求开登录框并消费掉；模态作用域收口加入 `viewKey`（见下） |
+| `src/machine/LoginDialog.vue` | 新增 `notice` prop，渲染成 `[data-testid="login-notice"]` |
+| `src/machine/PauseMenu.vue` | `LINK_ROWS` 改成五条真路径；登录后加 `PROFILE`，超管再加 `SITE` / `LINKS` / `AUDIT`；点这四行 = 关菜单 + `router.push`；`WRITE` 行给「P6 还没做」的提示 |
+
+**P5 顺手修掉的一个外壳时序 bug**（`App.vue` 的模态作用域收口）：
+守卫那条路是「导航（还带一次 `resetInputState()`）+ 开登录框」两件事同时发生，
+而收口只看三个模态的开关，于是转场层的 `resetInputState()` 把刚设好的 `pause` 又摁回 `scene` ——
+**登录框挂在屏幕上、键盘却是死的**（ESC 收不到，按键先被全局那条拿去开了暂停菜单）。
+修法：把 `viewKey` 也纳入收口观察名单，导航结束后再收口一次，谁先谁后都无所谓。
+实测：守卫路径下开框时 `data-scope = pause`，ESC 只关框、不冒出菜单。
+
+**scene id 不是导航场景**：这四张页面**不进 `SCENES`**（`src/scene/scenes.ts` 保持 7 项），
+理由与 404 相同 —— 底栏那排指示是「导航场景」，管理页不该在里面占一格，
+加进去还会把 `shell.spec.ts` 的「7 个场景」断言变成一句没有意义的话。
+`data-scene` 仍会写成 `profile` / `admin-site` / `admin-links` / `admin-audit`（转场表现层照常走）。
+
+**两条鉴权口径的实现位置**（分清责任，别在两处都写）：
+
+- **未登录**：路由守卫负责（公共部分已完成）。页面里**不要**再写一遍「未登录 → 跳主页」。
+- **非超管**：**页面自己**负责渲染「仅超管可见」的那块提示 —— 路由照常进去
+  （`meta.requiresSuperuser` 只是声明，守卫不拦），因为登录了但不是超管的人有权知道这里少了什么。
+
+### 23.2 每张页面的接口与字段（契约原文，别再自己猜）
+
+- **`/profile`（个人信息编辑）**
+  - 读：`GET /api/users/me`（需登录）→ `User`：`username` / `email` / `display_name` / `avatar_url` / `bio`。
+  - 写：`PUT /api/users/me`，body `UserUpdate`，**只有四个字段**：`email` / `display_name`（≤100）/
+    `bio`（≤500）/ `avatar_url`。返回更新后的整份 `User`。
+  - 头像：`POST /api/upload/avatar`（multipart，字段名 `file`）→ `UploadResponse.url`；
+    再把这个 url 写进 `avatar_url` 保存。旧前端的限制照抄：只能图片、≤5MB。
+  - 改密码：`POST /api/auth/password/reset`，参数走 **query string**
+    （`old_password` / `new_password`，注意不是 JSON body）。
+  - 登录后要同步 `stores/auth.ts` 里的 `user`（`auth.loadMe()` 或等价），否则菜单里的昵称还是旧值。
+- **`/admin/site`（站点设置）**
+  - 读：`GET /api/admin/site-config`（超管；从没保存过返回 `{}`）。
+  - 写：`PUT /api/admin/site-config`，body 是**完整配置 dict**（不是补丁），返回 `{success: true, …}`。
+  - 结构口径与 `src/config/types.ts` / `public/site.config.example.json` 一致
+    （`site` / `navbar` / `footer` / `home` / `about` 五段），页面要能看清自己在改哪一段。
+  - **保存后提示「刷新页面才生效」**（旧前端原话口径；配置在启动时读一次）。
+- **`/admin/links`（外链管理）**
+  - 读：`GET /api/links/`（公开）→ `Link[]`：`id` / `name` / `url` / `cover_image` / `sort_order`。
+  - 增删改：`POST /api/links/`、`PUT /api/links/{link_id}`、`DELETE /api/links/{link_id}`（仅超管）。
+  - `url` 规则交给后端校验：`http(s)://` 绝对链接，或 `/` 开头的站内路径；拒绝 `//`、`javascript:`。
+    前端**不重复实现**这套规则，只把后端的 `detail` 原文显示出来。
+- **`/admin/audit`（审计日志）**
+  - 读：`GET /api/admin/site-config/audit-logs?limit=&offset=`（超管）→ `{ logs: [...], total: N }`。
+  - 一条日志的字段：`id` / `admin_id` / `admin_username` / `action`（目前只有 `update`）/
+    `old_value` / `new_value`（整份配置，**大，默认折叠**）/ `ip_address` / `user_agent` /
+    `created_at`（形如 `2026-09-29 14:11:48`，**不是 ISO**，原样显示，别硬套 `Date` 解析）。
+  - **不读 `GET /api/admin/audit-logs`**：那条是**配置库**超管的领域，现有登录弹窗拿不到那种令牌
+    （实测同一令牌调它返回 `{"detail":"无效的认证凭证"}`）。这件事要写在页面注释里。
+
+### 23.3 四张页面共同的硬要求（与前面各轮完全一致）
+
+1. **配色只走 token / CSS 变量**：不许出现色值字面量（`#hex`、`rgb()`、`hsl()`），
+   抖动网点用 `--blue-*`，硬边、圆角 0、无渐变、无外发光、无模糊；动效一律 `steps()`。
+2. **每页自带一个可见 `h1`**（页面名），页面内标题层级不跳级（`h1` → `h2`），
+   装饰层 `aria-hidden="true"`，axe 无新增违规（底栏小字与卡片标题跳级是既有的放行项）。
+3. **键盘等价**：`useFocusGroup()` + `onPad`，方向键移动、`ENTER` 确认、`Q` 返回上一页；
+   表单页（`/profile`、`/admin/site`、`/admin/links`）里输入框用**原生焦点**：
+   Tab 在字段间走，输入框内不劫持按键（`isEditableTarget` 已经处理），
+   方向键 / 鼠标 hover 一动就收掉原生焦点（`nativeOwnsEnter()` / `focusShellRoot()` 那两条惯例，
+   见 §21 —— **不要用 `blur()`**）。
+4. **四态显式**：`loading` / `ready` / `empty` / `error`，失败时把后端的 `detail` 原文显示出来，
+   不吞异常、不整页白屏、不弹 `alert`。
+5. **页面结构**：`SceneHead`（`标题 · 机器字样`，带 clock 与右侧 slot）+ 页面内容 +
+   底栏键位提示一行；**不自己画品牌 / 站点小字 / 状态行**（外壳 `.deck` 负责）。
+6. **中文注释**，说清「为什么」而不是复述代码；文案里不出现具体身份信息。
+7. **改动范围**：只写自己的那一个视图文件 + 自己的那一个 e2e 文件。
+   公共文件（`router/*`、`App.vue`、`stores/*`、`api/*`、`machine/*`）**一律不碰** ——
+   需要新的接口函数时，**报告给主线**，不要自己加到 `api/` 里。
+
+### 23.4 e2e 口径（不依赖真账号密码）
+
+**不许在仓库里写死真令牌 / 真密码**。三条手法，与既有用例同源：
+
+1. **未登录路径**（无需任何凭据）：`page.goto('/admin/site')` → 断言 URL 回落到 `/`、
+   外壳弹出 `[data-testid="login-dialog"]`、`[data-testid="login-notice"]` 有那句提示、
+   按 ESC 关掉之后**不会**冒出暂停菜单（这是 `loginFromMenu` 的意义）。
+2. **登录态**：`page.addInitScript` 写两把键 —— `synthspark-token`（随便一个假串，如 `e2e-token`）
+   与 `synthspark-icespark-user`（JSON：`{username, display_name, is_superuser}`）。
+   然后**必须**用 `page.route()` 把该页要调的接口全部换成夹具响应（先例：`user-profile.spec.ts`
+   的 `page.route(/\/api\/posts\//)`）—— 假令牌打真接口只会拿到 401。
+   **`/api/auth/me` 也要打桩**：外壳挂载时 `App.vue` 会调一次 `auth.bootstrapAuth()` 静默校验登录态，
+   假令牌打真接口拿 401，`stores/auth.ts` 的 `loadMe()` 会**登出并清掉缓存** ——
+   表现是「守卫放行了、菜单却只有 6 行」（实测撞到过，排查了半天）。
+3. **仅超管可见**：同一套初始化脚本把 `is_superuser` 写成 `false`，
+   断言页面渲染出「仅超管可见」那块提示、且**没有**真内容节点。
+
+### 23.5 分工与门
+
+- 四张页面**并行**实现（一个页面一个任务，各自一个视图文件 + 一个 e2e 文件）。
+- 并行期间的分工红线：**只有主线跑 `npm run check` 与整轮 `npx playwright test`**；
+  页面任务用临时 `.mjs` chromium 探针打 5175 自查（跑完删掉探针），
+  或只跑自己那一个 spec 文件。
+- 本轮收口时主线跑：`npm run check`（独立性门 / tokens 生成物 / 单测 / oxlint / eslint /
+  契约门 / `vue-tsc`）+ 全量 `npx playwright test`，然后更新本节为「落地记录」。

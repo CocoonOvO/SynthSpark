@@ -3,6 +3,9 @@ import type { Router } from 'vue-router'
 
 import { routes } from './routes'
 
+import { useAuthStore } from '@/stores/auth'
+import { useShellStore } from '@/stores/shell'
+
 import './types'
 
 /**
@@ -13,7 +16,7 @@ import './types'
  * 仓库不含部署配置（AGENTS.md 第 9 节），这条要求见 design/icespark-ARCHITECTURE.md §8。
  */
 export function createAppRouter() {
-  return createRouter({
+  const router = createRouter({
     history: createWebHistory(import.meta.env.BASE_URL),
     routes,
     scrollBehavior(to, _from, savedPosition) {
@@ -22,6 +25,36 @@ export function createAppRouter() {
       if (to.hash) return { el: to.hash }
       return { top: 0 }
     },
+  })
+
+  installGuards(router)
+  return router
+}
+
+/**
+ * 鉴权守卫（P5，口径见架构 §23）。
+ *
+ * 只有 templateUrl「未登录」这一条会**重定向**：回主页，并请外壳弹登录框（附提示）。
+ * 为什么不留在目标路径上渲染一个「请先登录」的空壳：那会让 URL 与画面互相矛盾
+ * （地址栏写着 `/admin/site`，屏幕上却没有站点设置），而用户裁定的是「回主页 + 弹框」。
+ *
+ * `requiresSuperuser` **不重定向**：登录了但不是超管的人有权知道这里少了什么，
+ * 于是路由照常进去、由**页面自己**渲染「仅超管可见」（每张超管页都有这条）。
+ * 未登录的情况已经被 `requiresAuth` 先拦下 —— 这两条 meta 需要一起写。
+ *
+ * 守卫里能用 `useAuthStore()` 的原因：`main.ts` 先 `app.use(pinia)` 再 `app.use(router)`，
+ * 首次导航发生时 pinia 已经是活动实例。
+ */
+function installGuards(router: Router): void {
+  router.beforeEach((to) => {
+    if (!to.meta.requiresAuth) return true
+
+    const auth = useAuthStore()
+    if (auth.isLoggedIn) return true
+
+    // 目标路径不进 URL：提示与意图都通过外壳请求传递，一次性消费
+    useShellStore().requestLogin('这个页面要先登录')
+    return { path: '/', replace: true }
   })
 }
 

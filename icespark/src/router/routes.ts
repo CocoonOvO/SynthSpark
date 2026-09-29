@@ -53,6 +53,39 @@ export const routes: RouteRecordRaw[] = [
     meta: { scene: 'user', title: '用户主页' },
   },
   {
+    // 个人信息编辑（P5）。旧前端是 ProfileView 的「设置」tab，现在**独立成页**（用户裁定）。
+    // 路径与旧前端一致（`/profile`）—— 菜单、404 页的「个人中心」链接都指向它。
+    // `requiresAuth`：未登录进来会被守卫送回主页并弹登录框（见 router/index.ts）。
+    path: '/profile',
+    name: 'profile',
+    component: () => import('@/views/ProfileView.vue'),
+    meta: { scene: 'profile', title: '个人信息', requiresAuth: true },
+  },
+  {
+    // 站点设置（P5）。旧前端是 ProfileView 的「站点设置」tab（超管专属），同样独立成页。
+    // 超管页统一挂 `/admin/` 前缀：路径本身就把权限讲清楚，不需要点进去才知道。
+    path: '/admin/site',
+    name: 'admin-site',
+    component: () => import('@/views/AdminSiteView.vue'),
+    meta: { scene: 'admin-site', title: '站点设置', requiresAuth: true, requiresSuperuser: true },
+  },
+  {
+    // 外链管理（P5）：`/api/links/` 的增删改（仅超管），公开那一份读在 `/links` 页。
+    path: '/admin/links',
+    name: 'admin-links',
+    component: () => import('@/views/AdminLinksView.vue'),
+    meta: { scene: 'admin-links', title: '外链管理', requiresAuth: true, requiresSuperuser: true },
+  },
+  {
+    // 审计日志（P5）：读 `GET /api/admin/site-config/audit-logs`（业务库超管）。
+    // 另一条 `GET /api/admin/audit-logs` 是**配置库**超管的领域，现有登录弹窗拿不到那种令牌，
+    // 页面里不读它 —— 口径见 api/admin.ts 的文件头。
+    path: '/admin/audit',
+    name: 'admin-audit',
+    component: () => import('@/views/AdminAuditView.vue'),
+    meta: { scene: 'admin-audit', title: '审计日志', requiresAuth: true, requiresSuperuser: true },
+  },
+  {
     // 兜底：must be last —— 404 必须是路由表最后一条
     path: '/:pathMatch(.*)*',
     name: 'not-found',

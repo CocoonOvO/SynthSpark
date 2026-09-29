@@ -58,29 +58,25 @@ interface Row {
 }
 
 /**
- * 菜单里的三个链接指向旧前端已有的路径（对齐 `frontend/src/router/index.ts`）：
- *   /write                  写作 / 编辑文章（旧版 requiresAuth）
- *   /profile?tab=settings   个人信息编辑（旧版 ProfileView 的「设置」tab）
- *   /profile?tab=siteConfig 站点管理（旧版 ProfileView 的「站点设置」tab，仅超管可见）
- * 这三张页面属于 P5 / P6，本身还没落地 —— 它们只在登录态下出现（条件与样机一致），
- * P3 只是把登录态接上了，页面仍留给后续轮次。
+ * 菜单里的链接行（P5 收口）。
+ *
+ * 用户裁定「账号和管理每项**分别做成独立页面**」之后，这里不再往 `/profile?tab=…` 里塞 tab，
+ * 每行各自一条路由 —— 旧前端那种「一个设置页五个 tab」的口径到此为止：
+ *   /write         写作 / 编辑文章（**P6**，还没落地，点了给一句提示）
+ *   /profile       个人信息编辑（登录即可）
+ *   /admin/site    站点设置（超管）
+ *   /admin/links   外链管理（超管）
+ *   /admin/audit   审计日志（超管）
+ *
+ * 机器字样（WRITE / PROFILE / SITE / LINKS / AUDIT）是 8bit 皮肤的一部分，
+ * 不进站点配置；中文那列是页面名，也不是站点文案。
  */
-const LINK_ROWS: Record<'edit' | 'profile' | 'site', Row> = {
+const LINK_ROWS: Record<'edit' | 'profile' | 'site' | 'links' | 'audit', Row> = {
   edit: { id: 'edit', en: 'WRITE', cn: '编辑文章', kind: 'link', href: '/write' },
-  profile: {
-    id: 'profile',
-    en: 'PROFILE',
-    cn: '个人信息编辑',
-    kind: 'link',
-    href: '/profile?tab=settings',
-  },
-  site: {
-    id: 'site',
-    en: 'SITE',
-    cn: '站点管理',
-    kind: 'link',
-    href: '/profile?tab=siteConfig',
-  },
+  profile: { id: 'profile', en: 'PROFILE', cn: '个人信息编辑', kind: 'link', href: '/profile' },
+  site: { id: 'site', en: 'SITE', cn: '站点设置', kind: 'link', href: '/admin/site' },
+  links: { id: 'links', en: 'LINKS', cn: '外链管理', kind: 'link', href: '/admin/links' },
+  audit: { id: 'audit', en: 'AUDIT', cn: '审计日志', kind: 'link', href: '/admin/audit' },
 }
 
 const router = useRouter()
@@ -103,8 +99,8 @@ const rows = computed<Row[]>(() => {
 
   if (auth.isLoggedIn) {
     list.push(LINK_ROWS.edit, LINK_ROWS.profile)
-    // 站点管理只给超管看（样机条件）
-    if (auth.isSuperuser) list.push(LINK_ROWS.site)
+    // 三张超管页只给超管看（样机口径：非超管干脆看不到行，而不是点进去被拒）
+    if (auth.isSuperuser) list.push(LINK_ROWS.site, LINK_ROWS.links, LINK_ROWS.audit)
   }
 
   list.push({ id: 'settings', en: 'SETTINGS', cn: '设置', kind: 'action' })
@@ -179,13 +175,18 @@ function activate(): boolean {
       requestTransition('shake')
       void router.push('/')
       break
-    case 'edit':
     case 'profile':
     case 'site':
-      // 链接行的 href 是真的，只是这几张页面还没搬过来（P4/P5 的活）。
-      // 样机这句原来是「演示版没有这张页面，正式版路径 …」—— 那句在正式版里是假话，
-      // 只换这一句，行本身照样机：登录后照常出现。
-      hint.value = `这张页面还没做，目标路径 ${row.href}`
+    case 'links':
+    case 'audit':
+      // 真页面（P5 起）：关菜单再跳 —— 不关就会变成「菜单压在目标页面上」，
+      // 用户看不到自己点到了哪儿
+      emit('close')
+      void router.push(row.href ?? '/')
+      break
+    case 'edit':
+      // `/write` 是 P6 的活：行照样机留着（登录后就有），点了先说清楚它还不在
+      hint.value = `写作页还没做（P6），目标路径 ${row.href}`
       break
     case 'settings':
       hint.value = ''

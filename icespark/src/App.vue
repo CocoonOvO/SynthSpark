@@ -26,6 +26,7 @@ import { screenScroller, scrollScreenTop } from '@/scene/screen'
 import { blurTabs, cycleTab, onTabScene } from '@/scene/tabs'
 import { isTransitioning, transitionKind, transitionSeq } from '@/scene/transition'
 import { useAuthStore } from '@/stores/auth'
+import { useShellStore } from '@/stores/shell'
 import { useSiteStore } from '@/stores/site'
 import { SCALE } from '@/styles/tokens'
 
@@ -64,9 +65,23 @@ const promptOpen = ref(false)
  *
  * P3 收尾按用户口径从「菜单里再叠一层」提上来：菜单里的「登录」行先把自己关掉，
  * 再由外壳开这个框（两个模态不叠）。登录成功后把菜单重新打开并带一句提示 ——
- * 用户回到菜单就能看到登录后才出现的那三行（编辑文章 / 个人信息编辑 / 站点管理）。
+ * 用户回到菜单就能看到登录后才出现的那几行（编辑文章 / 个人信息编辑 / 站点设置…）。
  */
 const loginOpen = ref(false)
+
+/**
+ * 登录框是**从哪儿进来的**（P5）。
+ *
+ * 两条来源的收尾动作不一样，所以必须记住：
+ * - 菜单（`machine/PauseMenu.vue` 的「登录」行）→ 关掉 / 成功后**把菜单还回去**，
+ *   用户本来就站在菜单上；
+ * - 路由守卫（未登录深链接进需鉴权页）→ **不回菜单**，用户站在主页上。
+ * 混成一条就会出现「关掉登录框，面前凭空多出一个暂停菜单」。
+ */
+const loginFromMenu = ref(true)
+
+/** 登录框里那句提示（守卫给的「这个页面要先登录」）；从菜单进来时是空串 */
+const loginNotice = ref('')
 
 /** 给菜单的一次性提示（「登录成功」），菜单关掉时清空，避免下次打开还挂着 */
 const menuNotice = ref('')
@@ -77,6 +92,7 @@ const pauseOpen = ref(false)
 const route = useRoute()
 const site = useSiteStore()
 const auth = useAuthStore()
+const shell = useShellStore()
 
 /**
  * 画面上的场景。
@@ -106,9 +122,18 @@ const viewKey = computed(() => `${sceneId.value}:${route.params.key ?? ''}`)
  * 而这本就属于外壳的语义责任（和 `.screen-inner` 用 `<main>`、`.deck` 带
  * `role="contentinfo"` 同一类）。
  *
- * 文章页与 404 由页面自己给出 `h1`，这里让位 —— 一页两个一级标题没有意义。
+ * 文章页 / 404 / 用户档案 与 P5 的四张账号管理页都由页面自己给出 `h1`，这里让位 ——
+ * 一页两个一级标题没有意义。
  */
-const SELF_TITLED_SCENES = ['article', 'error', 'user']
+const SELF_TITLED_SCENES = [
+  'article',
+  'error',
+  'user',
+  'profile',
+  'admin-site',
+  'admin-links',
+  'admin-audit',
+]
 
 const shellHeading = computed(() => {
   if (SELF_TITLED_SCENES.includes(sceneId.value)) return ''
@@ -161,19 +186,43 @@ function closeMenu(): void {
 
 /** 菜单里点「登录」：菜单已经自己关了，这里只负责开登录框 */
 function openLogin(): void {
+  loginFromMenu.value = true
+  loginNotice.value = ''
   loginOpen.value = true
 }
 
-/** 登录成功：关登录框，并把菜单重新打开（顺便带上那句提示） */
+/**
+ * 守卫要登录框（P5）：未登录深链接进需鉴权页时被送到这里。
+ *
+ * 与菜单路径的差别只有两点：不回菜单、框里带一句提示。
+ * 顺手关掉菜单 —— 屏幕上任何时刻只允许一个模态（沿用 P3 的规矩）。
+ */
+watch(
+  () => shell.loginRequested,
+  (requested) => {
+    if (!requested) return
+    pauseOpen.value = false
+    loginFromMenu.value = false
+    loginNotice.value = shell.loginNotice
+    loginOpen.value = true
+    // 一次性请求，消费掉 —— 否则用户手动关了框，下次按 P 又会凭空弹出来
+    shell.clearLoginRequest()
+  },
+)
+
+/** 登录成功：关登录框；从菜单进来的把菜单还回去（顺便带上那句提示） */
 function onLoginOk(): void {
   loginOpen.value = false
+  if (!loginFromMenu.value) return
   menuNotice.value = '登录成功'
   pauseOpen.value = true
 }
 
-/** 登录框关掉（✕ / ESC / 点框外）：回到菜单 —— 它本来就是从菜单进来的 */
+/** 登录框关掉（✕ / ESC / 点框外）：从菜单进来的回菜单，守卫进来的就地结束 */
 function closeLogin(): void {
   loginOpen.value = false
+  loginNotice.value = ''
+  if (!loginFromMenu.value) return
   menuNotice.value = ''
   pauseOpen.value = true
 }
@@ -269,9 +318,16 @@ const offStart = onPad((action, consumed) => {
  *
  * 修法不是去改四个模态组件，而是让外壳按「谁在台上」重新收口一次：
  * `flush: 'post'` 保证它跑在本次 patch（含卸载还原）之后。
+ *
+ * **P5 补的一味药：`viewKey` 也进观察名单。** 路由守卫那一条路（未登录深链接进需鉴权页
+ * → 回主页 + 开登录框）里，收口的 `setScope('pause')` 之后还有一次**导航自带的**
+ * `resetInputState()`（转场层在路由切换时必须调它，否则从开着菜单的页面跳走会卡在 pause），
+ * 它把作用域又摁回 `scene` —— 实测：登录框挂在屏幕上、`data-scope` 却是 `scene`，
+ * 于是框里的 ESC 根本收不到（按键先被全局那条 ESC 拿去开了暂停菜单）。
+ * 把导航本身也纳入观察：**导航结束后再收口一次**，无论谁先谁后，最后一句都是对的。
  */
 watch(
-  [pauseOpen, promptOpen, loginOpen],
+  [pauseOpen, promptOpen, loginOpen, viewKey],
   ([menu, prompt, login]) => {
     // 再等一个 tick 才写：模态组件的挂载/卸载**不是**同一时刻——实测「菜单 → 登录框」
     // 时登录框的 setup 先跑、post 队列随后、菜单的 onUnmounted 反而最后跑，
@@ -351,7 +407,7 @@ onUnmounted(() => {
       <PauseMenu v-if="pauseOpen" :notice="menuNotice" @close="closeMenu" @open-login="openLogin" />
 
       <!-- 登录弹窗：外壳级模态，与菜单互斥（不叠在一起） -->
-      <LoginDialog v-if="loginOpen" @close="closeLogin" @ok="onLoginOk" />
+      <LoginDialog v-if="loginOpen" :notice="loginNotice" @close="closeLogin" @ok="onLoginOk" />
 
       <!-- 音效首次询问：键鼠双路径的模态 -->
       <SoundPrompt v-if="promptOpen" @close="promptOpen = false" />
