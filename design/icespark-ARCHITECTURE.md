@@ -3,8 +3,8 @@
 > 这份文档是**决定记录**，也是后续开发的**可执行约束**。
 > 第 3 节里的每一条都会落成 `scripts/` 下的脚本和 `e2e/` 下的用例，不是建议。
 >
-> 状态：**P0 骨架已落地**（`icespark/` 独立 app · 构建 / 类型检查 / 两道门跑通，见 §13）；
-> P1 设计系统起进入真实页面开发。`design/icespark-prototype/` 仍留作视觉与交互的参考实现。
+> 状态：**P0 骨架 + P1 设计系统已落地**（`icespark/` 独立 app · 构建 / 类型检查 / 六段门 / e2e 全绿，
+> 见 §13、§14）；P2 交互内核起进入真实页面开发。`design/icespark-prototype/` 仍留作视觉与交互的参考实现。
 
 ---
 
@@ -64,25 +64,29 @@
 ```
 icespark/
 ├── package.json                  # 独立 app；不引入 workspace，仓库根也没有 package.json
-├── tsconfig.json
-├── vite.config.ts                # alias · /api 代理 · 构建期生成 token
-├── eslint.config.js
+├── tsconfig.json                 # 引用 app / node / e2e / vitest 四个子配置
+├── vite.config.ts                # alias · /api 代理 · 构建期生成 token CSS 与字体/站点配置备料
+├── eslint.config.ts / .oxlintrc.json / .prettierrc.json
+├── playwright.config.ts / vitest.config.ts
 ├── public/
-│   ├── site.config.json
-│   ├── robots.txt
-│   ├── sitemap.xml
-│   └── fonts/                    # 子集化产物，gitignore
+│   ├── site.config.example.json  # 模板（入库）；site.config.json 由脚本生成、gitignore、可手改
+│   ├── robots.txt                # P7
+│   ├── sitemap.xml               # P7
+│   └── fonts/                    # 像素字体（脚本备好，不入库；子集化在 P7）
 ├── scripts/
+│   ├── lib/openapi.mjs           # 取契约 + 生成类型（两个脚本共用）
 │   ├── gen-api-types.mjs         # openapi.json → src/api/schema.d.ts
 │   ├── check-api-drift.mjs       # 契约漂移门
-│   ├── gen-tokens-css.mjs        # tokens.ts → tokens.generated.css
-│   ├── subset-font.mjs           # 字体子集化
-│   └── check-independence.mjs    # 零外部 import 门
+│   ├── gen-tokens-css.mjs        # tokens.ts → tokens.generated.css（含 --check 漂移模式）
+│   ├── ensure-font.mjs           # 备好像素字体（不入库）
+│   ├── ensure-site-config.mjs    # 从 example 生成可手改的 public/site.config.json
+│   └── check-independence.mjs    # 零外部 import 门（含 --selftest）
 ├── e2e/
-│   ├── parity-keyboard.spec.ts
-│   ├── parity-mouse.spec.ts
-│   ├── palette.spec.ts
-│   └── a11y.spec.ts
+│   ├── skeleton.spec.ts          # 骨架：真 URL / 后退键 / 404 兜底 / 无 JS 报错
+│   ├── palette.spec.ts           # 配色门：var() 可解析 / 边框真画出来 / 无写死色值 / 字体真加载
+│   ├── parity-keyboard.spec.ts   # P2 起：纯键盘旅程
+│   ├── parity-mouse.spec.ts      # P2 起：纯鼠标旅程
+│   └── a11y.spec.ts              # P2 起：axe-core 扫描
 └── src/
     ├── main.ts
     ├── api/                      # schema.d.ts(生成) + client.ts + posts/comments/search…
@@ -91,12 +95,15 @@ icespark/
     ├── input/                    # pad.ts · focus.ts · scopes.ts —— 挂外壳根节点
     ├── scene/                    # 转场表现层（订阅 router，不再自己管导航）
     ├── styles/                   # tokens.ts(源) · tokens.generated.css(产物) · pixel.css · crt.css
-    ├── machine/                  # M 层：对话框 · 菜单 · 开机 · 404 · 加载
+    ├── machine/                  # M 层：状态行 · 对话框 · 菜单 · 开机 · 404 · 加载
     ├── frame/                    # F 层：卡片 · 列表 · 分页 · 标签 · 表单框架
     ├── signal/                   # S 层：正文 · 代码 · 图片 · 评论正文 · 编辑器容器
-    ├── stores/
+    ├── stores/                   # pinia：站点配置（已落地）· 文章 · 评论 · 账号
     └── views/                    # 路由级页面，组合上面四层
 ```
+
+生成物 `src/api/schema.d.ts` 与 `src/styles/tokens.generated.css` **入库并进 review**：
+两者的漂移门都是逐字节比对，手改必失败；`.prettierignore` 已把它们排除（格式由生成器负责）。
 
 ### 四条关键约定
 
@@ -134,7 +141,7 @@ icespark/
 | 阶段 | 覆盖旧前端的 | 说明 |
 |---|---|---|
 | **P0 骨架** ✅ | — | 独立性门 / 契约漂移门 / lint / vue-tsc / e2e 跑通（**已落地**，见 §13） |
-| **P1 设计系统** | — | tokens 构建期生成、pixel.css、CRT、字体子集、M/F/S 目录与 lint 规则 |
+| **P1 设计系统** ✅ | — | tokens 构建期生成、pixel.css、CRT、字体、M/F/S 分层规则（**已落地**，见 §14；字体子集化挪到 P7，理由见 §14.5） |
 | **P2 交互内核** | — | 手柄层 + 共享焦点 + 作用域、场景转场、对话框、菜单 |
 | **P3 公开阅读** | HomeView 559 · PostListView 1373 · PostDetailView 1499 · About 286 · Links 288 · 404 460 | 路由化 + markdown-it 渲染正文 |
 | **P4 搜索与档案** | SearchResultsView 1167 · UserProfileView 554 | 含 `/api/search/suggest` |
@@ -691,8 +698,107 @@ icespark/
 
 ### 13.6 没做的事（明确留给下一轮）
 
+> 其中 P1 相关的几条已在下一轮完成，见 §14；本节保留当时的取舍记录，不改写历史。
+
 - **P1 设计系统**：tokens.ts → tokens.generated.css（构建期生成）、像素字体子集、pixel.css / crt.css、`machine/` `frame/` `signal/` 三个目录与对应 lint 规则。
 - **配色门 / parity / a11y**：都依赖真实样式与交互，跟 P1、P2 一起做；现在写只能是空转。
 - **vitest**：本轮没有可单测的东西，装上就是摆设。
 - **三个菜单链接的落点**（`/write`、`/profile?tab=settings`、`/profile?tab=siteConfig`）：查询参数还是独立路由，等 Profile 视图动工时再定。
 - **调色板 A/B 终选**：仍挂在 `design/README.md` 的待定项里。
+
+---
+
+## 14. P1 落地记录：设计系统 + 外壳 + 配置层（新增）
+
+P1 的名义范围是「设计系统」，但硬要求 2 / 3 / 5 一落地，就有三件事必须同时做到位：
+**配置层**（页脚内容不能硬编码）、**外壳**（页脚刻在外框下边框内侧）、**配色参数化**（颜色只许出现在 tokens 里）。
+所以本轮实际交付 = 设计系统 + 外壳 + 配置层。
+
+### 14.1 用户在两处交互确认里定的口径
+
+| 问题 | 用户决定 |
+|---|---|
+| 页脚状态行放哪 | **刻进外框下边框内侧，但不许加宽外框**；菜单键等软键在左边合适位置，页脚在右边，一行小字 |
+| 状态行放什么 | **只放 `© 版权 · 口号 · 备案`**；传统页脚的多栏链接不做 |
+
+「不加宽外框」这条直接决定了实现：状态行是屏幕内 **20px 高的一行 + 一条发丝线**，
+外框仍是 3px 的像素边框（`palette.spec.ts` 用数值断言把它钉住，防止后来被"顺手加宽"）。
+
+### 14.2 落地清单
+
+```
+src/styles/tokens.ts             # 配色方案表（PALETTES）+ 8px 网格 / 12 倍数像素字号 / 边框宽度 / 动效时长
+src/styles/tokens.generated.css  # 构建期生成（入库、进 review）
+src/styles/pixel.css             # 基础层：铁律、像素字体、立体边框、抖动、焦点、画框、动画原语
+src/styles/crt.css               # 显像管质感：扫描线、荫罩点阵、桶形暗角、辉光、刷新抖动、开机亮线
+src/config/{types,defaults,site}.ts   # 站点配置三级合并（内置默认 → site.config.json → 后台接口）
+src/config/__tests__/site.spec.ts     # 10 条单测：合并语义 + 页脚分段
+src/stores/site.ts               # 站点配置 store（pinia）
+src/machine/StatusBar.vue        # 状态行（M 层机器质感组件）
+src/App.vue                      # 外壳：外框 + CRT + 场景出口 + 状态行
+scripts/gen-tokens-css.mjs       # tokens.ts → CSS（含 --check 漂移模式）
+scripts/ensure-font.mjs          # 备好像素字体（目标 → env → 样机定稿副本 → 下载）
+scripts/ensure-site-config.mjs   # 从 example 生成可手改的 public/site.config.json
+e2e/palette.spec.ts              # 配色门 4 条
+```
+
+### 14.3 配色参数化（硬要求 5）
+
+- 颜色**只允许**出现在 `tokens.ts` 的 `PALETTES` 里；CSS 与组件一律 `var(--xxx)`。
+  配色门第 3 条会扫所有样式表，出现 `#hex` / `rgb()` / `hsl()` 直接失败 —— 这条是**可执行**的约束，不是约定。
+- 配色按「方案」参数化：`PALETTES` 是方案表，生成物按 `:root[data-theme='…']` 分组输出，
+  `main.ts` 只写一次 `document.documentElement.dataset.theme`。
+  **本轮不做主题切换**，但将来加主题 = 加一个同形状的键，组件一行都不用改。
+- 刻度也进了 token（网格 / 像素字号 / 边框 / 动效时长）。像素字号只有 12/24/36/48/72 五档：
+  非整数倍会让点阵字被重采样，字就发虚 —— 这是样机踩过的坑。
+
+### 14.4 页脚状态行（硬要求 3）+ 配置层（硬要求 2）
+
+- **状态行由外壳渲染**（`App.vue` → `StatusBar.vue`），所有场景都在（404、开机自检都在），
+  各场景不许自己实现页脚，也不许写「要不要显示」的分支 —— 页脚与外框绑定。
+- 页脚内容来自站点配置：`© 版权 · 口号 · 备案`，空字段整段省略（不留下孤零零的 ` · `）。
+- **窄屏优先丢口号**：段是分开渲染的，`@media (max-width: 900px)` 只隐藏 slogan 段 ——
+  版权与备案不能被省略号吃掉。
+- 配置层三级合并的语义**照抄旧前端**：`null`/`undefined` 跳过、**数组整体替换**、
+  嵌套对象深合并、基本类型含空串照覆盖；两层覆盖并行拉取、独立 3 秒超时、失败安静跳过。
+  这套语义有 10 条单测钉住 —— 「管理员删掉一个导航项，却怎么都删不掉」就是数组没整体替换的后果。
+- `public/site.config.json` **由脚本从 `site.config.example.json` 生成并 gitignore**（与旧前端同一套做法）：
+  部署方能手改、能进 `dist/`、不需要 node 环境；少了它第 2 级就是空话，
+  而且 `fetch('/site.config.json')` 会在控制台留一个 404（这条是实测撞到的）。
+
+### 14.5 字体：本轮只做「备好」，子集化挪到 P7
+
+样机用的是方舟像素字体 12px（756KB）。本轮把它备好并**断言真的加载了**（字体没加载会静默退回系统字体，
+字形全变却看不出原因 —— 配色门第 4 条专门守这个），但**没有做子集化**，理由：
+
+1. 像素字体在 icespark 里只承担 UI 外壳，正文走系统思源黑体 —— 但 UI 标签有一半来自**可编辑的站点配置**，
+   字集不是固定的，现在切一刀，管理员改一个词就可能出现缺字回退；
+2. 正确做法是 P7 拿「构建产物 + 站点配置默认值」反推字集，并断言每个 UI 字符都被覆盖 ——
+   属于性能预算那一摊，跟预渲染一起做。
+
+### 14.6 本轮的门与反例验证
+
+`npm run check` 现在是六段：独立性门 → 配色漂移门 → 单测 → oxlint → eslint → 契约漂移门 → vue-tsc。
+
+| 门 | 反例验证（注入后确认会失败） |
+|---|---|
+| 分层规则（eslint + 静态门） | `src/signal/x.ts` 里 `import '@/machine/StatusBar.vue'` → eslint 与独立性门**双双报错** |
+| 配色门·无写死色值 | `StatusBar.vue` 里写 `color: #ff0000` → 该条失败 |
+| 配色门·var() 必须可解析 | 从 `tokens.ts` 删掉 `--ink-faint` → 「每一个 var() 都能解析」失败 |
+| 单测·合并语义 | 把「数组整体替换」改成逐元素拼接 → 对应用例失败 |
+
+另有 11 条 e2e（骨架 7 + 配色 4）连跑稳定，以及一次**生产产物验证**：
+`npm run build` 后用 `vite preview` 实测渲染、`data-scene`、状态行内容、字体加载、3px 边框、零 4xx。
+
+顺带记一个环境坑：首次装 vitest 时 npm 10.9.8 的 arborist 崩在
+`Cannot read properties of null (reading 'edgesOut')`，用 `npm install --legacy-peer-deps` 装过一次后
+锁文件即稳定，`rm -rf node_modules && npm install` 实测可复现。
+
+### 14.7 没做的事（留给 P2 起）
+
+- **parity（纯键盘 / 纯鼠标）与 a11y 门**：P1 还没有可交互的东西，写了也是空转；P2 有了手柄层与焦点分区立刻补。
+- **字体子集化**：见 §14.5，挪到 P7。
+- **M/F/S 三个目录**：规则（eslint + 静态门）已生效，`machine/` 已有第一个组件；
+  `frame/`、`signal/` 等 S 层、F 层组件真的出现时再建目录 —— 空目录 commit 进 git 没意义。
+- **`#app[data-scene]` 与外壳的关系**：转场表现层把 `data-scene` 写在挂载点 `#app` 上，
+  外壳 `data-motion` / `data-scope` 写在 `.app` 上，两者是父子节点 —— P2 定转场动画时再统一命名。

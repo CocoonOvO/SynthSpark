@@ -1,0 +1,16 @@
+// 单测的 tsconfig：要 vitest 的类型，跑在 Node 里，但被测代码可能引用 DOM 类型
+{
+  "extends": "@vue/tsconfig/tsconfig.dom.json",
+  "include": ["src/**/__tests__/**/*.spec.ts"],
+  "compilerOptions": {
+    "types": ["node"],
+
+    // 与 tsconfig.app.json 保持同一套别名，否则单测里 import '@/...' 会解析不到
+    "paths": {
+      "@/*": ["./src/*"]
+    },
+
+    "noEmit": true,
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.vitest.tsbuildinfo"
+  }
+}

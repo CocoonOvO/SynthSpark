@@ -1,0 +1,453 @@
+/* ============================================================
+   icespark 基础层：像素设计铁律 + 字体层 + 控件原语 + 焦点
+   —— 移植自样机 `design/icespark-prototype/src/styles/pixel.css`，行为不变。
+      唯一改动是色值改走 token 变量（架构 §2：颜色只许写在 tokens.ts）。
+
+   铁律（样机第四轮定稿，不要再动）：
+   · 圆角恒为 0，全站不存在一个圆角
+   · 禁模糊投影、禁渐变 —— 用硬边与抖动图案代替
+   · 动画只走 steps()，8bit 世界没有平滑缓动
+   · 焦点全站只允许一套视觉
+   ============================================================ */
+
+* {
+  box-sizing: border-box;
+  /* 圆角铁律：整个站点不存在一个圆角 */
+  border-radius: 0 !important;
+}
+
+html,
+body {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+}
+
+body {
+  background: var(--paper-alt);
+  color: var(--ink);
+  font-family: 'Source Han Sans CN', 'Noto Sans CJK SC', sans-serif;
+  /* 像素世界里抗锯齿就是敌人：开了字会糊 */
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+}
+
+/* ══════════════════════════════════════════════
+   像素字体层：方舟像素字体（Ark Pixel）
+   ══════════════════════════════════════════════ */
+@font-face {
+  font-family: 'ArkPixel';
+  src: url('/fonts/ark-pixel-12px-zh-hans.woff2') format('woff2');
+  font-weight: 400;
+  font-style: normal;
+  font-display: swap;
+}
+
+.px,
+.px * {
+  font-family: 'ArkPixel', 'JetBrains Mono', 'Noto Sans Mono', monospace;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  font-variant-ligatures: none;
+  /* 关键：像素字体在非整数倍字号下会发虚，统一锁到 12 的倍数 */
+  font-size: var(--px-sm);
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+  text-rendering: geometricPrecision;
+}
+
+/* 像素字号档位（12 的倍数，保证字形锐利） */
+.px-12 {
+  font-size: var(--px-sm) !important;
+}
+.px-24 {
+  font-size: var(--px-md) !important;
+}
+.px-36 {
+  font-size: var(--px-lg) !important;
+}
+.px-48 {
+  font-size: var(--px-xl) !important;
+}
+.px-72 {
+  font-size: var(--px-display) !important;
+}
+
+/* 大字号像素字：行高必须锁死，且不做任何字距拉伸（拉伸会破坏点阵网格） */
+.px-display {
+  letter-spacing: 0 !important;
+  line-height: 1 !important;
+  -webkit-font-smoothing: none;
+  font-smooth: never;
+}
+
+.px-mono {
+  font-family: 'ArkPixel', monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+/* ── 阅读层：正文段落，可读性优先 ──
+   正文永远用系统思源黑体，**不用像素字体**：像素字只承担 UI 外壳，
+   一屏中文正文用点阵字读起来是折磨（样机第一轮试过，被否）。 */
+.read {
+  font-family: 'Source Han Sans CN', 'Noto Sans CJK SC', sans-serif;
+  font-weight: 400;
+  letter-spacing: 0.02em;
+  line-height: 1.9;
+}
+
+/* ══════════════════════════════════════════════
+   8bit 立体边框
+   ══════════════════════════════════════════════ */
+
+.bevel {
+  border: var(--border-frame) solid var(--edge);
+  box-shadow:
+    inset 1px 1px 0 0 var(--paper),
+    inset -2px -2px 0 0 var(--bevel-dark);
+}
+
+.bevel-in {
+  border: var(--border-frame) solid var(--edge);
+  box-shadow:
+    inset -1px -1px 0 0 var(--paper),
+    inset 2px 2px 0 0 var(--bevel-dark);
+}
+
+/* 浅蓝描边：比深色描边轻，用于大面积分区 */
+.bevel-soft {
+  border: var(--border-thin) solid var(--blue-400);
+  box-shadow: inset 1px 1px 0 0 var(--paper);
+}
+
+/* ══════════════════════════════════════════════
+   抖动图案：像素世界唯一的「渐变」
+   ══════════════════════════════════════════════ */
+
+.dither-25 {
+  background-image: radial-gradient(var(--blue-500) 1px, transparent 1px);
+  background-size: 4px 4px;
+}
+
+.dither-50 {
+  background-image:
+    linear-gradient(
+      45deg,
+      var(--blue-400) 25%,
+      transparent 25%,
+      transparent 75%,
+      var(--blue-400) 75%
+    ),
+    linear-gradient(
+      45deg,
+      var(--blue-400) 25%,
+      transparent 25%,
+      transparent 75%,
+      var(--blue-400) 75%
+    );
+  background-size: 4px 4px;
+  background-position:
+    0 0,
+    2px 2px;
+}
+
+::selection {
+  background: var(--blue-500);
+  color: var(--paper);
+}
+
+::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+::-webkit-scrollbar-track {
+  background: var(--paper-alt);
+  border-left: var(--border-thin) solid var(--blue-300);
+}
+::-webkit-scrollbar-thumb {
+  background: var(--blue-400);
+}
+
+/* 全局离散过渡 */
+* {
+  transition-timing-function: steps(4, end) !important;
+  transition-duration: var(--motion-step);
+}
+
+/* ══════════════════════════════════════════════
+   离散动画原语
+   ══════════════════════════════════════════════ */
+
+@keyframes blink-step {
+  0%,
+  49% {
+    opacity: 1;
+  }
+  50%,
+  100% {
+    opacity: 0;
+  }
+}
+
+.blink {
+  animation: blink-step var(--motion-blink) steps(1, end) infinite;
+}
+
+@keyframes shake-step {
+  0% {
+    transform: translateX(0);
+  }
+  25% {
+    transform: translateX(-4px);
+  }
+  50% {
+    transform: translateX(4px);
+  }
+  75% {
+    transform: translateX(-2px);
+  }
+  100% {
+    transform: translateX(0);
+  }
+}
+
+.shake {
+  animation: shake-step var(--motion-step) steps(1, end) 2;
+}
+
+/* ══════════════════════════════════════════════
+   8bit 焦点：**唯一**一套焦点视觉
+   —— 浅蓝底 + 盒子内侧左右两个闪烁方块。
+   规则（用户反馈驱动的修正）：
+   · 不叠「粗描边 / outline / inset 描边」—— 焦点同时出现边框与光标会互相打架
+   · 光标画在盒子**内部**（垂直居中、贴左右内壁），不溢出到相邻元素上
+   · 所有场景/对话框只加 .focusable 与 .is-focused，禁止自己再写一套焦点样式
+   · 原生 `:focus-visible` 接同一套视觉：Tab 交还给浏览器时，
+     原生焦点若不画出来就是「看不见的焦点」，回车会莫名其妙触发它。
+     写成 `:is(.is-focused, :focus-visible)` 而不是复制一份样式，保证「一套视觉」不被破坏。
+   ══════════════════════════════════════════════ */
+
+.focusable {
+  outline: none;
+  position: relative;
+}
+
+.focusable:is(.is-focused, :focus-visible) {
+  background-color: var(--blue-200);
+}
+
+.focusable:is(.is-focused, :focus-visible)::before,
+.focusable:is(.is-focused, :focus-visible)::after {
+  content: '';
+  position: absolute;
+  top: 50%;
+  width: 8px;
+  height: 16px;
+  margin-top: -8px;
+  background: var(--blue-500);
+  animation: blink-step var(--motion-blink) steps(1, end) infinite;
+  pointer-events: none;
+}
+
+.focusable:is(.is-focused, :focus-visible)::before {
+  left: 3px;
+}
+.focusable:is(.is-focused, :focus-visible)::after {
+  right: 3px;
+}
+
+/* 小尺寸控件（软按键、标签）里的光标缩短一点，别顶满 */
+.focusable.mini:is(.is-focused, :focus-visible)::before,
+.focusable.mini:is(.is-focused, :focus-visible)::after {
+  height: 8px;
+  margin-top: -4px;
+  width: 6px;
+}
+
+/* ══════════════════════════════════════════════
+   图片容器：像素画框
+   —— 在照片上叠一层抖动网点，让真照片也归入点阵世界；
+      圆角/模糊/渐变一律不许用，靠硬边与网点统一质感。
+   第七轮起：**只在真的有图时才渲染这个容器**（样机 ui/ImageFrame.vue），
+   没有封面的文章换成另一套卡片版式，而不是留一个空的图片位。
+   ══════════════════════════════════════════════ */
+
+.img-frame {
+  position: relative;
+  display: block;
+  width: 100%;
+  height: 100%;
+  overflow: hidden;
+  background: var(--blue-100);
+  border: var(--border-frame) solid var(--edge);
+  box-shadow:
+    inset 1px 1px 0 0 var(--paper),
+    inset -2px -2px 0 0 var(--blue-300);
+}
+
+.img-frame img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  image-rendering: pixelated;
+}
+
+/* 网点层：挂在画框上而不是图片上，因此图片加载失败时图案依然在 */
+.img-frame::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background-image: radial-gradient(var(--frame-dot) 1px, transparent 1px);
+  background-size: 3px 3px;
+}
+
+/* ══════════════════════════════════════════════
+   按键提示小签：快捷键指南用，克制、不抢眼
+   ══════════════════════════════════════════════ */
+
+.kbd {
+  display: inline-block;
+  min-width: 18px;
+  padding: 1px 5px;
+  border: var(--border-hair) solid var(--blue-400);
+  background: var(--paper);
+  color: var(--blue-700);
+  text-align: center;
+  line-height: 1.5;
+}
+
+.hint {
+  color: var(--ink-faint);
+}
+
+/* ══════════════════════════════════════════════
+   翻页动效：8bit 风「整屏滚动」
+   —— 用 steps() 离散位移，而不是平滑缓动；
+      位移量取 8px 的整数倍，与点阵网格对齐
+   ══════════════════════════════════════════════ */
+
+@keyframes turn-next {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  20% {
+    transform: translateY(-8px);
+    opacity: 0.25;
+  }
+  40% {
+    transform: translateY(100%);
+    opacity: 0.25;
+  }
+  41% {
+    transform: translateY(-100%);
+    opacity: 0.25;
+  }
+  70% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  85% {
+    transform: translateY(-4px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+@keyframes turn-prev {
+  0% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  20% {
+    transform: translateY(8px);
+    opacity: 0.25;
+  }
+  40% {
+    transform: translateY(-100%);
+    opacity: 0.25;
+  }
+  41% {
+    transform: translateY(100%);
+    opacity: 0.25;
+  }
+  70% {
+    transform: translateY(0);
+    opacity: 1;
+  }
+  85% {
+    transform: translateY(4px);
+  }
+  100% {
+    transform: translateY(0);
+  }
+}
+
+.turn-next {
+  animation: turn-next var(--motion-turn) steps(1, end) 1;
+}
+.turn-prev {
+  animation: turn-prev var(--motion-turn) steps(1, end) 1;
+}
+
+/* 翻到边界时的抖动提示：按键被听见了，只是过不去 */
+@keyframes bump-step {
+  0%,
+  100% {
+    transform: translateX(0);
+  }
+  50% {
+    transform: translateX(-6px);
+  }
+}
+
+.bump {
+  animation: bump-step 180ms steps(1, end) 2;
+}
+
+/* ══════════════════════════════════════════════
+   动效开关（设置 → 动效）与系统偏好
+   —— 关掉动画后功能一个不少；焦点光标改为常亮，
+      否则「看不见焦点」比没有动画严重得多。
+   ══════════════════════════════════════════════ */
+
+.app[data-motion='off'] .blink,
+.app[data-motion='off'] .shake,
+.app[data-motion='off'] .bump,
+.app[data-motion='off'] .turn-next,
+.app[data-motion='off'] .turn-prev,
+.app[data-motion='off'] .focusable:is(.is-focused, :focus-visible)::before,
+.app[data-motion='off'] .focusable:is(.is-focused, :focus-visible)::after {
+  animation: none !important;
+}
+
+/* 关掉动效时，焦点光标的 ON 态常亮 */
+.app[data-motion='off'] .focusable:is(.is-focused, :focus-visible)::before,
+.app[data-motion='off'] .focusable:is(.is-focused, :focus-visible)::after {
+  opacity: 1;
+}
+
+.app[data-motion='off'] * {
+  transition: none !important;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .blink,
+  .shake,
+  .bump,
+  .turn-next,
+  .turn-prev {
+    animation: none !important;
+  }
+  .focusable:is(.is-focused, :focus-visible)::before,
+  .focusable:is(.is-focused, :focus-visible)::after {
+    animation: none !important;
+    opacity: 1;
+  }
+  * {
+    transition: none !important;
+  }
+}

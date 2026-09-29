@@ -1,0 +1,49 @@
+/**
+ * 本文件由 scripts/gen-tokens-css.mjs 生成，请勿手改。
+ * 生成：npm run tokens:gen      校验：npm run tokens:check
+ * 配色方案：icespark（当前启用：icespark）
+ * 改配色请改 src/styles/tokens.ts —— 组件里不许出现具体色值。
+ */
+
+:root,
+:root[data-theme='icespark'] {
+  --grid: 8px;
+  --px-sm: 12px;
+  --px-md: 24px;
+  --px-lg: 36px;
+  --px-xl: 48px;
+  --px-display: 72px;
+  --read-body: 13.5px;
+  --read-small: 12.5px;
+  --border-hair: 1.5px;
+  --border-thin: 2px;
+  --border-frame: 3px;
+  --motion-step: 160ms;
+  --motion-turn: 280ms;
+  --motion-boot: 640ms;
+  --motion-blink: 640ms;
+  --paper: #FFFFFF;
+  --paper-alt: #EAF6FC;
+  --paper-tint: #D6ECF8;
+  --blue-100: #F2FAFE;
+  --blue-200: #D6ECF8;
+  --blue-300: #A8D8EF;
+  --blue-400: #6FBCE0;
+  --blue-500: #3D9BD0;
+  --blue-600: #2A7BA8;
+  --blue-700: #1B5A7D;
+  --ink: #123A52;
+  --ink-soft: #5B8CA6;
+  --ink-faint: #9BC0D2;
+  --spark: #FF5C8A;
+  --crt-glow: #7FD4F5;
+  --scan-line: rgba(18, 58, 82, 0.055);
+  --mask-dot: rgba(61, 155, 208, 0.05);
+  --vignette: rgba(18, 58, 82, 0.13);
+  --glow-soft: rgba(127, 212, 245, 0.45);
+  --frame-dot: rgba(18, 58, 82, 0.14);
+  --veil: rgba(18, 58, 82, 0.3);
+  --bevel-light: #FFFFFF;
+  --bevel-dark: #6FBCE0;
+  --edge: #2A7BA8;
+}

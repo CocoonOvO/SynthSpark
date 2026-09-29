@@ -1,0 +1,123 @@
+/* ============================================================
+   8bit 显像管（CRT）质感
+   —— 移植自样机 `design/icespark-prototype/src/styles/pixel.css`（第 79–165、399–455 行），
+      行为不变：扫描线 / 荫罩点阵 / 桶形暗角 / 荧光辉光 / 刷新抖动 / 开机亮线。
+      唯一改动是色值改走 `var(--scan-line)` 这类 token（架构 §2：颜色只许写在 tokens.ts）。
+
+   三层质感都挂在屏幕容器上（absolute inset:0），**不随内容滚动** ——
+   挂到滚动内容上会变成「纹路跟着文字跑」，一眼就假。
+   ============================================================ */
+
+.crt {
+  position: relative;
+  isolation: isolate;
+}
+
+/* ① 扫描线：显像管最标志性的横向细纹 */
+.crt::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 100;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    0deg,
+    var(--scan-line) 0px,
+    var(--scan-line) 1px,
+    transparent 1px,
+    transparent 3px
+  );
+}
+
+/* ② 荧光点阵 + 桶形暗角：模拟荫罩与管面曲率 */
+.crt::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  z-index: 101;
+  pointer-events: none;
+  background:
+    radial-gradient(circle at center, var(--mask-dot) 0.5px, transparent 0.5px),
+    radial-gradient(ellipse 130% 120% at center, transparent 55%, var(--vignette) 100%);
+  background-size:
+    3px 3px,
+    100% 100%;
+}
+
+/* ③ 荧光辉光：像素亮部的柔和外溢（服务于 CRT 而非装饰） */
+.crt-glow {
+  text-shadow:
+    0 0 1px var(--crt-glow),
+    0 0 3px var(--glow-soft);
+}
+
+/* ④ 整屏刷新闪烁：老电视亮度微抖 */
+@keyframes crt-flicker {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  92% {
+    opacity: 1;
+  }
+  93% {
+    opacity: 0.94;
+  }
+  95% {
+    opacity: 1;
+  }
+  97% {
+    opacity: 0.97;
+  }
+}
+
+.crt-flicker {
+  animation: crt-flicker 4s steps(1, end) infinite;
+}
+
+/* ⑤ 开机瞬间的显像管「亮线张开」 */
+@keyframes crt-on {
+  0% {
+    transform: scaleY(0.006);
+    filter: brightness(4);
+  }
+  40% {
+    transform: scaleY(0.02);
+    filter: brightness(3);
+  }
+  70% {
+    transform: scaleY(1);
+    filter: brightness(1.6);
+  }
+  100% {
+    transform: scaleY(1);
+    filter: brightness(1);
+  }
+}
+
+.crt-on {
+  animation: crt-on var(--motion-boot) steps(8, end) 1;
+}
+
+/* ══════════════════════════════════════════════
+   动效开关与系统偏好
+   —— 关掉动效后功能一个不少，只是不再动。
+   —— 扫描线保留但降透明度：完全去掉会让画面「不像显像管」，
+      保留静态纹路则只是不再抖。
+   ══════════════════════════════════════════════ */
+
+.app[data-motion='off'] .crt-flicker,
+.app[data-motion='off'] .crt-on {
+  animation: none !important;
+}
+
+.app[data-motion='off'] .crt::before {
+  opacity: 0.72;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .crt-flicker,
+  .crt-on {
+    animation: none !important;
+  }
+}

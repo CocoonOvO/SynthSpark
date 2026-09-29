@@ -1,6 +1,8 @@
 {
   "extends": "@vue/tsconfig/tsconfig.dom.json",
   "include": ["env.d.ts", "src/**/*", "src/**/*.vue"],
+  // 单测走 tsconfig.vitest.json（要 vitest 的类型）
+  "exclude": ["src/**/__tests__/*"],
   "compilerOptions": {
     // 数组/对象下标访问也要求判空：路由参数、API 响应里最容易出这种错
     "noUncheckedIndexedAccess": true,
