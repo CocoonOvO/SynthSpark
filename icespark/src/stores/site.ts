@@ -25,6 +25,9 @@ export const useSiteStore = defineStore('site', () => {
   /** 真正生效的覆盖层，给调试与数据来源提示用 */
   const sources = ref<string[]>([])
 
+  /** 后台配置这一层是否命中 —— 底栏的 `● LIVE` / `○ DEMO` 读它 */
+  const live = ref(false)
+
   /** 页脚状态行的分段（窄屏据此优先丢口号） */
   const footerParts = computed(() => footerSegments(config.value))
 
@@ -41,8 +44,9 @@ export const useSiteStore = defineStore('site', () => {
     const result = await loadSiteConfig()
     config.value = result.config
     sources.value = result.sources
+    live.value = result.live
     loaded.value = true
   }
 
-  return { config, loaded, sources, footerParts, footerText, load }
+  return { config, loaded, sources, live, footerParts, footerText, load }
 })

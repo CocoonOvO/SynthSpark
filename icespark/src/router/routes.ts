@@ -15,7 +15,9 @@ export const routes: RouteRecordRaw[] = [
     path: '/',
     name: 'home',
     component: () => import('@/views/HomeView.vue'),
-    meta: { scene: 'boot', title: '首页' },
+    // 场景名与样机一致：`/` 是 home。开机自检（boot）**不是一条路由** ——
+    // 它播完就换成当前路由的场景，按后退不会退回自检画面（架构 §10）
+    meta: { scene: 'home', title: '首页' },
   },
   {
     // 兜底：must be last —— 404 必须是路由表最后一条

@@ -66,6 +66,8 @@ const DEV_ALLOW = new Set([
   'vue-tsc',
   // P1/P2 起的测试链：预先批准，免得下一轮又要改门
   '@playwright/test',
+  // 无障碍门用：axe-core 的 Playwright 适配器（前缀已在 DEV_ALLOW_PREFIX 里）
+  'axe-core',
   '@vitest/eslint-plugin',
   '@vue/test-utils',
   'vitest',

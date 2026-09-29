@@ -30,7 +30,7 @@ app.use(router)
 document.documentElement.dataset.theme = ACTIVE_PALETTE
 
 // 转场表现层只订阅路由（约定 3），不发起任何导航
-mountScenePresenter(router, ROOT_SELECTOR)
+mountScenePresenter(router)
 
 app.mount(ROOT_SELECTOR)
 

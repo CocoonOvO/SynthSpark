@@ -75,11 +75,6 @@ test('外框边框真的画出来了，且没有被加宽', async ({ page }) => 
       borderColor: style.borderTopColor,
       background: style.backgroundColor,
       appBackground: app.backgroundColor,
-      // 外框下边框内侧：状态行必须完全落在外框里
-      statusBottom: (
-        document.querySelector('[data-testid="status-bar"]') as Element
-      ).getBoundingClientRect().bottom,
-      screenBottom: screen.getBoundingClientRect().bottom,
     }
   })
 
@@ -91,9 +86,8 @@ test('外框边框真的画出来了，且没有被加宽', async ({ page }) => 
   // 「看得见」：边框颜色不能等于背景色，否则等于没画
   expect(frame?.borderColor).not.toBe(frame?.background)
   expect(frame?.borderColor).not.toBe(frame?.appBackground)
-
-  // 用户要求：外框尺寸不变，页脚只是刻在下边框内侧
-  expect(frame?.statusBottom).toBeLessThanOrEqual(Number(frame?.screenBottom) + 0.5)
+  // 「不加宽外框」是用户明确要求：底栏换到框外之后，这条仍然只认 3px
+  // （底栏的位置与结构由外壳保真门 e2e/shell.spec.ts 守）
 })
 
 test('组件样式里不出现具体色值（颜色只许写在 tokens.ts）', async ({ page }) => {
@@ -146,9 +140,9 @@ test('像素字体真的加载了', async ({ page }) => {
       // 字体没加载时这里为 false —— 静默退回系统字体正是最难发现的失败
       check: document.fonts.check('12px ArkPixel'),
       faces: Array.from(document.fonts).map((face) => `${face.family}:${face.status}`),
-      used: document.querySelector('[data-testid="status-bar"]')
-        ? getComputedStyle(document.querySelector('[data-testid="status-bar"]') as Element)
-            .fontFamily
+      // 底栏是像素字体的主战场：它没加载时这里会退回系统字体
+      used: document.querySelector('[data-testid="deck"]')
+        ? getComputedStyle(document.querySelector('[data-testid="deck"]') as Element).fontFamily
         : '',
     }
   })

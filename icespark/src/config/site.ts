@@ -85,12 +85,19 @@ export interface SiteConfigLoadResult {
   config: SiteConfig
   /** 真正生效的覆盖层（给调试与「数据来源」提示用） */
   sources: string[]
+  /**
+   * 后台配置这一层是否命中 —— 底栏的数据源标记（`● LIVE` / `○ DEMO`）读它。
+   *
+   * 样机那个开关的语义是「真数据 vs 内置样张」；生产版没有样张，
+   * 对应的就是「后台接口给了配置」还是「只有本地文件 / 内置默认」。
+   */
+  live: boolean
 }
 
 /** 两层覆盖配置的来源清单（顺序即优先级，后者覆盖前者） */
 const OVERLAYS = [
-  { url: '/site.config.json', label: '本地文件 site.config.json' },
-  { url: '/api/site-config', label: '后台配置' },
+  { id: 'file', url: '/site.config.json', label: '本地文件 site.config.json' },
+  { id: 'api', url: '/api/site-config', label: '后台配置' },
 ] as const
 
 /**
@@ -101,6 +108,7 @@ export async function loadSiteConfig(): Promise<SiteConfigLoadResult> {
 
   let config = DEFAULT_SITE_CONFIG
   const sources: string[] = []
+  let live = false
 
   overlays.forEach((overlay, index) => {
     if (overlay === null) return
@@ -108,9 +116,10 @@ export async function loadSiteConfig(): Promise<SiteConfigLoadResult> {
     if (!item) return
     config = deepMerge(config, overlay)
     sources.push(item.label)
+    if (item.id === 'api') live = true
   })
 
-  return { config, sources }
+  return { config, sources, live }
 }
 
 /** 页脚状态行的一段 */

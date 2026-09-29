@@ -10,11 +10,25 @@ import { expect, test } from '@playwright/test'
 
 const UNKNOWN_PATH = '/no/such/path'
 
+/**
+ * 跳过首次音效询问。
+ *
+ * 它是「第一次交互」触发的模态（键盘和鼠标任一路径都算），
+ * 而本文件里的用例要连点两个链接 —— 询问框会把第二次点击挡在遮罩外。
+ * 询问本身的行为由 e2e/parity-*.spec.ts 正面覆盖，这里只把它关掉。
+ */
+test.beforeEach(async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('synthspark-icespark-sound-prompt', '1')
+  })
+})
+
 test('首页：渲染出来，转场表现层写上 data-scene', async ({ page }) => {
   await page.goto('/')
 
   await expect(page.locator('h1')).toHaveText('SYNTHSPARK')
-  await expect(page.locator('#app')).toHaveAttribute('data-scene', 'boot')
+  // 场景名与样机一致：`/` 是 home（`boot` 是开机自检，不是一条路由）
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'home')
   // API 前缀与令牌键是运行期事实，页面上直接写着，顺便当烟雾测试
   await expect(page.locator('main')).toContainText('/api')
 })
@@ -22,7 +36,7 @@ test('首页：渲染出来，转场表现层写上 data-scene', async ({ page }
 test('深链未知路径：404 兜底，且回显原地址', async ({ page }) => {
   await page.goto(UNKNOWN_PATH)
 
-  await expect(page.locator('#app')).toHaveAttribute('data-scene', 'error')
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'error')
   await expect(page.locator('main')).toContainText('404')
   await expect(page.locator('main')).toContainText(UNKNOWN_PATH)
 })
@@ -32,24 +46,24 @@ test('站内跳转与后退键：URL 是唯一真相来源', async ({ page }) =>
 
   await page.click('a[href="/this-route-does-not-exist"]')
   await expect(page).toHaveURL(/\/this-route-does-not-exist$/)
-  await expect(page.locator('#app')).toHaveAttribute('data-scene', 'error')
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'error')
 
   // 浏览器后退键必须回到首页，且表现层跟着更新
   await page.goBack()
   await expect(page).toHaveURL(/\/$/)
-  await expect(page.locator('#app')).toHaveAttribute('data-scene', 'boot')
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'home')
 })
 
 test('同一文档内每次导航都触发一遍转场表现层', async ({ page }) => {
   await page.goto('/')
 
   await page.click('a[href="/this-route-does-not-exist"]')
-  await expect(page.locator('#app')).toHaveAttribute('data-scene', 'error')
-  const before = Number(await page.locator('#app').getAttribute('data-scene-seq'))
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'error')
+  const before = Number(await page.locator('.app').getAttribute('data-scene-seq'))
 
   await page.click('a[href="/"]')
-  await expect(page.locator('#app')).toHaveAttribute('data-scene', 'boot')
-  const after = Number(await page.locator('#app').getAttribute('data-scene-seq'))
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'home')
+  const after = Number(await page.locator('.app').getAttribute('data-scene-seq'))
 
   expect(after).toBeGreaterThan(before)
 })
@@ -87,7 +101,7 @@ test('运行期无 JS 报错', async ({ page }) => {
 
   for (const route of ['/', UNKNOWN_PATH]) {
     await page.goto(route)
-    await expect(page.locator('#app')).toBeVisible()
+    await expect(page.locator('.app')).toBeVisible()
   }
 
   expect(errors).toEqual([])
