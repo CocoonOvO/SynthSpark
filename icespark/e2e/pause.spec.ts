@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { booted } from './helpers'
+
 /**
  * 暂停菜单与设置弹窗 —— 样机的外壳功能，一条都不许少。
  *
@@ -18,6 +20,7 @@ test.beforeEach(async ({ page }) => {
 
 test('键盘：P 呼出菜单 → ↑↓ 选行 → ENTER 进设置 → ←→ 改值 → ESC 逐层退回', async ({ page }) => {
   await page.goto('/')
+  await booted(page)
 
   await page.keyboard.press('p')
   await expect(page.locator('[data-testid="pause"]')).toBeVisible()
@@ -60,6 +63,7 @@ test('键盘：P 呼出菜单 → ↑↓ 选行 → ENTER 进设置 → ←→ �
 
 test('键盘：音效行用 ←→ 切换，与底栏软键状态一致', async ({ page }) => {
   await page.goto('/')
+  await booted(page)
 
   await expect(page.locator('[data-testid="softkey-sound"]')).toHaveText(/OFF/)
   await page.keyboard.press('p')
@@ -76,6 +80,7 @@ test('键盘：音效行用 ←→ 切换，与底栏软键状态一致', async 
 
 test('鼠标：软键点开菜单、划过共享焦点、点行即确认、点分段直接改值', async ({ page }) => {
   await page.goto('/')
+  await booted(page)
 
   await page.click('[data-testid="softkey-menu"]')
   await expect(page.locator('[data-testid="pause"]')).toBeVisible()
@@ -94,6 +99,7 @@ test('鼠标：软键点开菜单、划过共享焦点、点行即确认、点�
 
 test('鼠标：设置弹窗里点行即改值，✕ 可关', async ({ page }) => {
   await page.goto('/')
+  await booted(page)
 
   await page.click('[data-testid="softkey-menu"]')
   await page.click('[data-testid="pause-settings"]')
@@ -114,6 +120,7 @@ test('搜索态：菜单内直接检索真接口，ESC 逐层退回菜单', asyn
   page.on('pageerror', (error) => errors.push(String(error)))
 
   await page.goto('/')
+  await booted(page)
   await page.keyboard.press('p')
   await page.keyboard.press('ArrowDown')
   await page.keyboard.press('Enter')

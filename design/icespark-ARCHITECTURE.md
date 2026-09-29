@@ -906,3 +906,196 @@ e2e/a11y.spec.ts                    # 无障碍门 4 条（axe-core/playwright�
 - **开机自检场景（boot）**：场景表里已有 `boot`，但开机动画与自检画面（样机 BootScene + `signal/` 层）还没做；
   它**不是一条路由**，播完换成当前路由的场景。
 - **顶部标签栏（TabBar）**：P3 随列表页一起，样式取自样机 `.tabbar`。
+
+---
+
+## 16. P3 迁移契约：样机页面 → 生产（并行迁移的唯一口径）
+
+本节是**并行迁移时所有参与者的唯一接口口径**。凡是"多个文件要达成一致"的地方（目录归属、函数签名、
+store 形状、组件 props、改写规则）都以本节为准；与本节冲突时先报告，不要各自决定。
+
+### 16.1 目录与命名映射
+
+| 样机 | 生产 | 层 / 说明 |
+|---|---|---|
+| `scenes/BootScene.vue` | `src/machine/BootScreen.vue` | M；**开机自检不是路由**，由外壳在 `booting` 期间渲染 |
+| `scenes/HomeScene.vue` | `src/views/HomeView.vue` | 路由 `/`（`meta.scene: 'home'`） |
+| `scenes/ArticleListScene.vue` | `src/views/PostListView.vue` | 路由 `/posts`（筛选与页码走 query） |
+| `scenes/ArticleScene.vue` | `src/views/PostDetailView.vue` | 路由 `/post/:key` |
+| `scenes/LinksScene.vue` | `src/views/LinksView.vue` | 路由 `/links` |
+| `scenes/AboutScene.vue` | `src/views/AboutView.vue` | 路由 `/about` |
+| `ui/SceneHead.vue` | `src/machine/SceneHead.vue` | M：机器铭牌（时钟 + 页面名 + 右侧插槽） |
+| `ui/TabBar.vue` | `src/machine/TabBar.vue` | M：顶部标签栏 |
+| `ui/PixelDialog.vue` | `src/machine/PixelDialog.vue` | M：通用像素对话框 |
+| `ui/LoginDialog.vue` | `src/machine/LoginDialog.vue` | M：登录弹窗 |
+| `ui/ImageFrame.vue` | `src/frame/ImageFrame.vue` | F：画框（`frame/` 首个组件） |
+| `ui/MarkdownBody.vue` | `src/signal/MarkdownBody.vue` | S：正文渲染 |
+| `ui/PixelAvatar.vue` | `src/signal/PixelAvatar.vue` | S：头像（canvas 降采样 + 量化） |
+| `ui/cover.ts` | `src/scene/cover.ts` | 封面可用性（字段有值 ≠ 图出得来） |
+| `ui/tabs.ts` | `src/scene/tabs.ts` | 标签页状态（当前页签由路由决定） |
+| `ui/nav.ts` | `src/scene/nav.ts` | 导航助手（写 URL + 指定转场） |
+| `ui/scene.ts`（滚动 / 时钟 / 开机） | `src/scene/screen.ts` · `src/scene/clock.ts` · `src/scene/boot.ts` | 拆三处 |
+| `ui/pad.ts`（动效原语） | `src/signal/motion.ts` | S：打字机 / 计数滚动 |
+| `data/api.ts` | `src/api/{types,posts,comments,links,groups,tags,stats,format}.ts` + `src/stores/content.ts` | 数据层 |
+| `ui/auth.ts` | `src/stores/auth.ts` | 账号（P5 前置：登录弹窗要用） |
+| `styles/tokens.ts` 的 `AVATAR_PALETTE` | `src/styles/tokens.ts` 的 `avatarPalette()` | 已在 P1 |
+
+### 16.2 数据层（冻结接口）
+
+- `src/stores/content.ts`：pinia setup store，id `content`。state 名与样机 `store` **同名同型**：
+  `posts` / `total` / `stats` / `post` / `comments` / `groups` / `tags` / `links`；
+  另加 `loading`（是否有请求在飞）与 `dataSource`（`'loading' | 'live' | 'demo'`）。
+  actions：`loadPosts(limit = 24)` / `loadPost(key?)` / `loadStats()` / `loadGroups()` / `loadTags()` / `loadLinks()`。
+- **唯一机械改写**：样机是裸 ref 对象（`store.posts.value`），pinia 实例上 `store.posts` 就是数组 ——
+  场景代码里写 `store.posts`（去掉 `.value`），其余访问形状不变。
+- 类型：`src/api/types.ts` 导出 `PostListItem` / `Post` / `Comment` / `Stats` / `Group` / `Tag` / `Link` / `SearchHit`。
+  **字段以后端契约为准**（`src/api/schema.d.ts`），样机类型只是参照；契约里没有的字段不要凭空调用，
+  对不上就在文件头注释里写清「契约叫 X，样机叫 Y」。
+- 格式化：`src/api/format.ts` 导出 `shortDate(iso)` / `shortNum(n)` / `postKey({id, slug})`，行为与样机一致。
+  （`postKey` 从 `src/api/search.ts` 挪到这里，只留一处。）
+- **不迁移**：`forceDemo` / `?demo=1` / `DEMO_POSTS` / `DEMO_POST` / `DEMO_COMMENTS` / `DEMO_GROUPS` /
+  `DEMO_TAGS` / `DEMO_LINKS` / `DEMO_STATS`（正式版没有样张）。
+  `dataSource` 的三态名字保留，`demo` 的含义退化为**「接口没命中，页面按空数据渲染」**；
+  **文案照样机一字不改**（`● LIVE` / `○ DEMO`、`LIVE DATA` / `DEMO DATA`）。
+
+### 16.3 场景工具（冻结接口）
+
+- `src/scene/screen.ts`：`screenScroller`（`Ref<HTMLElement | null>`）、
+  `scrollScreenBy(deltaY): boolean`、`scrollScreenTo(top): boolean`、`scrollScreenTop(): void` —— 照搬样机 `ui/scene.ts`。
+- `src/scene/clock.ts`：`useStatusBar(): { clock: Ref<string>; stop: () => void }`。
+- `src/scene/boot.ts`：`booting: Ref<boolean>`、`finishBoot(skip = false): void`；
+  `booting` 为真时外壳渲染 `BootScreen`（画面）而 URL 已经是真实路由 —— 深链先自检、再落到目标页。
+  `skip` 的含义照搬样机：自检正常播完 → 直接落页（瞬时）；用户按键跳过 → 亮一下整屏闪白
+  （调 `@/scene/transition` 的 `beginTransition('flash', 'boot-skip')` + `applyTransition()`，
+  **不要** import router，也不要自己写 DOM/动画）。
+- `src/scene/tabs.ts`：`TABS` / `TAB_IDS` / `activeTab` / `tabIndex` / `tabCursor` / `onTabScene` /
+  `switchTab(id, t?)` / `cycleTab(dir)` / `focusTabs(i?)` / `moveTabCursor(dir)` / `blurTabs()`，
+  并重导出 `focusZone`（来自 `@/input/scopes`）。当前页签**读路由名**，不自持状态。
+- `src/scene/nav.ts`：`goTab(id, t = 'wipe')` / `goPosts(opts, t = 'none')` / `goArticle(key, t = 'flash')` /
+  `goBackOrPosts()` / `canGoBack` / `canGoForward` / `syncHistoryFlags()`。
+  转场一律走 `@/scene/transition` 的 `requestTransition()`，不要自己造动画。
+- `src/signal/motion.ts`：`useTypewriter()` / `useCountUp()`（样机 `usePad` 文件里的两个原语，逐行照搬）。
+- **场景一律用 `onPad(handler)`**（等同于 `scene` 作用域）；**不要迁 `usePad()`** ——
+  外壳已经挂了唯一的键盘监听器（`@/input` 的 `mountInput`），再挂一个就是双触发。
+- **不要迁** `useFocusList()` / 全局 `focusIndex`（P2 的共享焦点模型已替代，场景用 `useFocusGroup()` 与 `spatialIndex()`）、
+  `playFocusMove()`（用 `playSfx('move')`）。
+
+### 16.4 组件契约（props / emit / testid 一律不改）
+
+| 组件 | props | emit |
+|---|---|---|
+| `SceneHead` | `{ title: string; clock: string }` + 默认插槽（右侧尾部） | — |
+| `ImageFrame` | `{ src?: string \| null; alt?: string = ''; ratio?: string = '16 / 9' }` | `error`（图挂了） |
+| `PixelAvatar` | `{ src?: string \| null; name: string; size?: number = 16; display?: number = 48; palette: string[] }` | — |
+| `MarkdownBody` | 照样机（至少 `source`） | — |
+| `PixelDialog` / `TabBar` / `LoginDialog` | 照样机 | 照样机 |
+
+所有既有 `data-testid` **必须原名保留**（e2e 与后续验收依赖它们）。
+
+### 16.5 迁移硬规则（违反即返工）
+
+1. **视觉与交互 1:1**：模板结构、类名、scoped 样式**逐字照搬**。只允许两处机械改写：
+   (a) 具体色值 → `var(--token)`（颜色只许出现在 `src/styles/tokens.ts`）；
+   (b) `store.x.value` → `store.x`。
+2. **不新增设计**：不增删按钮 / 行 / 字段 / 提示，不"优化"文案，不改间距与字号。
+   若样机某处依赖生产版没有的东西，**停下来在报告里说明**，不要自己发明。
+3. **中文注释**，关键判断写清「为什么」；样机注释里的踩坑记录（试过但没用的方案）要保留。
+4. **只动分配给你的文件**。不要改：`src/App.vue`、`src/router/**`、`src/input/**`、
+   `src/scene/presenter.ts`、`src/scene/transition.ts`、`package.json`、`src/styles/*`、别的参与者的文件。
+5. **不要 `npm install`**（依赖已装好）；**不要跑全量 `npm run check` / `npm run test:e2e`**（会互相踩）。
+   只跑：`npx prettier --write <你的文件>`、`npx eslint <你的文件> --fix`、
+   `npx vue-tsc --noEmit -p tsconfig.app.json`（别人文件里的报错忽略，只修自己的）。
+6. 只用 §16.2 / §16.3 冻结的接口；**不许 import 样机目录或旧前端**里的任何东西（独立性门会拦）。
+7. 页面数据一律走内容 store，**不许留 mock 数组**。
+8. 交付报告格式：改了哪些文件 / 与样机的逐条偏差（没有就写"无"）/ 阻塞与未解决项 / 跑过的命令与结果。
+
+### 16.6 验收命令（由主线统一执行，参与者不必跑）
+
+`npm run check`（独立性门 → 配色漂移门 → 单测 → oxlint → eslint → 契约漂移门 → vue-tsc）+
+`npx playwright test`（骨架 7 · 配色 4 · 外壳 6 · 菜单 5 · 纯键盘 3 · 纯鼠标 2 · 无障碍 4 + 本轮新增页面用例）。
+
+## 17. P3 落地记录：样机页面全量迁移（新增）
+
+本轮把**样机已实现的每一个页面**搬到生产版，一次做完，并保留样机的视觉与交互口径。
+分工：主线负责外壳 `src/App.vue`、路由、数据层与集成；页面/组件用互不重叠的文件集并行迁移
+（规则见 §16.5，参与者不跑全量门，验收由主线统一执行）。
+
+### 17.1 交付清单
+
+| 层 | 文件 | 行数 | 来源（样机） |
+|----|------|------|--------------|
+| 数据 | `src/api/{types,format,posts,comments,groups,tags,links,stats,search}.ts` | — | 新写（接口按契约） |
+| 状态 | `src/stores/content.ts` / `src/stores/auth.ts` | 189 / 172 | 新写（pinia） |
+| 场景 | `src/scene/{screen,clock,boot,nav,tabs,cover}.ts` | — | `ui/{screen,clock,nav,tabs,cover}.ts` |
+| 信号 | `src/signal/{MarkdownBody,PixelAvatar}.vue`、`src/signal/motion.ts` | 369 / 141 / — | `ui/MarkdownBody.vue`、`ui/PixelAvatar.vue`、`ui/motion.ts` |
+| 框架 | `src/frame/ImageFrame.vue` | 58 | `ui/ImageFrame.vue` |
+| 机器 | `src/machine/{SceneHead,TabBar,PixelDialog,LoginDialog,BootScreen,SettingsDialog,SoundPrompt,PauseMenu}.vue` | 44–662 | `ui/` 同名组件 |
+| 页面 | `src/views/{Home,PostList,PostDetail,Links,About,NotFound}View.vue` | 223–1068 | `scenes/*Scene.vue` |
+| 外壳 | `src/App.vue`（接线：自检、标签栏、全局键、账号引导、隐藏 `h1`） | 529 | `App.vue` |
+| 门 | `e2e/pages.spec.ts`（11 条）+ `e2e/helpers.ts` | — | 新写 |
+
+路由定稿：`/`（home）· `/posts`（posts）· `/post/:key`（article）· `/links`（links）· `/about`（about）·
+`/:pathMatch(.*)*`（not-found，场景 `error`）。**标签页 = 路由名**，底栏场景指示与 URL 是同一份事实。
+
+### 17.2 与样机的逐条偏差（全部是"生产版没有样机那个东西"导致，无一条是重新设计）
+
+1. **点赞不做网络请求**：契约里 `Post` 没有 `like_count`（只有独立的 `PostWithLikeStatus`），
+   所以详情页 `hearts = 0` —— 心形照旧可点、本地计数，只是不落库。等接口再定。
+2. **外链没有说明字段**：契约 `ExternalLink` = `name/url/cover_image/sort_order/id/created_at/updated_at`，
+   没有 `description`/`icon`，所以 `LinksView` 的 `.card-desc` 照样机渲染占位文字"（没有说明）"，
+   **没有**本地扩类型硬塞字段。同时把引导句从"返回空时展示的是内置样张"改成"没有配置时这里是空的"
+   （生产版没有样张，见 §16.2）。
+3. **配色唯一偏差**：`LoginDialog` 的遮罩 `rgba(18,58,82,0.34)` → `var(--veil)`（α 0.30）。
+   颜色只许出现在 `tokens.ts`，且 `--veil` 是既定 token；差异是 0.04 的透明度。
+4. **DOMPurify 白名单层**：样机 `v-html` 直出 markdown，生产版过一层 DOMPurify
+   （27 个标签 / 8 个属性）。**注意**：白名单里没有 `span`，将来接 highlight.js 时必须先加，
+   否则代码高亮会被静默洗掉 —— 已写在 `MarkdownBody.vue` 顶部注释里。
+5. **aria 增补（纯语义，零视觉）**：`PixelDialog` / `LoginDialog` / `SoundPrompt` 补
+   `role="dialog"` + `aria-modal` + `aria-labelledby`（`pixel-dialog-title` / `login-dialog-title` /
+   `sound-prompt-title`）；外壳 `<main>` 地标 + `.deck` `role="contentinfo"`（`NotFoundView` 根节点
+   相应从 `<main>` 改成 `<div>`，避免两个地标）。
+6. **外壳补一个视觉隐藏的 `h1`**（`.sr-heading`）：样机里只有文章页有 `h1`，其余页面名是机器铭牌
+   span，axe 的 `page-has-heading-one` 会拦。补在**外壳**而不是逐页改样机 DOM（与第 5 条同一套做法）；
+   文章页/404 自带 `h1`，外壳让位。副作用是首页/列表出现 h1 → h3 的跳级（样机卡片标题就是 `h3`），
+   a11y 门把这一条记成已知取舍并**只**放行 `.post-title` / `.card-title` 节点（见 `e2e/a11y.spec.ts` 口径 3）。
+7. **`?demo=1` 死分支保留**：样机的样张开关不迁（§16.2），但 `MarkdownBody` 里那个分支**原样保留**
+   并加注释说明它在生产版里永远走不到 —— 删掉会造成"与样机不一致"，留着才好逐个对照。
+8. **`playSfx('cancel' as SfxKind)` 的 cast 保留**：样机与生产版的 `SfxKind` 都没有 `cancel`，
+   `RECIPES[kind]()` 抛错被吞成静默无操作 —— 两边行为一致，加音效属于新增设计，不做。
+9. **`chipFocus.click(i)`**：样机里有个 `chipFocus.index = i` 的重构残留（只动索引不触发跳转），
+   生产版按样机**意图**写 `click(i)`，并保留注释。
+10. **暂停菜单的账号行/站点行接真实账号层**：样机的"演示版"提示换成真实行为 ——
+    已登录 → `auth.logout()`、未登录 → 打开登录对话框；站点设置行只在 `isSuperuser` 时出现；
+    样机尚未实现的页面（编辑资料 / 站点设置 / 写文章）给"这张页面还没做，目标路径 xxx"的提示。
+11. **首页状态行文案**：`'后端不可达，回退内置样张'` → `'后端不可达，暂无数据'`（生产版没有样张）。
+12. **格式与类型**：所有文件过一遍 prettier（模板属性换行等纯排版差异）；`noUncheckedIndexedAccess`
+    下补 `TABS[i]!` 一类断言（`PixelAvatar` 9 处、`tabs.ts` 1 处），**只加断言不改逻辑**。
+13. **`nav.ts` 没有第二份 `nextTransition`**：样机把"下一跳用哪种转场"放在 nav 模块内，
+    生产版由 `scene/transition.ts` 的 `requestTransition()` 保管（presenter 取走），已写在文件头。
+14. **自检期间的场景**：样机的 `frame` 初值是 boot；生产版 `booting` 为真时 `data-scene` 显式映射成
+    `boot`（底栏点亮 BOOT），自检播完跟随路由 —— 深链接也照播，且不占历史。
+
+### 17.3 两条契约缺口（结论：不改接口，先按现状做）
+
+| 缺口 | 现状 | 处理 |
+|------|------|------|
+| `Post` 无 `like_count` | 只有 `PostWithLikeStatus`（`GET /posts/{id}/like-status`） | 详情页心形本地计数，`hearts = 0`；要不要落库等用户定 |
+| `ExternalLink` 无 `description`/`icon` | 不是接口漏字段，是模型就没有 | 页面上照样机显示占位文字，不做本地类型拓宽 |
+
+### 17.4 本轮的门与结果
+
+- `npm run check` → **通过**（独立性门 66 文件 · 配色漂移门 · 单测 57 · oxlint 0/0 · eslint · 契约漂移门 63 paths/89 ops/50 schemas · vue-tsc）。
+- `npx playwright test` → **42 通过**（骨架 7 · 配色 4 · 外壳 6 · 菜单 5 · 纯键盘 3 · 纯鼠标 2 · 无障碍 4 · 页面 11）。
+- 修掉的三处红灯，值得记下来：
+  1. 开机自检吃掉第一次按键 → 交互用例 `goto` 之后统一 `await booted(page)`（`e2e/helpers.ts`）。
+  2. 迁移后首页没有 `h1` → 见 17.2 第 6 条。
+  3. **"Tab 还给浏览器"是分场景的**：有标签栏的页面（`onTabScene` 为真）Tab 被外壳消费去切标签页，
+     没有标签栏的页面（文章详情 / 404）才还给浏览器。纯键盘门里"Tab 走到软键上按回车"这一段
+     因此必须在 404 页上验（样机口径如此，`App.vue` 的 `tabNext` 分支同一处）。
+
+### 17.5 没做的事（等用户裁决）
+
+1. 样机**没有实现**的页面：404 皮肤之外的空态页、`/login`、`/search`、`/profile`、`/write`、
+   `/user/:username`、文章编辑 —— 按硬要求 4 先问，不自己设计。
+2. 配色 A/B 仍未定稿（`design/README.md` §8），本轮不动。
+3. highlight.js（代码着色）需要先给 DOMPurify 白名单加 `span`；字体子集化仍在 P7。

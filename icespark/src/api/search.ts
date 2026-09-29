@@ -24,7 +24,9 @@ export async function searchPosts(query: string, limit = 6): Promise<SearchPostH
   return result.posts ?? []
 }
 
-/** 文章在 URL 里的 key：有 slug 用 slug（可读、可分享），没有才退回 id */
-export function postKey(post: { id: string; slug?: string | null }): string {
-  return post.slug || post.id
-}
+/**
+ * 文章在 URL 里的 key。
+ * 实现已按架构 §16.2 搬到 `api/format.ts`（数据层只留一份），这里转出以保持
+ * `machine/PauseMenu.vue` 等既有 import 不变。
+ */
+export { postKey } from './format'

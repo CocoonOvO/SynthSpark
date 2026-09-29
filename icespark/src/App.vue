@@ -1,5 +1,6 @@
 <script setup lang="ts">
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { useRoute } from 'vue-router'
 
 import {
   markSoundPromptShown,
@@ -12,11 +13,18 @@ import { mountInput } from '@/input'
 import { onPad } from '@/input/pad'
 import { activeScope, focusZone, inputLocked } from '@/input/scopes'
 import { playSfx, previewSfx } from '@/input/sfx'
+import BootScreen from '@/machine/BootScreen.vue'
 import PauseMenu from '@/machine/PauseMenu.vue'
 import SoundPrompt from '@/machine/SoundPrompt.vue'
+import TabBar from '@/machine/TabBar.vue'
+import { booting } from '@/scene/boot'
+import { canGoBack, canGoForward, goBack, goForward } from '@/scene/nav'
 import { currentScene, sceneSeq } from '@/scene/presenter'
-import { SCENES } from '@/scene/scenes'
+import { SCENES, sceneDef } from '@/scene/scenes'
+import { screenScroller, scrollScreenTop } from '@/scene/screen'
+import { blurTabs, cycleTab, onTabScene } from '@/scene/tabs'
 import { isTransitioning, transitionKind, transitionSeq } from '@/scene/transition'
+import { useAuthStore } from '@/stores/auth'
 import { useSiteStore } from '@/stores/site'
 import { SCALE } from '@/styles/tokens'
 
@@ -44,16 +52,76 @@ const poweringOn = ref(true)
 /** 外壳根节点：输入层挂在它上面 */
 const root = ref<HTMLElement | null>(null)
 
+/** 屏幕内层滚动容器：场景里滚正文要用（方向键不能靠全局劫持解决） */
+const screenInner = ref<HTMLElement | null>(null)
+
 /** 音效询问是否打开 */
 const promptOpen = ref(false)
 
 /** 暂停菜单是否打开（P / 底栏「菜单 (P)」软键） */
 const pauseOpen = ref(false)
 
+const route = useRoute()
 const site = useSiteStore()
+const auth = useAuthStore()
+
+/**
+ * 画面上的场景。
+ *
+ * 开机自检期间是 `boot` —— 底栏那一排场景指示因此会点亮 BOOT 那一格，与样机一致
+ * （样机的 `frame` 初值就是 `{ id: 'boot' }`）。生产版开机不是路由，所以这里把
+ * 「开机中」显式映射成 boot；自检播完 `booting` 置假，场景立刻跟随路由。
+ */
+const sceneId = computed(() => (booting.value ? 'boot' : currentScene.value))
+
+/**
+ * 场景实例 key（与样机 `sceneKey = id:param` 同一口径）。
+ *
+ * 只有「换了一篇文章」才需要重建组件：列表换页 / 换筛选不重建（保住焦点与滚动位置），
+ * 而 `/post/a` → `/post/b` 必须重建（页面按路由参数只加载一次正文）。
+ * 用 route 的参数而不是 `sceneSeq`（那个每次导航都变，会把列表也一起重建）。
+ */
+const viewKey = computed(() => `${sceneId.value}:${route.params.key ?? ''}`)
+
+/**
+ * 屏幕阅读器用的一级标题（**视觉隐藏**，屏幕上不出现，不是视觉改动）。
+ *
+ * 为什么要补：axe 的 `page-has-heading-one` 要求每页有一个 `h1`，而样机里
+ * 只有文章页（`<h1 class="doc-title">`）自带一个 —— 主页 / 列表 / 关联 / 关于
+ * 的「页面名」在样机里是 `.head-title` 那个 span（机器铭牌），不是标题元素。
+ * 补在**外壳层**而不是逐页改样机 DOM：页面结构保持与样机逐字一致，
+ * 而这本就属于外壳的语义责任（和 `.screen-inner` 用 `<main>`、`.deck` 带
+ * `role="contentinfo"` 同一类）。
+ *
+ * 文章页与 404 由页面自己给出 `h1`，这里让位 —— 一页两个一级标题没有意义。
+ */
+const SELF_TITLED_SCENES = ['article', 'error']
+
+const shellHeading = computed(() => {
+  if (SELF_TITLED_SCENES.includes(sceneId.value)) return ''
+  return sceneDef(sceneId.value)?.hint ?? site.config.site.name
+})
 
 let bootTimer = 0
 let detachInput: (() => void) | null = null
+
+// 屏内容器交给 scene/screen.ts：场景里滚正文靠它，而不是让方向键被全局吞掉
+watch(screenInner, (el) => {
+  screenScroller.value = el
+})
+
+/**
+ * 换页把屏幕滚回顶部。
+ *
+ * 滚动容器是同一个 DOM 节点（页面组件换掉、容器不换），不归零的话
+ * 从长文返回列表会停在半空，看起来像「列表少了一半」。
+ */
+watch(viewKey, () => scrollScreenTop())
+
+/** 离开有标签栏的页面时，把焦点收回内容区（否则没人接收按键） */
+watch(onTabScene, (value) => {
+  if (!value) blurTabs()
+})
 
 /**
  * 首次用户手势 → 询问音效。
@@ -86,7 +154,57 @@ function togglePause(): void {
 }
 
 /**
- * P 是全局键：任何场景下都能呼出暂停菜单。
+ * 全局键（`any` 作用域，排在场景监听器之后收到事件）。
+ *
+ * `consumed` 是第二趟派发的产物：第一趟已经用掉这个键时必须放手，
+ * 否则会出现「Esc 关掉菜单 → 全局监听立刻又打开菜单」这类双触发。
+ * 这一段与样机 `App.vue` 的 `offGlobal` 逐条对齐（Tab 切标签页 / Esc 呼出菜单 / Q·E 前进后退）。
+ */
+const offGlobal = onPad((action, consumed) => {
+  // 音效询问框开着时，整块键盘归它所有（它是 pause 作用域，正常情况已消费）
+  if (promptOpen.value) return true
+
+  /** 模态（暂停菜单 / 对话框）打开时，导航类全局键一律不生效 */
+  const inModal = activeScope.value !== 'scene' || pauseOpen.value
+
+  if (action === 'tabNext' || action === 'tabPrev') {
+    if (consumed) return false
+    if (inModal) return true
+    // 没有标签栏的页面（文章详情）不参与标签页切换：把 Tab 还给浏览器
+    // —— 浏览器原生 Tab 就是「按 DOM 顺序遍历可聚焦元素」，自动滚进视野、回车自动激活
+    if (!onTabScene.value) return false
+    cycleTab(action === 'tabNext' ? 1 : -1)
+    return true
+  }
+
+  if (action === 'cancel') {
+    if (consumed) return false
+    if (inModal) return false
+    // 焦点停在标签栏上时，ESC 先退回内容区，再按一次才呼出菜单
+    if (focusZone.value === 'tabs') return false
+    playSfx('confirm')
+    pauseOpen.value = true
+    return true
+  }
+
+  if (action === 'back' || action === 'forward') {
+    if (consumed) return false
+    if (inModal) return true
+    if (action === 'back') {
+      if (!canGoBack.value) return true
+      goBack()
+    } else {
+      if (!canGoForward.value) return true
+      goForward()
+    }
+    return true
+  }
+
+  return false
+}, 'any')
+
+/**
+ * P 是全局键：任何场景下都能呼出暂停菜单（开合切换）。
  *
  * 菜单自己开着时由它（pause 作用域）先消费掉这个键来关闭，
  * 所以这里要看 `consumed` —— 否则会「关掉又立刻打开」。
@@ -101,6 +219,10 @@ const offStart = onPad((action, consumed) => {
 onMounted(() => {
   bootTimer = window.setTimeout(() => (poweringOn.value = false), SCALE.motion.boot)
 
+  // 有缓存令牌时静默校验一次登录态（取样机 App.vue 的 bootstrapAuth()）：
+  // token 过期就悄悄登出，网络抖动不动 token —— 判断在 store 里
+  auth.bootstrapAuth()
+
   if (root.value) detachInput = mountInput(root.value)
 
   // 一次性手势监听：两条路径（键盘 / 鼠标）都可能先发生
@@ -110,6 +232,7 @@ onMounted(() => {
 
 onUnmounted(() => {
   window.clearTimeout(bootTimer)
+  offGlobal()
   offStart()
   detachInput?.()
   root.value?.removeEventListener('keydown', onFirstGesture)
@@ -122,7 +245,7 @@ onUnmounted(() => {
     ref="root"
     class="app"
     tabindex="-1"
-    :data-scene="currentScene"
+    :data-scene="sceneId"
     :data-scene-seq="sceneSeq"
     :data-motion="motionEnabled ? 'on' : 'off'"
     :data-scope="activeScope"
@@ -135,11 +258,20 @@ onUnmounted(() => {
       :class="{ 'crt-on': poweringOn, 'crt-flicker': motionEnabled }"
       data-testid="screen"
     >
-      <!-- 顶部标签栏（P3 起在这里渲染，只在浏览类页面出现） -->
+      <!-- 顶部标签栏：只在浏览类页面上出现，文章详情自带返回 -->
+      <TabBar v-if="onTabScene" />
 
-      <div class="screen-inner">
-        <RouterView />
-      </div>
+      <!-- 路由出口。用 <main> 而不是 <div>：屏幕内容需要一个地标，
+           axe 的 region 规则会把「不在任何地标里的正文」判成违规（P3 起页面变多才暴露）。
+           class 不变，样式与样机逐字一致 —— 换标签在视觉上是零影响。 -->
+      <main ref="screenInner" class="screen-inner">
+        <!-- 屏幕阅读器的一级标题：视觉隐藏，见 shellHeading 的说明 -->
+        <h1 v-if="shellHeading" class="sr-heading">{{ shellHeading }}</h1>
+        <!-- 开机自检：URL 已经是真实路由，这里只是「先播一段机器启动」，
+             播完 booting 置假，画面换成当前路由那一页（深链接也照样先播） -->
+        <BootScreen v-if="booting" />
+        <RouterView v-else :key="viewKey" />
+      </main>
 
       <!-- 场景转场遮罩：整屏像素切换。key 变了就重播一遍动画（见 scene/transition.ts） -->
       <div
@@ -161,8 +293,8 @@ onUnmounted(() => {
     <!-- 语义上它就是站点页脚：给底栏一个 contentinfo 地标，屏幕阅读器能直达 -->
     <div class="deck px px-12" role="contentinfo" data-testid="deck">
       <span class="deck-scene" data-testid="deck-scene">
-        <b v-for="scene in SCENES" :key="scene.id" :class="{ on: scene.id === currentScene }">
-          {{ scene.id === currentScene ? scene.label : '·' }}
+        <b v-for="s in SCENES" :key="s.id" :class="{ on: s.id === sceneId }">
+          {{ s.id === sceneId ? s.label : '·' }}
         </b>
       </span>
 
@@ -237,6 +369,29 @@ onUnmounted(() => {
 .screen-inner > * {
   flex: 1 1 auto;
   min-height: 100%;
+}
+
+/*
+ * 屏幕阅读器专用的一级标题：只看得到、看不见。
+ * 必须真的在无障碍树里（`display:none` / `visibility:hidden` 会被一起藏掉，
+ * axe 的 page-has-heading-one 也就看不到了），所以用 1px + 裁切的标准写法；
+ * 同时抵消上面 `.screen-inner > *` 给直接子元素的 `min-height: 100%`。
+ * 全部是盒模型属性，没有颜色 —— 配色门不受影响。
+ */
+.sr-heading {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 1px;
+  height: 1px;
+  flex: 0 0 auto;
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+  border: 0;
 }
 
 /* ── 整屏转场遮罩（三种：闪白 / 竖条擦除 / 抖屏），动画时长与 transition.ts 的 MASK_MS 对齐 ── */

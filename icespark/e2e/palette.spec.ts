@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { booted } from './helpers'
+
 /**
  * 配色门（架构 §4）—— 防的是「配色静默失效」。
  *
@@ -20,6 +22,7 @@ const ALLOWED_COLOR_WORDS = ['transparent', 'currentcolor', 'inherit', 'none', '
 
 test('每一个 var() 都能解析出非空值', async ({ page }) => {
   await page.goto('/')
+  await booted(page)
 
   const report = await page.evaluate(() => {
     const rootStyle = getComputedStyle(document.documentElement)
@@ -62,6 +65,7 @@ test('每一个 var() 都能解析出非空值', async ({ page }) => {
 
 test('外框边框真的画出来了，且没有被加宽', async ({ page }) => {
   await page.goto('/')
+  await booted(page)
 
   const frame = await page.evaluate(() => {
     const screen = document.querySelector('[data-testid="screen"]')
@@ -92,6 +96,7 @@ test('外框边框真的画出来了，且没有被加宽', async ({ page }) => 
 
 test('组件样式里不出现具体色值（颜色只许写在 tokens.ts）', async ({ page }) => {
   await page.goto('/')
+  await booted(page)
 
   const offenders = await page.evaluate((allowedWords) => {
     const found: string[] = []
@@ -133,6 +138,7 @@ test('组件样式里不出现具体色值（颜色只许写在 tokens.ts）', a
 
 test('像素字体真的加载了', async ({ page }) => {
   await page.goto('/')
+  await booted(page)
 
   const loaded = await page.evaluate(async () => {
     await document.fonts.ready

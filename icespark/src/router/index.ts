@@ -1,4 +1,5 @@
 import { createRouter, createWebHistory } from 'vue-router'
+import type { Router } from 'vue-router'
 
 import { routes } from './routes'
 
@@ -22,4 +23,22 @@ export function createAppRouter() {
       return { top: 0 }
     },
   })
+}
+
+/**
+ * 应用唯一的 router 实例（惰性单例）。
+ *
+ * 为什么要有这个函数：导航动作层（`scene/nav.ts`）与标签栏状态（`scene/tabs.ts`）是
+ * **模块级**代码 —— 它们的 `computed` 和事件回调不在任何组件 setup 上下文里，
+ * `useRouter()`（本质是 inject）在那里拿不到实例。样机是靠 `export const router`
+ * 这个模块级常量解决的，生产版保持同样的「一处实例」口径，只是改成用到时才建，
+ * 免得 `import` 一个模块就顺手把 history 也建了。
+ *
+ * 谁都必须用它拿到实例（`main.ts` 也一样）—— 两条 history 是两个世界，
+ * 分开建会出现「URL 变了但画面不动」这种最难查的 bug。
+ */
+let instance: Router | null = null
+
+export function appRouter(): Router {
+  return (instance ??= createAppRouter())
 }

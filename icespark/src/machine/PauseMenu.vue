@@ -9,7 +9,9 @@ import { onPad } from '@/input/pad'
 import type { PadAction } from '@/input/pad'
 import { setScope } from '@/input/scopes'
 import { requestTransition } from '@/scene/transition'
+import { useAuthStore } from '@/stores/auth'
 import { setSound, soundEnabled } from '@/config/prefs'
+import LoginDialog from './LoginDialog.vue'
 import SettingsDialog from './SettingsDialog.vue'
 
 /**
@@ -25,10 +27,9 @@ import SettingsDialog from './SettingsDialog.vue'
  *   与浏览器按钮（Q/E 在菜单开着时依然有效，见 onAction）
  * - 搜索栏不是摆设：菜单内直接检索 `/api/search/`，结果可点可键盘选
  *
- * 与样机的差异只有一处（P5 账号体系落地前无法照搬）：
- *   样机的「登录」行开的是**菜单内登录弹窗**（样机 ui/LoginDialog.vue），
- *   生产版在 P5 账号体系之前没有登录态可读，所以这一行是**真链接** `/login`，
- *   路径本身就是契约（旧前端的登录页在 /login），P5 落地后换回弹窗或保留页面。
+ * 账号行（P3 接上真实登录态后与样机一致）：
+ * - 未登录：文案「登录」，回车/点击开**菜单内登录弹窗**（`LoginDialog.vue`，照样机的 sub 子弹窗机制）；
+ * - 已登录：文案「退出登录（昵称）」，回车/点击登出并给一句提示。
  */
 const emit = defineEmits<{ (e: 'close'): void }>()
 
@@ -36,7 +37,7 @@ interface Row {
   id: string
   en: string
   cn: string
-  kind: 'action' | 'sound' | 'link'
+  kind: 'action' | 'sound' | 'account' | 'link'
   /** 只有 kind === 'link' 有：正式前端的真实路径 */
   href?: string
 }
@@ -46,8 +47,8 @@ interface Row {
  *   /write                  写作 / 编辑文章（旧版 requiresAuth）
  *   /profile?tab=settings   个人信息编辑（旧版 ProfileView 的「设置」tab）
  *   /profile?tab=siteConfig 站点管理（旧版 ProfileView 的「站点设置」tab，仅超管可见）
- * 这三张页面属于 P5 / P6，落地前它们只在登录态下出现，而登录态也还没实现 ——
- * 所以本轮它们**不会渲染**，不是被删掉：条件与样机一致（未登录就看不见）。
+ * 这三张页面属于 P5 / P6，本身还没落地 —— 它们只在登录态下出现（条件与样机一致），
+ * P3 只是把登录态接上了，页面仍留给后续轮次。
  */
 const LINK_ROWS: Record<'edit' | 'profile' | 'site', Row> = {
   edit: { id: 'edit', en: 'WRITE', cn: '编辑文章', kind: 'link', href: '/write' },
@@ -69,20 +70,26 @@ const LINK_ROWS: Record<'edit' | 'profile' | 'site', Row> = {
 
 const router = useRouter()
 
-/** P5 账号体系落地前：没有登录态可读，登录行就是一条真链接 */
-const loggedIn = ref(false)
+/** 登录态 / 显示名 / 超管标记都读账号 store（P3 接线；此前这里是一句写死的 false） */
+const auth = useAuthStore()
 
 const rows = computed<Row[]>(() => {
   const list: Row[] = [
     { id: 'resume', en: 'RESUME', cn: '继续', kind: 'action' },
     { id: 'search', en: 'SEARCH', cn: '搜索文章', kind: 'action' },
     { id: 'sound', en: 'SOUND', cn: '音效', kind: 'sound' },
-    { id: 'account', en: 'ACCOUNT', cn: '登录', kind: 'link', href: '/login' },
+    {
+      id: 'account',
+      en: 'ACCOUNT',
+      cn: auth.isLoggedIn ? `退出登录（${auth.displayName}）` : '登录',
+      kind: 'account',
+    },
   ]
 
-  if (loggedIn.value) {
+  if (auth.isLoggedIn) {
     list.push(LINK_ROWS.edit, LINK_ROWS.profile)
-    list.push(LINK_ROWS.site)
+    // 站点管理只给超管看（样机条件）
+    if (auth.isSuperuser) list.push(LINK_ROWS.site)
   }
 
   list.push({ id: 'settings', en: 'SETTINGS', cn: '设置', kind: 'action' })
@@ -92,8 +99,8 @@ const rows = computed<Row[]>(() => {
 
 const focus = useFocusGroup()
 const hint = ref('')
-/** 子弹窗：设置。开着的时候本菜单屏蔽按键 */
-const sub = ref<'none' | 'settings'>('none')
+/** 子弹窗：登录 / 设置。开着的时候本菜单屏蔽按键 */
+const sub = ref<'none' | 'login' | 'settings'>('none')
 /** 搜索态 */
 const mode = ref<'menu' | 'search'>('menu')
 
@@ -141,13 +148,27 @@ function activate(): boolean {
       openSearch()
       break
     case 'account':
-      emit('close')
-      void router.push(String(row.href))
+      // 已登录 → 登出并给一句提示；未登录 → 开登录弹窗（照样机：先清提示再开框）
+      if (auth.isLoggedIn) {
+        auth.logout()
+        hint.value = '已退出登录'
+      } else {
+        hint.value = ''
+        sub.value = 'login'
+      }
       break
     case 'home':
       emit('close')
       requestTransition('shake')
       void router.push('/')
+      break
+    case 'edit':
+    case 'profile':
+    case 'site':
+      // 链接行的 href 是真的，只是这几张页面还没搬过来（P4/P5 的活）。
+      // 样机这句原来是「演示版没有这张页面，正式版路径 …」—— 那句在正式版里是假话，
+      // 只换这一句，行本身照样机：登录后照常出现。
+      hint.value = `这张页面还没做，目标路径 ${row.href}`
       break
     case 'settings':
       hint.value = ''
@@ -433,7 +454,12 @@ function clickHit(i: number): void {
       <div v-if="hint" class="pause-hint blink" data-testid="pause-hint">{{ hint }}</div>
     </div>
 
-    <!-- 子弹窗：设置（与暂停菜单同级的独立弹窗） -->
+    <!-- 子弹窗：登录 / 设置（与暂停菜单同级的独立弹窗） -->
+    <LoginDialog
+      v-if="sub === 'login'"
+      @close="sub = 'none'"
+      @ok="((sub = 'none'), (hint = '登录成功'))"
+    />
     <SettingsDialog v-if="sub === 'settings'" @close="sub = 'none'" />
   </div>
 </template>

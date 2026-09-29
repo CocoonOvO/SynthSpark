@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { booted } from './helpers'
+
 /**
  * 纯鼠标门 —— 硬要求：**单独用鼠标**能完成全部交互。
  *
@@ -22,6 +24,7 @@ async function installRecorder(page: import('@playwright/test').Page): Promise<v
 test('纯鼠标：划过共享焦点（静音）→ 点击确认 → 外壳软键也能点', async ({ page }) => {
   await installRecorder(page)
   await page.goto('/')
+  await booted(page)
 
   // 第一下手势发生在底栏的场景指示上（不可聚焦元素 → 焦点交回外壳根节点，按键才接得到）
   await page.click('[data-testid="deck-scene"]')
@@ -53,6 +56,7 @@ test('纯鼠标：划过共享焦点（静音）→ 点击确认 → 外壳软�
 test('纯鼠标：底栏站稳了才谈鼠标 —— 场景指示与站点小字都能点到/划到', async ({ page }) => {
   await installRecorder(page)
   await page.goto('/')
+  await booted(page)
 
   // 断言底栏在屏幕外框之外（样机口径），且它自己可点 —— 鼠标用户不需要键盘就能触达外壳
   const layout = await page.evaluate(() => {

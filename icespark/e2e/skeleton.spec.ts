@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { booted } from './helpers'
+
 /**
  * P0 骨架用例：只验「骨架真的通了」，不看视觉。
  *
@@ -26,11 +28,13 @@ test.beforeEach(async ({ page }) => {
 test('首页：渲染出来，转场表现层写上 data-scene', async ({ page }) => {
   await page.goto('/')
 
-  await expect(page.locator('h1')).toHaveText('SYNTHSPARK')
-  // 场景名与样机一致：`/` 是 home（`boot` 是开机自检，不是一条路由）
+  // 场景名与样机一致：`/` 是 home（`boot` 是开机自检，不是一条路由 ——
+  // 自检期间 data-scene 是 boot，播完落到当前路由的场景）
   await expect(page.locator('.app')).toHaveAttribute('data-scene', 'home')
-  // API 前缀与令牌键是运行期事实，页面上直接写着，顺便当烟雾测试
-  await expect(page.locator('main')).toContainText('/api')
+  // 首页渲染出来了：样机的入口之一「全部文章」在（内容本身可能为空，不依赖后端有数据）
+  await expect(page.locator('[data-testid="home-all"]')).toBeVisible()
+  // 底栏的数据源标记照旧写着运行期事实（LIVE / DEMO 二选一）
+  await expect(page.locator('[data-testid="deck-src"]')).toHaveText(/LIVE|DEMO/)
 })
 
 test('深链未知路径：404 兜底，且回显原地址', async ({ page }) => {
@@ -43,10 +47,12 @@ test('深链未知路径：404 兜底，且回显原地址', async ({ page }) =>
 
 test('站内跳转与后退键：URL 是唯一真相来源', async ({ page }) => {
   await page.goto('/')
+  await booted(page)
 
-  await page.click('a[href="/this-route-does-not-exist"]')
-  await expect(page).toHaveURL(/\/this-route-does-not-exist$/)
-  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'error')
+  // 走真实站内入口：标签栏 → 文章列表
+  await page.click('[data-testid="tab-posts"]')
+  await expect(page).toHaveURL(/\/posts$/)
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'posts')
 
   // 浏览器后退键必须回到首页，且表现层跟着更新
   await page.goBack()
@@ -56,12 +62,13 @@ test('站内跳转与后退键：URL 是唯一真相来源', async ({ page }) =>
 
 test('同一文档内每次导航都触发一遍转场表现层', async ({ page }) => {
   await page.goto('/')
+  await booted(page)
 
-  await page.click('a[href="/this-route-does-not-exist"]')
-  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'error')
+  await page.click('[data-testid="tab-links"]')
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'links')
   const before = Number(await page.locator('.app').getAttribute('data-scene-seq'))
 
-  await page.click('a[href="/"]')
+  await page.click('[data-testid="tab-home"]')
   await expect(page.locator('.app')).toHaveAttribute('data-scene', 'home')
   const after = Number(await page.locator('.app').getAttribute('data-scene-seq'))
 

@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { booted } from './helpers'
+
 /**
  * 外壳保真门 —— 防的是「又一次把样机的外壳改掉」。
  *
@@ -26,6 +28,7 @@ test.beforeEach(async ({ page }) => {
 
 test('外壳三段式：.app > .screen 同级 .deck，底栏不在外框里', async ({ page }) => {
   await page.goto('/')
+  await booted(page)
 
   const shell = await page.evaluate(() => {
     const app = document.querySelector('.app') as HTMLElement
@@ -60,6 +63,7 @@ test('外壳三段式：.app > .screen 同级 .deck，底栏不在外框里', as
 
 test('底栏三段顺序：场景指示 / 软键 / 数据源 / 站点小字', async ({ page }) => {
   await page.goto('/')
+  await booted(page)
 
   const deck = await page.evaluate(() => {
     const bar = document.querySelector('[data-testid="deck"]') as HTMLElement
@@ -96,6 +100,7 @@ test('底栏三段顺序：场景指示 / 软键 / 数据源 / 站点小字', as
 
 test('场景指示：6 个场景，当前场景显示 label，其余是点', async ({ page }) => {
   await page.goto('/')
+  await booted(page)
 
   await expect(page.locator('.deck-scene b')).toHaveCount(6)
   await expect(page.locator('.app')).toHaveAttribute('data-scene', 'home')
@@ -118,6 +123,7 @@ test('软键照样机：菜单 (P) 与音效两个都在，样式 2px 边框 + 2
   page,
 }) => {
   await page.goto('/')
+  await booted(page)
 
   // 样机底栏是「菜单 (P) + 音效」两个软键，一个都不许少
   const softkeys = page.locator('.deck-keys .softkey')
@@ -151,6 +157,7 @@ test('软键照样机：菜单 (P) 与音效两个都在，样式 2px 边框 + 2
 
 test('站点小字与外框绑定：404 页也在，且仍在底栏右侧', async ({ page }) => {
   await page.goto('/no/such/path')
+  await booted(page)
 
   await expect(page.locator('[data-testid="deck-footer"]')).toBeVisible()
   await expect(page.locator('[data-testid="deck-footer"]')).toContainText('©')
@@ -170,6 +177,7 @@ test('站点小字与外框绑定：404 页也在，且仍在底栏右侧', asyn
 
 test('整屏转场遮罩：导航时出现一次，落到 k-* 的三种皮肤之一', async ({ page }) => {
   await page.goto('/')
+  await booted(page)
 
   // 用 MutationObserver 记录遮罩节点：比 waitForSelector 更能抓住 280ms 的窗口
   await page.evaluate(() => {
@@ -185,8 +193,9 @@ test('整屏转场遮罩：导航时出现一次，落到 k-* 的三种皮肤之
     }).observe(document.querySelector('#app') as Element, { childList: true, subtree: true })
   })
 
-  await page.click('a[href="/this-route-does-not-exist"]')
-  await expect(page).toHaveURL(/this-route-does-not-exist$/)
+  // 走一次真实站内导航：点标签栏的「文章」页签（切标签是竖条擦除转场）
+  await page.click('[data-testid="tab-posts"]')
+  await expect(page).toHaveURL(/\/posts$/)
 
   const seen = await page.evaluate(() => (window as unknown as { __trans: string[] }).__trans)
   expect(seen.length).toBeGreaterThan(0)

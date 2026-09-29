@@ -2,7 +2,7 @@ import { createApp } from 'vue'
 import { createPinia } from 'pinia'
 
 import App from '@/App.vue'
-import { createAppRouter } from '@/router'
+import { appRouter } from '@/router'
 import { ROOT_SELECTOR, mountScenePresenter } from '@/scene/presenter'
 import { useSiteStore } from '@/stores/site'
 import { ACTIVE_PALETTE } from '@/styles/tokens'
@@ -19,7 +19,7 @@ import '@/styles/crt.css'
  * 这样「直接深链进来」的首次导航也走和站内跳转完全一样的转场路径。
  */
 const app = createApp(App)
-const router = createAppRouter()
+const router = appRouter()
 const pinia = createPinia()
 
 app.use(pinia)

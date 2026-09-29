@@ -1,5 +1,7 @@
 import { expect, test } from '@playwright/test'
 
+import { booted } from './helpers'
+
 /**
  * 纯键盘门 —— 硬要求：**单独用键盘**能完成全部交互。
  *
@@ -36,6 +38,7 @@ const readRecorder = (page: import('@playwright/test').Page) =>
 test('纯键盘：音效询问（左右选择 + 回车确认）与外壳软键（Tab + 回车）', async ({ page }) => {
   await installRecorder(page)
   await page.goto('/')
+  await booted(page)
 
   // 第一次按键既是「首次手势」，也应该是外壳能接到的键 —— 不需要先点一下
   await page.keyboard.press('ArrowRight')
@@ -53,7 +56,15 @@ test('纯键盘：音效询问（左右选择 + 回车确认）与外壳软键�
   await expect(page.locator('[data-testid="sound-prompt"]')).toHaveCount(0)
   await expect(page.locator('[data-testid="softkey-sound"]')).toHaveText(/ON/)
 
-  // Tab 是「没被消费就还给浏览器」的那一类键：这里它必须真的把焦点挪到软键上
+  // 有标签栏的页面上，Tab 是外壳的「切标签页」键（样机口径：它被消费，不还给浏览器）
+  await page.keyboard.press('Tab')
+  await expect(page).toHaveURL(/\/posts$/)
+
+  // 没有标签栏的页面（这里用 404）：Tab 必须**还给浏览器** —— 它按 DOM 顺序
+  // 走到外壳软键这个真按钮上，回车走浏览器原生激活（手柄层不拦、不重复触发）。
+  // 样机的这条口径写在同一处：`onTabScene` 为假时 `tabNext` 直接 return false。
+  await page.goto('/no/such/path')
+  await booted(page)
   let reached = false
   for (let i = 0; i < 5 && !reached; i += 1) {
     await page.keyboard.press('Tab')
@@ -76,6 +87,7 @@ test('纯键盘：音效询问（左右选择 + 回车确认）与外壳软键�
 test('纯键盘：ESC 走「保持静音」这条分支', async ({ page }) => {
   await installRecorder(page)
   await page.goto('/')
+  await booted(page)
 
   await page.keyboard.press('ArrowDown')
   await expect(page.locator('[data-testid="sound-prompt"]')).toBeVisible()
@@ -90,6 +102,7 @@ test('纯键盘：ESC 走「保持静音」这条分支', async ({ page }) => {
 test('纯键盘：模态作用域生效 —— 询问打开时按键不会穿透到外壳', async ({ page }) => {
   await installRecorder(page)
   await page.goto('/')
+  await booted(page)
 
   await page.keyboard.press('Enter')
   await expect(page.locator('[data-testid="sound-prompt"]')).toBeVisible()
