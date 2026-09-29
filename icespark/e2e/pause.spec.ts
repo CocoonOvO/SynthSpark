@@ -115,6 +115,84 @@ test('鼠标：设置弹窗里点行即改值，✕ 可关', async ({ page }) =>
   await expect(page.locator('[data-testid="pause"]')).toBeVisible()
 })
 
+test('鼠标：点面板外的遮罩即关菜单（等同 ESC）', async ({ page }) => {
+  await page.goto('/')
+  await booted(page)
+
+  await page.keyboard.press('p')
+  await expect(page.locator('[data-testid="pause"]')).toBeVisible()
+
+  // 遮罩层自身接管点击（`@click.self`）：面板之外的区域点一下就该关
+  await page.mouse.click(40, 40)
+  await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
+  await expect(page.locator('.app')).toHaveAttribute('data-scope', 'scene')
+})
+
+test('鼠标：搜索态点面板外只退回行列表，不把整个菜单关掉', async ({ page }) => {
+  await page.goto('/')
+  await booted(page)
+
+  await page.keyboard.press('p')
+  await page.click('[data-testid="pause-search"]')
+  await expect(page.locator('[data-testid="pause-search-input"]')).toBeVisible()
+
+  await page.mouse.click(40, 40)
+  await expect(page.locator('[data-testid="pause-search-input"]')).toHaveCount(0)
+  // 与 ESC 同口径：搜索态先退一层，菜单本身还在
+  await expect(page.locator('[data-testid="pause"]')).toBeVisible()
+  await expect(page.locator('.app')).toHaveAttribute('data-scope', 'pause')
+})
+
+test('登录：开登录框时菜单先关（两个模态不叠），ESC / 点遮罩都退回菜单', async ({ page }) => {
+  await page.goto('/')
+  await booted(page)
+
+  await page.keyboard.press('p')
+  await page.click('[data-testid="pause-account"]')
+  await expect(page.locator('[data-testid="login-dialog"]')).toBeVisible()
+  // 关键断言：登录框出现时菜单已经关掉，屏幕上只有一个模态
+  await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
+  await expect(page.locator('.app')).toHaveAttribute('data-scope', 'pause')
+
+  // 登录框开着时菜单热键不该在背后又开一层
+  await page.keyboard.press('p')
+  await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="login-dialog"]')).toBeVisible()
+
+  // 键盘这条路：ESC 取消 → 回菜单（不是掉回场景）
+  await page.keyboard.press('Escape')
+  await expect(page.locator('[data-testid="login-dialog"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="pause"]')).toBeVisible()
+  await expect(page.locator('.app')).toHaveAttribute('data-scope', 'pause')
+
+  // 鼠标这条路：再开一次登录框，点遮罩同样回菜单
+  await page.click('[data-testid="pause-account"]')
+  await expect(page.locator('[data-testid="login-dialog"]')).toBeVisible()
+  await page.mouse.click(40, 40)
+  await expect(page.locator('[data-testid="login-dialog"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="pause"]')).toBeVisible()
+})
+
+test('登录：密码错误时框不关（错误留在框里），取消后菜单干净回来', async ({ page }) => {
+  await page.goto('/')
+  await booted(page)
+
+  await page.keyboard.press('p')
+  await page.click('[data-testid="pause-account"]')
+  await page.fill('[data-testid="login-username"]', 'icespark_user')
+  await page.fill('[data-testid="login-password"]', '肯定不是这个密码')
+  await page.click('[data-testid="login-submit"]')
+
+  await expect(page.locator('[data-testid="login-error"]')).toBeVisible()
+  await expect(page.locator('[data-testid="login-dialog"]')).toBeVisible()
+  await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
+
+  await page.keyboard.press('Escape')
+  await expect(page.locator('[data-testid="pause"]')).toBeVisible()
+  // 取消登录不该留提示（提示只在登录成功/登出时给）
+  await expect(page.locator('[data-testid="pause-hint"]')).toHaveCount(0)
+})
+
 test('搜索态：菜单内直接检索真接口，ESC 逐层退回菜单', async ({ page }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(String(error)))

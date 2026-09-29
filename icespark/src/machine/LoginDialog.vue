@@ -1,6 +1,9 @@
 <script setup lang="ts">
 /**
- * 登录弹窗（与暂停菜单同级的独立弹窗）—— 照搬样机 `ui/LoginDialog.vue`。
+ * 登录弹窗 —— 照搬样机 `ui/LoginDialog.vue`。
+ *
+ * P3 收尾按用户口径改成**外壳级模态**：暂停菜单里的「登录」行会把菜单关掉再开它
+ * （两个框不叠在一起，用户反馈叠着难受），所以它自带输入作用域与遮罩点击关闭。
  *
  * 走真实接口：POST /api/auth/token，**form-urlencoded**（不是 JSON）。
  * 失败时把后端的 detail 原样显示出来 —— 样机里最容易说谎的地方就是「登录成功」。
@@ -17,6 +20,7 @@
 import { ref, onMounted, onUnmounted, nextTick } from 'vue'
 
 import { onPad } from '@/input/pad'
+import { setScope } from '@/input/scopes'
 import { playSfx } from '@/input/sfx'
 import { useAuthStore } from '@/stores/auth'
 
@@ -62,10 +66,23 @@ const off = onPad((a) => {
   return false
 }, 'pause')
 
+/**
+ * 输入作用域由本组件自己管（P3 收尾改）。
+ *
+ * 之前它嵌在暂停菜单里，跟着菜单的 `setScope('pause')` 走；现在它是**外壳级模态**
+ * （`App.vue` 的 `loginOpen`），必须自己切作用域，否则背后场景会同时收到按键。
+ * 做法与 `SoundPrompt.vue` 一致：挂载时切 pause、卸载时还原。
+ */
+const releaseScope = setScope('pause')
+
 onMounted(() => {
   void nextTick(() => userEl.value?.focus())
 })
-onUnmounted(off)
+
+onUnmounted(() => {
+  off()
+  releaseScope()
+})
 </script>
 
 <template>

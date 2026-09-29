@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 
 import {
@@ -11,9 +11,10 @@ import {
 } from '@/config/prefs'
 import { mountInput } from '@/input'
 import { onPad } from '@/input/pad'
-import { activeScope, focusZone, inputLocked } from '@/input/scopes'
+import { activeScope, focusZone, inputLocked, setScope } from '@/input/scopes'
 import { playSfx, previewSfx } from '@/input/sfx'
 import BootScreen from '@/machine/BootScreen.vue'
+import LoginDialog from '@/machine/LoginDialog.vue'
 import PauseMenu from '@/machine/PauseMenu.vue'
 import SoundPrompt from '@/machine/SoundPrompt.vue'
 import TabBar from '@/machine/TabBar.vue'
@@ -57,6 +58,18 @@ const screenInner = ref<HTMLElement | null>(null)
 
 /** 音效询问是否打开 */
 const promptOpen = ref(false)
+
+/**
+ * 登录弹窗（外壳级模态）。
+ *
+ * P3 收尾按用户口径从「菜单里再叠一层」提上来：菜单里的「登录」行先把自己关掉，
+ * 再由外壳开这个框（两个模态不叠）。登录成功后把菜单重新打开并带一句提示 ——
+ * 用户回到菜单就能看到登录后才出现的那三行（编辑文章 / 个人信息编辑 / 站点管理）。
+ */
+const loginOpen = ref(false)
+
+/** 给菜单的一次性提示（「登录成功」），菜单关掉时清空，避免下次打开还挂着 */
+const menuNotice = ref('')
 
 /** 暂停菜单是否打开（P / 底栏「菜单 (P)」软键） */
 const pauseOpen = ref(false)
@@ -140,6 +153,31 @@ function onFirstGesture(): void {
   askSoundOnce()
 }
 
+/** 关菜单（点继续 / ESC / 点击菜单外走的是同一条路）：顺手清掉一次性提示 */
+function closeMenu(): void {
+  pauseOpen.value = false
+  menuNotice.value = ''
+}
+
+/** 菜单里点「登录」：菜单已经自己关了，这里只负责开登录框 */
+function openLogin(): void {
+  loginOpen.value = true
+}
+
+/** 登录成功：关登录框，并把菜单重新打开（顺便带上那句提示） */
+function onLoginOk(): void {
+  loginOpen.value = false
+  menuNotice.value = '登录成功'
+  pauseOpen.value = true
+}
+
+/** 登录框关掉（✕ / ESC / 点框外）：回到菜单 —— 它本来就是从菜单进来的 */
+function closeLogin(): void {
+  loginOpen.value = false
+  menuNotice.value = ''
+  pauseOpen.value = true
+}
+
 /** 软键：音效开关（鼠标路径；键盘路径是 Tab + ENTER） */
 function toggleSound(): void {
   setSound(!soundEnabled.value)
@@ -148,9 +186,13 @@ function toggleSound(): void {
 
 /** 软键：呼出暂停菜单（与 P 键同一条路径） */
 function togglePause(): void {
-  if (promptOpen.value) return
-  pauseOpen.value = !pauseOpen.value
-  if (pauseOpen.value) playSfx('confirm')
+  // 登录框开着时不叠菜单（与音效询问同一条规矩）
+  if (promptOpen.value || loginOpen.value) return
+  if (pauseOpen.value) closeMenu()
+  else {
+    pauseOpen.value = true
+    playSfx('confirm')
+  }
 }
 
 /**
@@ -211,10 +253,33 @@ const offGlobal = onPad((action, consumed) => {
  */
 const offStart = onPad((action, consumed) => {
   if (consumed || action !== 'start') return false
-  if (promptOpen.value) return true
+  // 音效询问 / 登录框开着时 P 不该再叠一个菜单上来（吞掉，不穿透）
+  if (promptOpen.value || loginOpen.value) return true
   togglePause()
   return true
 }, 'any')
+
+/**
+ * 模态作用域收口（外壳负责，P3 收尾新增）。
+ *
+ * 三个外壳级模态（音效询问 / 暂停菜单 / 登录框）各自在挂载时 `setScope('pause')`，
+ * 但「一个卸载、另一个挂载」发生在同一次 patch 里：后者的挂载先跑、前者的还原闭包后跑，
+ * 结果把新模态的作用域一起还原成 `scene`（实测：菜单 → 登录框时 `data-scope` 变 scene，
+ * 按键穿透到背后场景，按 ESC 甚至会在登录框后面又开出一个菜单）。
+ *
+ * 修法不是去改四个模态组件，而是让外壳按「谁在台上」重新收口一次：
+ * `flush: 'post'` 保证它跑在本次 patch（含卸载还原）之后。
+ */
+watch(
+  [pauseOpen, promptOpen, loginOpen],
+  ([menu, prompt, login]) => {
+    // 再等一个 tick 才写：模态组件的挂载/卸载**不是**同一时刻——实测「菜单 → 登录框」
+    // 时登录框的 setup 先跑、post 队列随后、菜单的 onUnmounted 反而最后跑，
+    // 它那句还原会把这边的收口再盖掉。等这一轮 patch 彻底结束再写，才是最后一句。
+    void nextTick(() => setScope(menu || prompt || login ? 'pause' : 'scene'))
+  },
+  { flush: 'post' },
+)
 
 onMounted(() => {
   bootTimer = window.setTimeout(() => (poweringOn.value = false), SCALE.motion.boot)
@@ -283,7 +348,10 @@ onUnmounted(() => {
       />
 
       <!-- 暂停菜单（P / 底栏软键呼出） -->
-      <PauseMenu v-if="pauseOpen" @close="pauseOpen = false" />
+      <PauseMenu v-if="pauseOpen" :notice="menuNotice" @close="closeMenu" @open-login="openLogin" />
+
+      <!-- 登录弹窗：外壳级模态，与菜单互斥（不叠在一起） -->
+      <LoginDialog v-if="loginOpen" @close="closeLogin" @ok="onLoginOk" />
 
       <!-- 音效首次询问：键鼠双路径的模态 -->
       <SoundPrompt v-if="promptOpen" @close="promptOpen = false" />

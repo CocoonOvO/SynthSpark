@@ -11,7 +11,6 @@ import { setScope } from '@/input/scopes'
 import { requestTransition } from '@/scene/transition'
 import { useAuthStore } from '@/stores/auth'
 import { setSound, soundEnabled } from '@/config/prefs'
-import LoginDialog from './LoginDialog.vue'
 import SettingsDialog from './SettingsDialog.vue'
 
 /**
@@ -28,10 +27,26 @@ import SettingsDialog from './SettingsDialog.vue'
  * - 搜索栏不是摆设：菜单内直接检索 `/api/search/`，结果可点可键盘选
  *
  * 账号行（P3 接上真实登录态后与样机一致）：
- * - 未登录：文案「登录」，回车/点击开**菜单内登录弹窗**（`LoginDialog.vue`，照样机的 sub 子弹窗机制）；
+ * - 未登录：文案「登录」，回车/点击开登录弹窗（P3 收尾后**不再嵌在菜单里**，见下）；
  * - 已登录：文案「退出登录（昵称）」，回车/点击登出并给一句提示。
+ *
+ * P3 收尾按用户口径改了两处（2026-09-29）：
+ * 1. **点击菜单外 = 取消**：旧行为是只有 ESC / 点「继续」能关。现在点遮罩走 `clickOutside()`，
+ *    与 ESC 完全同一条路径（菜单态关菜单、搜索态退回行列表）—— 鼠标与键盘仍然是一套语义。
+ * 2. **登录弹窗不再嵌在菜单里**：原来是「菜单里再叠一个登录框」，两层遮罩、两个模态框，
+ *    视觉上很难受。现在菜单直接关掉、由外壳开登录框（`App.vue` 持有 `loginOpen`）。
+ *    登录成功后外壳把菜单重新打开并带一句 `notice`，用户回到菜单就能看到多出来的三行。
  */
-const emit = defineEmits<{ (e: 'close'): void }>()
+const emit = defineEmits<{ (e: 'close'): void; (e: 'open-login'): void }>()
+
+/**
+ * 打开菜单时先显示的一句提示（可选，一次性）。
+ *
+ * 用途只有一个：登录成功后外壳把菜单重新打开，顺便带一句「登录成功」。
+ * 登录弹窗现在是**外壳级模态**（不再嵌在菜单里 —— 用户反馈两框叠在一起不舒服），
+ * 所以这句反馈只能由外壳转交进来。
+ */
+const props = defineProps<{ notice?: string }>()
 
 interface Row {
   id: string
@@ -99,8 +114,8 @@ const rows = computed<Row[]>(() => {
 
 const focus = useFocusGroup()
 const hint = ref('')
-/** 子弹窗：登录 / 设置。开着的时候本菜单屏蔽按键 */
-const sub = ref<'none' | 'login' | 'settings'>('none')
+/** 子弹窗：只剩设置（登录已提到外壳，见文件头第 2 条）。开着的时候本菜单屏蔽按键 */
+const sub = ref<'none' | 'settings'>('none')
 /** 搜索态 */
 const mode = ref<'menu' | 'search'>('menu')
 
@@ -153,8 +168,10 @@ function activate(): boolean {
         auth.logout()
         hint.value = '已退出登录'
       } else {
+        // 开登录框前先把自己关掉：外壳会开一个外壳级的登录模态，两个框不叠
         hint.value = ''
-        sub.value = 'login'
+        emit('open-login')
+        emit('close')
       }
       break
     case 'home':
@@ -308,10 +325,21 @@ const releaseScope = setScope('pause')
 const off = onPad(onAction, 'pause')
 
 onMounted(() => {
-  hint.value = ''
+  hint.value = props.notice ?? ''
   // 行数会随登录态变化，收敛一下焦点
   focus.set(Math.min(focus.index.value, rows.value.length - 1), true)
 })
+
+/**
+ * 鼠标点击菜单外 = 鼠标版的 ESC。
+ * 菜单态：关掉菜单；搜索态：与 ESC 一样先取消选中、再退回行列表（不直接关菜单，
+ * 否则鼠标用户点一下空白就把整个菜单丢了，和键盘行为对不上）。
+ */
+function clickOutside(): void {
+  if (sub.value !== 'none') return
+  if (mode.value === 'search') onSearchAction('cancel')
+  else emit('close')
+}
 
 onUnmounted(() => {
   window.clearTimeout(debounce)
@@ -342,6 +370,7 @@ function clickHit(i: number): void {
     role="dialog"
     aria-modal="true"
     aria-labelledby="pause-title"
+    @click.self="clickOutside"
   >
     <div class="pause px">
       <div class="pause-head">
@@ -454,12 +483,7 @@ function clickHit(i: number): void {
       <div v-if="hint" class="pause-hint blink" data-testid="pause-hint">{{ hint }}</div>
     </div>
 
-    <!-- 子弹窗：登录 / 设置（与暂停菜单同级的独立弹窗） -->
-    <LoginDialog
-      v-if="sub === 'login'"
-      @close="sub = 'none'"
-      @ok="((sub = 'none'), (hint = '登录成功'))"
-    />
+    <!-- 子弹窗：只剩设置。登录框是外壳级模态（App.vue），不在这里叠 -->
     <SettingsDialog v-if="sub === 'settings'" @close="sub = 'none'" />
   </div>
 </template>
