@@ -25,7 +25,6 @@ import { useSiteStore } from '@/stores/site'
 import SceneHead from '@/machine/SceneHead.vue'
 import { useStatusBar } from '@/scene/clock'
 import { scrollScreenBy, scrollScreenTop } from '@/scene/screen'
-import { focusTabs } from '@/scene/tabs'
 import MarkdownBody from '@/signal/MarkdownBody.vue'
 
 const { clock, stop } = useStatusBar()
@@ -43,10 +42,9 @@ const off = onPad((a) => {
   if (a === 'up' || a === 'down') return scrollScreenBy(a === 'down' ? SCROLL_STEP : -SCROLL_STEP)
   if (a === 'pageNext' || a === 'pagePrev')
     return scrollScreenBy(a === 'pageNext' ? PAGE_STEP : -PAGE_STEP)
-  if (a === 'cancel') {
-    focusTabs()
-    return true
-  }
+  // 不消费 ESC：全站口径是「P / ESC 打开暂停菜单」（用户裁定：每一页都要能起菜单）。
+  // 早先这里吃下 ESC 去 `focusTabs()`，结果就是「只有部分页面能按 ESC」，行为不可预期；
+  // 标签栏照样到得了 —— 按原生 TAB 切页（全局的 tabNext / tabPrev）。
   return false
 })
 onUnmounted(off)
@@ -74,7 +72,7 @@ onUnmounted(off)
     <div class="keybar px">
       <span class="kb"><i class="kbd">↑</i><i class="kbd">↓</i> 滚动</span>
       <span class="kb"><i class="kbd">PgUp</i><i class="kbd">PgDn</i> 整屏</span>
-      <span class="kb"><i class="kbd">ESC</i> 回标签栏</span>
+      <span class="kb"><i class="kbd">TAB</i> 切页</span>
       <span class="kb tail">P 菜单</span>
     </div>
   </div>

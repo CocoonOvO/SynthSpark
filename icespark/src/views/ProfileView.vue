@@ -707,7 +707,7 @@ onUnmounted(off)
       </div>
     </form>
 
-    <div class="foot px hint">
+    <div class="foot sticky-foot px hint">
       TAB 在字段间走 · ENTER 原生提交 / 激活 · ↑↓ 选动作 · Q 返回 · P / ESC 菜单
     </div>
   </div>

@@ -300,7 +300,9 @@ onUnmounted(off)
       </div>
 
       <!-- 操作提示：机器字样，与其它页面同一套说法 -->
-      <div class="foot-hint px hint">↑↓←→ 移动 · ENTER 确认 · Q 返回 · ESC 菜单 · TAB 到软键</div>
+      <div class="foot-hint sticky-foot px hint">
+        ↑↓←→ 移动 · ENTER 确认 · Q 返回 · ESC 菜单 · TAB 到软键
+      </div>
     </div>
   </div>
 </template>

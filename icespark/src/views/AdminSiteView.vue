@@ -1004,7 +1004,7 @@ watch(
       </footer>
     </div>
 
-    <div class="foot px hint">
+    <div class="foot sticky-foot px hint">
       ↑↓ 选段 / 按钮 · ENTER 打开这一段 · TAB 走字段与按钮 · Q 返回 · P / ESC 菜单
     </div>
   </div>

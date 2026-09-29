@@ -728,7 +728,9 @@ function plate(i: number): string {
     </div>
 
     <!-- 页脚一行键位提示：与首页 / 关于页同一套措辞（品牌与站点状态行由外壳 .deck 负责） -->
-    <div class="foot px hint">↑↓←→ 移动 · ENTER 确认 · TAB 到输入框 · Q 返回 · P / ESC 菜单</div>
+    <div class="foot sticky-foot px hint">
+      ↑↓←→ 移动 · ENTER 确认 · TAB 到输入框 · Q 返回 · P / ESC 菜单
+    </div>
   </div>
 </template>
 

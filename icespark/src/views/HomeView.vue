@@ -342,7 +342,7 @@ const stats = computed(() => content.stats)
       </div>
     </section>
 
-    <div class="home-foot px hint">
+    <div class="home-foot sticky-foot px hint">
       ↑↓ 跨段 · ←→ 段内 · ENTER 打开 · ↑ 到顶后可上标签栏 · TAB 切页 · P / ESC 打开菜单
     </div>
   </div>

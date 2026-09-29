@@ -413,7 +413,7 @@ onUnmounted(off)
       </article>
     </div>
 
-    <div class="foot px hint">
+    <div class="foot sticky-foot px hint">
       ↑↓ 选卡 · ENTER / 点击打开 · ↑ 到顶回返回键 · Q 返回 · P / ESC 菜单
     </div>
   </div>

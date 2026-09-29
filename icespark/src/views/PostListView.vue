@@ -554,7 +554,7 @@ const rangeText = computed(() => {
     </div>
 
     <!-- 翻页条 -->
-    <div class="foot px">
+    <div class="foot sticky-foot px">
       <button
         class="pbtn focusable mini"
         data-testid="pager-prev"

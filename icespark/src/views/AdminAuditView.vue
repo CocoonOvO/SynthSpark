@@ -767,7 +767,7 @@ onUnmounted(off)
       </div>
     </template>
 
-    <div class="foot px hint">
+    <div class="foot sticky-foot px hint">
       ↑↓ 选记录 · ENTER 展开 / 收起原文 · PgUp/PgDn 翻页 · Q 返回 · P / ESC 菜单
     </div>
   </div>

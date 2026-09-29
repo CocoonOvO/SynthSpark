@@ -438,13 +438,14 @@ function closeDialog() {
 
     <!-- 快捷键指南：sticky 在屏幕底部，滚动时始终可见，刻意做得轻 -->
     <div class="keybar px" data-testid="keybar">
+      <!-- 顺序按用户口径：上下 → 左右 → 翻页，其余随后。
+           TAB / ENTER 照样好使（TAB 遍历链接、ENTER 执行），只是不标在这里 ——
+           提示条只留这一页「不容易猜到」的键 -->
       <span class="kb"><i class="kbd">↑</i><i class="kbd">↓</i> 滚动</span>
-      <span class="kb"><i class="kbd">PgUp</i><i class="kbd">PgDn</i> 整屏</span>
+      <span class="kb"><i class="kbd">←</i><i class="kbd">→</i> 行内移动</span>
+      <span class="kb"><i class="kbd">PgUp</i><i class="kbd">PgDn</i> 翻页</span>
       <span class="kb"><i class="kbd">G</i> 分组/标签</span>
       <span class="kb"><i class="kbd">L</i> 点赞评论</span>
-      <span class="kb"><i class="kbd">→</i><i class="kbd">←</i> 行内移动</span>
-      <span class="kb"><i class="kbd">TAB</i> 遍历链接</span>
-      <span class="kb"><i class="kbd">ENTER</i> 执行</span>
       <span class="kb"><i class="kbd">U</i> 回顶部</span>
       <span class="kb"><i class="kbd">Q</i> 返回</span>
       <span class="kb tail"><i class="kbd">P</i>/<i class="kbd">ESC</i> 菜单</span>

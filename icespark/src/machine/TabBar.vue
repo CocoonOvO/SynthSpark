@@ -96,10 +96,8 @@ const off = onPad((a) => {
     playSfx('confirm')
     return true
   }
-  if (a === 'cancel') {
-    blurTabs()
-    return true
-  }
+  // 不吃 ESC：用户裁定「ESC 在每一页都能起菜单」。光标停在标签栏上也一样 ——
+  // 想吃掉它去 `blurTabs()` 的话，ESC 的含义就取决于焦点在哪儿，正是被否掉的那种不可预期。
   // 上下键在标签栏里不做事，但必须消费掉，否则背后的场景会跟着动
   if (a === 'up') return true
   return false

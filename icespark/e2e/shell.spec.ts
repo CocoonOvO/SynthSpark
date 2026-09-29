@@ -208,3 +208,58 @@ test('整屏转场遮罩：导航时出现一次，落到 k-* 的三种皮肤之
   // 遮罩只是装饰：落下后必须自己撤掉，不能永久盖住画面
   await expect(page.locator('[data-testid="transition"]')).toHaveCount(0)
 })
+
+test('ESC 在每一页都能起暂停菜单（不再有个别页面把它吃掉）', async ({ page }) => {
+  // 用户反馈过：只有主页能按 ESC 起菜单。根因是 /about 与 /links 各自把 `cancel`
+  // 吃下去改去 `focusTabs()`，`TabBar` 也会在光标停在自己身上时吃掉它。
+  // 现在口径统一：ESC 只有一个含义，除非眼前有模态（那种情况下 ESC 关的是那一层）。
+  await page.addInitScript(() => localStorage.setItem('synthspark-icespark-sound-prompt', '1'))
+
+  const posts = await (await page.request.get('/api/posts/?limit=1&status=published')).json()
+  const first = posts.items?.[0]
+  const articleKey = first ? first.slug || first.id : null
+
+  const paths = ['/', '/posts', '/links', '/about', '/user/icespark_admin', '/no/such/page']
+  if (articleKey) paths.push(`/post/${encodeURIComponent(articleKey)}`)
+
+  for (const path of paths) {
+    await page.goto(path)
+    await booted(page)
+    await expect(page.locator('.app')).toHaveAttribute('data-scope', 'scene')
+
+    await page.keyboard.press('Escape')
+    await expect(page.locator('[data-testid="pause"]'), `${path} 上 ESC 应该起菜单`).toBeVisible()
+
+    // 再按一次关掉，回到干净状态
+    await page.keyboard.press('Escape')
+    await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
+  }
+})
+
+test('底条常驻：屏幕不高、正文又长时，键位/翻页条仍在下沿可见', async ({ page }) => {
+  // 用户反馈过：这条提示排在正文最后，屏幕不够高就看不见。
+  // 现在它挂 `.sticky-foot`（全局一条规则），滚动时贴住屏幕下沿。
+  await page.addInitScript(() => localStorage.setItem('synthspark-icespark-sound-prompt', '1'))
+  await page.setViewportSize({ width: 1100, height: 520 })
+
+  for (const [path, sel] of [
+    ['/', '.home-foot'],
+    ['/posts', '.foot'],
+  ] as const) {
+    await page.goto(path)
+    await booted(page)
+    const scroller = page.locator('.screen-inner')
+    await expect(page.locator(sel)).toBeAttached()
+    // 先确认这一页真的比视口高（否则这条用例证明不了什么）
+    const tall = await scroller.evaluate((el) => el.scrollHeight > el.clientHeight + 40)
+    expect(tall, `${path} 的正文应当比视口高`).toBe(true)
+
+    // 滚到中间：底条必须仍在视口内（sticky）
+    await scroller.evaluate((el) => void (el.scrollTop = Math.floor(el.scrollHeight / 2)))
+    const box = await page.locator(sel).boundingBox()
+    const vh = page.viewportSize()!.height
+    expect(box, `${path} 的底条应当还量得到`).not.toBeNull()
+    expect(box!.y + box!.height, `${path} 的底条应当贴在视口下沿`).toBeLessThanOrEqual(vh + 2)
+    expect(box!.y, `${path} 的底条不该跑出视口上方`).toBeGreaterThan(0)
+  }
+})

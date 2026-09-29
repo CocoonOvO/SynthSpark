@@ -56,10 +56,7 @@ const off = onPad((a) => {
     open(links.value[gridFocus.index.value])
     return true
   }
-  if (a === 'cancel') {
-    focusTabs()
-    return true
-  }
+  // 不吃 ESC（理由同 AboutView 同处注释）：ESC 归外壳的菜单，标签栏用原生 TAB 切
   if (a === 'up' || a === 'down' || a === 'left' || a === 'right') {
     const next = spatialIndex(gridFocus.index.value, a, COLS, n)
     if (next === null) {
@@ -146,7 +143,7 @@ function plate(i: number) {
       </a>
     </div>
 
-    <div class="foot px hint">
+    <div class="foot sticky-foot px hint">
       ↑↓←→ 按位置移动 · ENTER / 点击打开 · TAB 切页 · P / ESC 菜单 ·
       站内路径在前端切换，绝对链接开新页
     </div>

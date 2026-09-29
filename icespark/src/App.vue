@@ -271,8 +271,8 @@ const offGlobal = onPad((action, consumed) => {
   if (action === 'cancel') {
     if (consumed) return false
     if (inModal) return false
-    // 焦点停在标签栏上时，ESC 先退回内容区，再按一次才呼出菜单
-    if (focusZone.value === 'tabs') return false
+    // 注意：**不看焦点分区**。早先「焦点在标签栏上时 ESC 先退回内容区」是个例外，
+    // 用户裁定「ESC 在每一页都能起菜单」之后取消 —— 同一个键的含义不该取决于焦点在哪。
     playSfx('confirm')
     pauseOpen.value = true
     return true
