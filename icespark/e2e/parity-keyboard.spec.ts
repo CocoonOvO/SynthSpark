@@ -106,7 +106,11 @@ test('纯键盘：模态作用域生效 —— 询问打开时按键不会穿透
   await page.goto('/')
   await booted(page)
 
-  await page.keyboard.press('Enter')
+  // 用方向键开框，**故意不用 Enter**：首页的焦点正落在第一张卡上，Enter 会「既开框又进文章」
+  // （样机的两个监听器各自独立，同一个键两边都收得到 —— 这是照搬来的既有行为，不是本用例要验的东西），
+  // 而那次导航自带一次输入锁与一次作用域重置，会把「模态作用域」这件事搅在一起。
+  // 方向键只挪焦点、不导航，本用例要验的隔离性因此干净可判。
+  await page.keyboard.press('ArrowRight')
   await expect(page.locator('[data-testid="sound-prompt"]')).toBeVisible()
 
   // 询问框开着时，P 不该被外壳当成 START 处理（本轮外壳还没有菜单，但作用域必须已经隔离）

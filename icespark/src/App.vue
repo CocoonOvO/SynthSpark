@@ -11,7 +11,7 @@ import {
 } from '@/config/prefs'
 import { mountInput } from '@/input'
 import { onPad } from '@/input/pad'
-import { activeScope, focusZone, inputLocked, setScope } from '@/input/scopes'
+import { activeScope, focusZone, inputLocked, pageModalOpen, setScope } from '@/input/scopes'
 import { playSfx, previewSfx } from '@/input/sfx'
 import BootScreen from '@/machine/BootScreen.vue'
 import LoginDialog from '@/machine/LoginDialog.vue'
@@ -255,8 +255,8 @@ const offGlobal = onPad((action, consumed) => {
   // 音效询问框开着时，整块键盘归它所有（它是 pause 作用域，正常情况已消费）
   if (promptOpen.value) return true
 
-  /** 模态（暂停菜单 / 对话框）打开时，导航类全局键一律不生效 */
-  const inModal = activeScope.value !== 'scene' || pauseOpen.value
+  /** 模态（暂停菜单 / 对话框 / **页面自己的确认框**）打开时，导航类全局键一律不生效 */
+  const inModal = activeScope.value !== 'scene' || pauseOpen.value || pageModalOpen.value
 
   if (action === 'tabNext' || action === 'tabPrev') {
     if (consumed) return false
@@ -302,8 +302,8 @@ const offGlobal = onPad((action, consumed) => {
  */
 const offStart = onPad((action, consumed) => {
   if (consumed || action !== 'start') return false
-  // 音效询问 / 登录框开着时 P 不该再叠一个菜单上来（吞掉，不穿透）
-  if (promptOpen.value || loginOpen.value) return true
+  // 音效询问 / 登录框 / 页面自己的确认框开着时，P 不该再叠一个菜单上来（吞掉，不穿透）
+  if (promptOpen.value || loginOpen.value || pageModalOpen.value) return true
   togglePause()
   return true
 }, 'any')
