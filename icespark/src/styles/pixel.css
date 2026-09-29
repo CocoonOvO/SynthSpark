@@ -232,7 +232,23 @@ body {
   position: relative;
 }
 
-.focusable:is(.is-focused, :focus-visible) {
+/**
+ * 焦点蓝底：**为什么要多一层 `.app`**（P3 迁移后修掉的一处回归，别再删）
+ *
+ * 样机里这条规则是靠**源序**赢的：样机的场景是静态 import，组件样式先注入、
+ * `pixel.css` 最后注入；而 `.focusable:is(.is-focused)` 与组件 scoped 的
+ * `.post[data-v-x]` 特异性都是 (0,2,0)，平局时后者（先来的）就输了，蓝底生效。
+ *
+ * 生产版的视图是**懒加载**（路由级 `() => import()`，见 `router/routes.ts`）：
+ * 视图 CSS 要等路由解析时才注入，永远排在 `pixel.css` 后面 —— 平局反过来，
+ * 卡片的 `background: var(--paper)` 把焦点蓝底整个压掉（实测 `.post` / `.chip` /
+ * `.fchip` / `.pbtn` / `.cap-more` 全变白底，只剩闪烁方块）。
+ *
+ * 所以这里把选择器提到 (0,3,0)：**仍赢不过组件里更具体的规则**（如 `.post.all`
+ * 的 (0,3,0)，平局依旧按源序判给组件），与样机实测的逐点结果一致，但不再依赖源序。
+ * 纯键盘门里有一条「焦点落点必须是蓝底」的断言守着这件事。
+ */
+.app .focusable:is(.is-focused, :focus-visible) {
   background-color: var(--blue-200);
 }
 

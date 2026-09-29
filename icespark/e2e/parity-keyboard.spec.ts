@@ -115,3 +115,28 @@ test('纯键盘：模态作用域生效 —— 询问打开时按键不会穿透
   await page.keyboard.press('Escape')
   await expect(page.locator('.app')).toHaveAttribute('data-scope', 'scene')
 })
+
+test('纯键盘：焦点落点真的画出蓝底（懒加载后样式源序反转曾把它压成白底）', async ({ page }) => {
+  await page.goto('/')
+  await booted(page)
+
+  // 键盘走到内容区（首页 `查看全部` / 卡片 / 标签芯片都是 .focusable）
+  await page.keyboard.press('ArrowDown')
+  const focused = page.locator('.focusable.is-focused').first()
+  await expect(focused).toBeVisible()
+
+  // 对照色：把 --blue-200 交给浏览器解析（他归一成 rgb()），避免在这里写死色值
+  const expected = await page.evaluate(() => {
+    const probe = document.createElement('div')
+    probe.style.backgroundColor = 'var(--blue-200)'
+    document.body.appendChild(probe)
+    const value = getComputedStyle(probe).backgroundColor
+    probe.remove()
+    return value
+  })
+
+  // 焦点蓝底由 pixel.css 的 `.app .focusable:is(.is-focused, :focus-visible)` 提供。
+  // 它必须压过组件 scoped 的 `background: var(--paper)`：视图是懒加载的，
+  // 组件样式永远在 pixel.css 之后注入，平局（同为 (0,2,0)）会判给白底。
+  await expect(focused).toHaveCSS('background-color', expected)
+})

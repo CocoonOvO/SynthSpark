@@ -51,7 +51,12 @@ export interface Palette {
   vignette: string
   glowSoft: string
   frameDot: string
+  /** 遮罩：默认（音效询问） */
   veil: string
+  /** 遮罩：更淡一档（暂停菜单，样机 0.28） */
+  veilSoft: string
+  /** 遮罩：更浓一档（登录 / 设置对话框，样机 0.34） */
+  veilDeep: string
 }
 
 /**
@@ -85,7 +90,11 @@ export const PALETTES = {
     scanLine: 'rgba(18, 58, 82, 0.055)',
     vignette: 'rgba(18, 58, 82, 0.13)',
     frameDot: 'rgba(18, 58, 82, 0.14)',
+    // 遮罩的三档透明度：样机里是三处不同的字面值（0.3 / 0.28 / 0.34），
+    // 颜色只许写在这里，所以三档各建一个 token，而不是抹平成一档
     veil: 'rgba(18, 58, 82, 0.3)',
+    veilSoft: 'rgba(18, 58, 82, 0.28)',
+    veilDeep: 'rgba(18, 58, 82, 0.34)',
     // rgba(61, 155, 208, α) —— blue500 的透明度变体
     maskDot: 'rgba(61, 155, 208, 0.05)',
     // rgba(127, 212, 245, α) —— crtGlow 的透明度变体
@@ -131,6 +140,8 @@ export function paletteVars(palette: Palette): Record<string, string> {
     '--glow-soft': palette.glowSoft,
     '--frame-dot': palette.frameDot,
     '--veil': palette.veil,
+    '--veil-soft': palette.veilSoft,
+    '--veil-deep': palette.veilDeep,
 
     // 8bit 立体边框：用浅蓝系，不再用深色压边（样机的第四轮修正）
     '--bevel-light': palette.paper,

@@ -469,7 +469,7 @@ function clickHit(i: number): void {
   position: absolute;
   inset: 0;
   z-index: 200;
-  background: var(--veil);
+  background: var(--veil-soft);
   display: grid;
   place-items: center;
   padding: 20px;

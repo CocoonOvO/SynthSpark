@@ -144,7 +144,7 @@ onUnmounted(off)
   position: absolute;
   inset: 0;
   z-index: 240;
-  background: var(--veil);
+  background: var(--veil-deep);
   display: grid;
   place-items: center;
   padding: 20px;

@@ -43,6 +43,8 @@
   --glow-soft: rgba(127, 212, 245, 0.45);
   --frame-dot: rgba(18, 58, 82, 0.14);
   --veil: rgba(18, 58, 82, 0.3);
+  --veil-soft: rgba(18, 58, 82, 0.28);
+  --veil-deep: rgba(18, 58, 82, 0.34);
   --bevel-light: #FFFFFF;
   --bevel-dark: #6FBCE0;
   --edge: #2A7BA8;
