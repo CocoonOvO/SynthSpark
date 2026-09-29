@@ -261,5 +261,15 @@ test('底条常驻：屏幕不高、正文又长时，键位/翻页条仍在下�
     expect(box, `${path} 的底条应当还量得到`).not.toBeNull()
     expect(box!.y + box!.height, `${path} 的底条应当贴在视口下沿`).toBeLessThanOrEqual(vh + 2)
     expect(box!.y, `${path} 的底条不该跑出视口上方`).toBeGreaterThan(0)
+
+    // 常驻的前提是它看起来仍属于这一页：贴上去之后不能显出自己的色带。
+    // 原先的底条没有背景，白画布透出来就是原貌 —— 所以底条的底色必须与画布一致。
+    // 这一条不能靠肉眼在静止画面里判断，直接比计算值（曾误用 --paper-alt，浅蓝一条很显眼）。
+    const [bar, canvas] = await page.evaluate((s) => {
+      const el = document.querySelector(s) as HTMLElement
+      const screen = document.querySelector('.screen') as HTMLElement
+      return [getComputedStyle(el).backgroundColor, getComputedStyle(screen).backgroundColor]
+    }, sel)
+    expect(bar, `${path} 的底条不应当有自己的色带`).toBe(canvas)
   }
 })
