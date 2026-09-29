@@ -321,6 +321,33 @@ test('分页：PgDn / 下一页按钮都带上 limit 与 offset，内容跟着�
   ])
 })
 
+test('总数正好是每页条数的整数倍时，「下一页」是灰的（不多翻出一张空页）', async ({ page }) => {
+  // 后端曾把 `total` 写成 `len(logs)`（本页条数），前端为此加过一条「本页满页也算还有下一页」
+  // 的兜底。后端修好之后兜底已删：留着的后果正是这个用例 —— 一页装满是 10 条、总数也正好 10 条，
+  // 兜底仍然判定「可能还有」，点下去是空页。这里把「按 total 算」钉死。
+  await loggedIn(page, true)
+  await page.route(AUDIT_URL, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        logs: Array.from({ length: 10 }, (_, i) => logFixture({ id: 30 - i })),
+        total: 10,
+      }),
+    }),
+  )
+
+  await page.goto('/admin/audit')
+  await booted(page)
+
+  await expect(page.locator('[data-testid="audit-log"]')).toHaveCount(10)
+  await expect(page.locator('[data-testid="audit-total"]')).toHaveText('共 10 条')
+  await expect(page.locator('[data-testid="audit-position"]')).toHaveText('第 1 / 1 页')
+  // 只有一页：翻页行在（记录不止一条），但两个方向都不可用
+  await expect(page.locator('[data-testid="audit-next"]')).toBeDisabled()
+  await expect(page.locator('[data-testid="audit-prev"]')).toBeDisabled()
+})
+
 test('空态：一条记录都没有时给人话，不是空白页', async ({ page }) => {
   await loggedIn(page, true)
   await page.route(AUDIT_URL, (route) =>

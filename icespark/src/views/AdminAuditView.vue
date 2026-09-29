@@ -89,14 +89,12 @@ const hasPrev = computed(() => page.value > 1)
 /**
  * 还有下一页吗。
  *
- * 契约说 `total` 是总条数，那就 `page < pageCount` 就够了；这里额外加一条
- * 「本页满页也算还有下一页」是**实测兜底的容错**：后端目前返回的是
- * `{"logs": …, "total": len(logs)}`（翻 backend/app/routers/site_config.py
- * 就能看到），也就是说 `total` 实际上是**本页条数**。少了这条兜底，
- * 真后端记录超过一页时「下一页」永远是灰的，第 2 页根本翻不到。
- * 两种情况都指向「可能还有」，于是只有在两条都不成立时才禁用。
+ * 就看 `page < pageCount`：契约说 `total` 是总条数，后端已经照契约返回了
+ * （此前后端写的是 `len(logs)` = 本页条数，这里曾加过一条「本页满页也算还有下一页」
+ * 的兜底才翻得动；后端那处已修，兜底随即删掉 —— 留着反而会在
+ * 「总数正好是每页条数的整数倍」时凭空多出一次「下一页」，点进去是空页）。
  */
-const hasNext = computed(() => page.value < pageCount.value || logs.value.length >= PAGE_SIZE)
+const hasNext = computed(() => page.value < pageCount.value)
 
 // ── 读取 ──
 

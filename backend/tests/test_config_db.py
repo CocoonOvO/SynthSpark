@@ -326,6 +326,49 @@ class TestAuditLog:
         assert len(logs) == 3
 
 
+class TestSiteConfigAuditLog:
+    """测试站点配置审计日志（与 config_audit_logs 是另一张表）"""
+
+    def _seed(self, config_db_manager, count: int) -> None:
+        for i in range(count):
+            config_db_manager.add_site_config_audit_log(
+                admin_id=f"00000000-0000-0000-0000-00000000000{i}",
+                admin_username=f"boss_{i}",
+                action="update",
+                old_value={"site": {"name": f"old_{i}"}},
+                new_value={"site": {"name": f"new_{i}"}},
+                ip_address="127.0.0.1",
+            )
+
+    @pytest.mark.asyncio
+    async def test_total_counts_all_rows_not_just_this_page(self, config_db_manager):
+        """
+        `total` 必须是总条数：12 条记录、每页 10 条时，
+        第一页取回 10 条，但 `total` 要报 12 —— 曾经这里返回 `len(logs)`，
+        于是前端「共 N 条」「第 X / Y 页」在记录超过一页时全都偏小。
+        """
+        self._seed(config_db_manager, 12)
+
+        assert config_db_manager.count_site_config_audit_logs() == 12
+
+        first_page = config_db_manager.get_site_config_audit_logs(limit=10, offset=0)
+        second_page = config_db_manager.get_site_config_audit_logs(limit=10, offset=10)
+        # 分页本身照常：第一页满、第二页只剩 2 条
+        assert len(first_page) == 10
+        assert len(second_page) == 2
+        # 而总条数两页都一样，且等于真实的 12
+        assert config_db_manager.count_site_config_audit_logs() == 12
+        # 倒序：第一页是新插入的（boss_11），第二页尾巴是最老的（boss_0）
+        assert first_page[0]["admin_username"] == "boss_11"
+        assert second_page[-1]["admin_username"] == "boss_0"
+
+    @pytest.mark.asyncio
+    async def test_total_is_zero_on_empty_table(self, config_db_manager):
+        """一条都没有时是 0，不是「没有这个键」——前端空态按它渲染「共 0 条」"""
+        assert config_db_manager.count_site_config_audit_logs() == 0
+        assert config_db_manager.get_site_config_audit_logs(limit=10, offset=0) == []
+
+
 class TestConfigAdminAuth:
     """测试超管认证"""
     

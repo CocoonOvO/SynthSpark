@@ -1533,12 +1533,12 @@ P0–P3 期间的 `NotFoundView` 是占位皮肤（约 19 行），本轮按**�
 
 ### 23.4b 已知遗留（本轮不修，记下来）
 
-- **后端 `total` 语义与契约不符**：`backend/app/routers/site_config.py` 的
+- ~~**后端 `total` 语义与契约不符**~~ → **已修**（用户另行点头，见 §25.6）。
+  当时的记录：`backend/app/routers/site_config.py` 的
   `GET /admin/site-config/audit-logs` 返回 `{"logs": logs, "total": len(logs)}` ——
   `total` 是**本页条数**而不是总条数（契约与 `api/admin.ts` 都按总条数声明）。
   审计页按契约显示「共 N 条」并用它算页数，只能额外加一条「本页满页也算还有下一页」的兜底，
-  否则真后端记录超过一页时第二页永远翻不到。彻底修法在后端（补一个 `COUNT(*)`），
-  属独立的后端小修，等维护者点头。
+  否则真后端记录超过一页时第二页永远翻不到。彻底修法在后端（补一个 `COUNT(*)`）。
 
 ### 23.5 分工与门
 
@@ -1650,9 +1650,8 @@ P0–P3 期间的 `NotFoundView` 是占位皮肤（约 19 行），本轮按**�
 
 ### 24.6 已知遗留与后续
 
-1. **后端 `total` 语义**（§23.4b）：`GET /api/admin/site-config/audit-logs` 返回
-   `total = len(logs)`（本页条数）而不是总条数。审计页按契约显示「共 N 条」+ 一条
-   「本页满页也算还有下一页」的兜底，真后端超过一页时数字会偏小。彻底修法在后端补 `COUNT(*)`。
+1. ~~**后端 `total` 语义**（§23.4b）~~ → **已修**（见 §25.6）：后端改为另走一次 `COUNT(*)`，
+   前端那条「本页满页也算还有下一页」的兜底同步删掉。
 2. **`api/auth.ts` 缺一个 `resetPassword()`**：改密码那一处页面直接用了 `client.request()`
    （`POST` + `query`），红线是不许页面自己往 `api/` 加函数。后续补上正式函数再把这一处换过去。
 3. **四张页面都没有真账号跑过一遍**：e2e 全程打桩（不写死凭据），
@@ -1755,3 +1754,31 @@ U 回顶部 · Q 返回 · P / ESC 菜单`。顺带把关于页底条里那句�
   是一处独立的后端小修。**待维护者点头再动**（本轮是前端轮次）。
 - 如果暂时不想动后端，还有一条纯前端选项：把「共 N 条」改成「本页 N 条」——
   话是真的，但信息量也少；两害相权，推荐修后端。
+
+### 25.6 后端 `total` 已修（2026-09-29 晚，用户点了头）
+
+**改动（后端两处 + 前端一处 + 测试三份）**
+
+| 文件 | 改动 |
+|---|---|
+| `backend/app/config_db/manager.py` | 新增 `count_site_config_audit_logs()`：同表 `SELECT COUNT(*)`，不接过滤条件（查询接口本来也只支持 limit / offset） |
+| `backend/app/routers/site_config.py` | `total = config_db_manager.count_site_config_audit_logs()`，替掉 `len(logs)`；docstring 写明 `total` 的口径 |
+| `icespark/src/views/AdminAuditView.vue` | 删掉当初为绕开这个 bug 加的兜底 `\|\| logs.value.length >= PAGE_SIZE`，`hasNext` 回到契约写法 `page < pageCount` |
+| `backend/tests/test_config_db.py` | 新增 `TestSiteConfigAuditLog`：12 条 / 每页 10 条时「第一页 10 条、total 12」、空表 0 |
+| `backend/tests/test_site_config_audit.py` | 新增（路由级）：自搭 ASGI 客户端 + 覆盖超管依赖，直接断言接口响应的 `total` 与 `logs` 长度 |
+| `icespark/e2e/admin-audit.spec.ts` | 新增「总数正好是每页条数的整数倍时下一页是灰的」 |
+
+**为什么删兜底**：兜底与修好的后端**互相冲突**。记录正好是每页条数的整数倍（如 10 条、每页 10）
+时，`total` 说只有 1 页，而兜底看到「本页满页」仍判定还有下一页 —— 点进去是一张空页。
+这就是所谓「临时补丁会变成下一个 bug」。
+
+**两处新测试都验过「能红」**：把路由那一行改回 `len(logs)` → 路由测试红；
+把兜底加回视图 → 新 e2e 红。不这么试一遍，就等于没测。
+
+**没动的**：`GET /api/admin/audit-logs`（配置库超管审计）返回的键是 `count`，
+语义含糊但**现有消费方都当本页条数用**，不在这次讨论范围内，故不顺手改 —— 要改另开一轮。
+
+**为何不重启 8002**：跑着的那个 uvicorn 没带 `--reload`，代码要重启才生效。
+本轮只改代码与测试、不擅自重启用户在跑的服务；下次重启后审计页的「共 N 条」即为真值
+（真后端目前 3 条，重启前后显示都是 `共 3 条 第 1 / 1 页`，要看差别得先攒够 11 条记录）。
+

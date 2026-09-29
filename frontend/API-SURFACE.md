@@ -230,7 +230,7 @@ URL 规则：`http(s)://` 绝对链接，或 `/` 开头的站内路径（可指�
 | GET | `/api/site-config` | 公开 | 前台读取后台保存值，未保存返回 `{}` |
 | GET | `/api/admin/site-config` | 登录 + 业务库超管 | 读取当前保存值 |
 | PUT | `/api/admin/site-config` | 登录 + 业务库超管 | 保存整份配置 |
-| GET | `/api/admin/site-config/audit-logs` | 登录 + 业务库超管 | 审计日志 |
+| GET | `/api/admin/site-config/audit-logs` | 登录 + 业务库超管 | 审计日志，`{ logs, total }`；`total` 是**总条数**（另走一次 COUNT），不是本页 `logs` 的长度 |
 
 **优先级**：内置默认（`src/config/copywriting.json`）< `public/site.config.json` < 后台配置（配置库 `system_configs`，key=`site_config`）。
 
