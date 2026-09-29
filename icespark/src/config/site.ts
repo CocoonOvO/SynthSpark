@@ -158,3 +158,40 @@ export function footerLineText(config: SiteConfig): string {
     .map((segment) => segment.text)
     .join(' · ')
 }
+
+/** 归一化站内路径：忽略结尾多余的 `/`（`/posts/` 与 `/posts` 视为同一项） */
+function normalizePath(path: string): string {
+  const trimmed = path.trim().replace(/\/+$/, '')
+  return trimmed === '' ? '/' : trimmed
+}
+
+/**
+ * 标签栏的中文标签（硬要求 2 里「导航」那一项）。
+ *
+ * 口径（用户已确认，架构 §18.2）：
+ * - icespark 的标签栏是**固定四项**（主页 / 文章 / 关联 / 关于），
+ *   `navbar.navItems` 只提供这四项的**文字**，按 `path` 对齐；
+ * - 管理员改 `label` 生效（这是导航可配置的意义）；
+ * - 配置里**多出来**的项（icespark 没有对应页面）忽略 —— 不能凭空多出一个标签；
+ * - **少了**哪一项就用兜底标签（内置默认的中文名），不留空标签。
+ *
+ * `tabs` 由调用方传入（`scene/tabs.ts` 的 TABS）：路径与路由的对应关系属于场景层，
+ * 配置层不该再抄一份路由表。
+ */
+export function tabLabels(
+  config: SiteConfig,
+  tabs: readonly { path: string; label: string }[],
+): string[] {
+  const byPath = new Map<string, string>()
+  for (const item of config.navbar.navItems) {
+    if (item && typeof item.path === 'string' && typeof item.label === 'string') {
+      byPath.set(normalizePath(item.path), item.label)
+    }
+  }
+
+  return tabs.map((tab, index) => {
+    const fromConfig = byPath.get(normalizePath(tab.path))
+    // 配置里给了空串也算「没给」：标签栏上不能出现一个字都没有的页签
+    return fromConfig && fromConfig.trim() !== '' ? fromConfig : (tabs[index]?.label ?? '')
+  })
+}

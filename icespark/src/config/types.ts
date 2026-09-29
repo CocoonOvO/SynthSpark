@@ -61,21 +61,52 @@ export interface FooterConfig {
   links: FooterLinkGroup[]
 }
 
-/** 首页文案与统计标签 */
+/**
+ * 首页文案。
+ *
+ * 字段分两类（映射表见架构 §18.2，用户已确认口径）：
+ * - icespark 首页**真的会渲染**的：`title`（英雄区大字）· `desc`（英雄区那句副文）·
+ *   `stats.*`（统计条三个标签）· `articles.*` · `groups.title` · `tags.title` · `allCard.*`；
+ * - 旧前端首页的结构（徽标 / 两个按钮）在 icespark 里**没有对应元素**，
+ *   字段保留只是为了让两个前端共用同一份后台配置，icespark 渲染时忽略。
+ */
 export interface HomeConfig {
+  /** 旧前端首页徽标（icespark 首页无此结构，保留字段，不渲染） */
   badge: string
+  /** 英雄区大字（样机是 `SYNTHSPARK`） */
   title: string
+  /** 英雄区副文（那两句话） */
   desc: string
+  /** 旧前端首页主按钮（icespark 首页无此结构，保留字段，不渲染） */
   primaryBtn: string
+  /** 旧前端首页次按钮（icespark 首页无此结构，保留字段，不渲染） */
   secondaryBtn: string
   stats: {
+    /** 作者数标签（对应 `stats.agent_count`） */
     creators: string
+    /** 文章数标签（对应 `stats.post_count`） */
     articles: string
+    /** 总浏览标签（对应 `stats.total_views`） */
     reads: string
   }
   articles: {
+    /** 「最新文章」段标题 */
     title: string
+    /** 「查看全部」那个按钮 */
     viewAll: string
+  }
+  /** 「分组」段标题（新增：样机这一段有中文标题） */
+  groups: {
+    title: string
+  }
+  /** 「标签」段标题（新增） */
+  tags: {
+    title: string
+  }
+  /** 「全部文章」大卡片（新增：段内最后一张卡，进文章列表） */
+  allCard: {
+    title: string
+    hint: string
   }
 }
 
@@ -85,11 +116,32 @@ export interface AboutTechCategory {
   items: string[]
 }
 
-/** 关于页文案 */
+/** 关于页「要点」一行（`键 ─ 值`，样机的 facts 块） */
+export interface AboutFact {
+  key: string
+  value: string
+}
+
+/**
+ * 关于页文案。
+ *
+ * 与首页同一套口径（架构 §18.2）：
+ * - icespark 关于页渲染 `facts`（要点块）与 `body`（正文 markdown）；
+ * - `badge` / `title` / `desc` / `techStack` 是旧前端关于页的结构，icespark 没有这些元素，
+ *   字段保留以便共用同一份后台配置。
+ */
 export interface AboutConfig {
+  /** 旧前端关于页徽标（icespark 无此结构，保留字段） */
   badge: string
+  /** 旧前端关于页标题（icespark 无此结构，保留字段） */
   title: string
+  /** 旧前端关于页描述（icespark 无此结构，保留字段） */
   desc: string
+  /** 要点块：键 ─ 值 一行一条（新增） */
+  facts: AboutFact[]
+  /** 正文 markdown（新增：关于页正文同样走 markdown 渲染器） */
+  body: string
+  /** 旧前端关于页技术栈分组（icespark 无此结构，保留字段） */
   techStack: {
     subtitle: string
     categories: AboutTechCategory[]

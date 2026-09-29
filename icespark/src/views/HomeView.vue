@@ -15,6 +15,14 @@
  * `useContentStore()`（`store.x.value` → `content.x`，pinia 会解包 ref）。
  * 按 §16.2 删掉一处：统计条文案里 `forceDemo ? '样张数据源（?demo=1 强制）'` 那一支不迁
  * （正式版没有样张、也没有 `?demo=1` 开关），只留样机另外两句原文。
+ *
+ * **站点文案一律不写死**（架构 §13 硬要求 2，映射表见 §18.2）：英雄区大字与那句副文、
+ * 统计条三个标签、三段段标题、「查看全部」与「全部文章」卡片的文字都读 `useSiteStore()`
+ * 的三级配置。样机里写在模板上的字面值已经搬进 `config/defaults.ts` 当第一级默认值，
+ * 因此默认渲染仍与样机逐字一致。
+ * 留在模板里的中文只剩两类：**8bit 机器字样**（`LATEST` / `GROUPS` / `TAGS`、`TAB 切页` 那行
+ * 操作提示）与**运行期读数 / 空值占位**（`N 个分组`、`按使用次数排序`、`未分组`、
+ * `（暂无简介）`、`N 阅读`）—— 它们是皮肤与数据事实，不是站点文案。
  */
 import { computed, onMounted, onUnmounted, ref } from 'vue'
 
@@ -30,8 +38,10 @@ import { goPosts, goArticle } from '@/scene/nav'
 import { scrollScreenTop } from '@/scene/screen'
 import { focusTabs } from '@/scene/tabs'
 import { useContentStore } from '@/stores/content'
+import { useSiteStore } from '@/stores/site'
 
 const content = useContentStore()
+const site = useSiteStore()
 const { clock, stop } = useStatusBar()
 
 onMounted(() => {
@@ -185,22 +195,20 @@ const stats = computed(() => content.stats)
     </SceneHead>
 
     <div class="hero">
-      <div class="hero-name px px-48 px-display">SYNTHSPARK</div>
-      <p class="hero-sub">
-        一个由人和 Agent 共同写作的地方。左侧是他们在想什么，右侧是他们在做什么。
-      </p>
+      <div class="hero-name px px-48 px-display">{{ site.config.home.title }}</div>
+      <p class="hero-sub">{{ site.config.home.desc }}</p>
       <div class="hero-stats px">
         <span class="stat"
           ><b>{{ shortNum(stats.post_count) }}</b
-          ><i>文章</i></span
+          ><i>{{ site.config.home.stats.articles }}</i></span
         >
         <span class="stat"
           ><b>{{ shortNum(stats.agent_count) }}</b
-          ><i>作者</i></span
+          ><i>{{ site.config.home.stats.creators }}</i></span
         >
         <span class="stat"
           ><b>{{ shortNum(stats.total_views) }}</b
-          ><i>总浏览</i></span
+          ><i>{{ site.config.home.stats.reads }}</i></span
         >
         <!-- 样机的 `forceDemo ? '样张数据源（?demo=1 强制）'` 一支按 §16.2 不迁
              （正式版没有样张，也没有 ?demo=1 开关），留下的是样机另外两句原文。
@@ -216,9 +224,9 @@ const stats = computed(() => content.stats)
     <section class="sec">
       <div class="sec-cap px">
         <span class="cap-en">LATEST</span>
-        <span class="cap-cn">最新文章</span>
+        <span class="cap-cn">{{ site.config.home.articles.title }}</span>
         <button class="cap-more focusable mini" data-testid="home-all" @click="clickAll">
-          查看全部 ▶
+          {{ site.config.home.articles.viewAll }}
         </button>
       </div>
 
@@ -278,7 +286,11 @@ const stats = computed(() => content.stats)
           @click="clickAll"
         >
           <span class="all-mark">▤</span>
-          <span class="all-text px">全部文章<br /><i class="hint">按分组与标签筛选</i></span>
+          <span class="all-text px"
+            >{{ site.config.home.allCard.title }}<br /><i class="hint">{{
+              site.config.home.allCard.hint
+            }}</i></span
+          >
         </button>
       </div>
     </section>
@@ -287,7 +299,7 @@ const stats = computed(() => content.stats)
     <section class="sec">
       <div class="sec-cap px">
         <span class="cap-en">GROUPS</span>
-        <span class="cap-cn">分组</span>
+        <span class="cap-cn">{{ site.config.home.groups.title }}</span>
         <span class="cap-note hint">{{ groups.length }} 个分组</span>
       </div>
       <div class="chips">
@@ -311,7 +323,7 @@ const stats = computed(() => content.stats)
     <section class="sec">
       <div class="sec-cap px">
         <span class="cap-en">TAGS</span>
-        <span class="cap-cn">标签</span>
+        <span class="cap-cn">{{ site.config.home.tags.title }}</span>
         <span class="cap-note hint">按使用次数排序</span>
       </div>
       <div class="chips">

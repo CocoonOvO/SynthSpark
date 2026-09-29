@@ -1121,7 +1121,7 @@ store 形状、组件 props、改写规则）都以本节为准；与本节冲�
    现在的 `NotFoundView` 是 P0 的占位皮肤。P6 写作（`/write` + Milkdown）单列一轮。
 2. **站点配置接线口径已定**：先把 `config/defaults.ts` 里的首页 / 关于 / 导航文案改成**样机文案**，
    再把这些位置改成读三级配置 —— 默认渲染与样机逐字一致，同时管理员可覆盖。
-   字段映射（哪些中文算"站点文案"、哪些算"机器字样/皮肤"）待用户确认后写进本章。
+   字段映射（哪些中文算"站点文案"、哪些算"机器字样/皮肤"）**已确认并落地，见 §18**。
 3. **隐藏 `h1` 保留**（见 17.2 第 6 条）；**音效询问默认项保持现状**（见 17.7 的 D4）。
 4. 配色 A/B 仍未定稿（`design/README.md` §8），本轮不动。
 5. highlight.js（代码着色）需要先给 DOMPurify 白名单加 `span`；字体子集化仍在 P7。
@@ -1162,3 +1162,69 @@ store 形状、组件 props、改写规则）都以本节为准；与本节冲�
 所以焦点底色在按下后 160ms 内是**离散中间值**（例如 `rgb(224,241,250)`），
 要等 700ms 左右才是稳态 `rgb(214,236,248)`。比对截图/取样必须等过渡走完，
 否则会把中间态当成色差（这轮踩过一次）。
+
+---
+
+## 18. P3 尾巴 A：站点配置接线（新增）
+
+§17.5 第 2 条留的口径这一轮做完了：内置默认文案改成样机文案，首页 / 关于 / 标签栏
+改读三级配置；**默认渲染仍与样机逐字一致，管理员可整段覆盖**。
+
+### 18.1 落地清单
+
+| 位置 | 改了什么 |
+|------|----------|
+| `src/config/types.ts` | 新增 `home.groups.title` · `home.tags.title` · `home.allCard.{title,hint}` · `about.facts[{key,value}]` · `about.body`（markdown）；旧前端首页 / 关于页的字段（`badge` / `primaryBtn` / `secondaryBtn` / `techStack`）**保留**并注明「icespark 无此结构，渲染时忽略」 |
+| `src/config/defaults.ts` | 首页 / 关于 / 导航文案改成样机原文；关于页正文（1513 字符）搬成常量 `ABOUT_BODY` |
+| `src/config/site.ts` | 新增纯函数 `tabLabels(config, tabs)`：按 `path` 对齐取标签，多的项忽略、缺的项回退兜底 |
+| `src/scene/tabs.ts` | `TabDef` 增 `path`（导航对齐用）；`label` 降级为「兜底标签」 |
+| `src/machine/TabBar.vue` | 页签文字改读 `useSiteStore()`；英文小字（HOME / POSTS / …）仍是皮肤 |
+| `src/views/HomeView.vue` | 英雄区大字与副文、统计条三个标签、三段段标题、「查看全部」「全部文章」卡片全部改读配置 |
+| `src/views/AboutView.vue` | `SECTIONS` / `MD` 两个常量删掉，改读 `about.facts` / `about.body` |
+| `public/site.config.example.json` | 同步新增字段与样机文案（模板是第二级覆盖，必须与第一级一致，见 18.3 的门） |
+| `e2e/site-config.spec.ts`（新） | 两条用例：**运行期取最高优先级覆盖层**，再核对渲染结果 —— 不去断言某一串具体的字 |
+
+**顺带处理的一件事（值得记下来）**：后台配置库里的 `site_config` 是 P1 期间存进去的
+**旧文案整份配置**（内容与旧前端 `copywriting.json` 的内置默认逐字相同）。它是三级里
+优先级最高的一层，于是接完线之后页面显示的还是旧文案 —— 这**不是接线没生效，正是三级合并
+在正确工作**。已把该行更新为样机文案（旧值备份在 `/tmp/backend-site-config.before.json`），
+现在「内置默认 = 本地文件模板 = 后台配置」三层同文，渲染与样机逐字一致。
+顺手验证了改后台配置 → 刷新页面即生效（改 `home.title` / 导航标签 / `about.facts[0].key` 各试一次）。
+
+### 18.2 字段映射表（用户已确认口径）
+
+分三类，判据只有一条：**管理员换了它、页面会不会跟着变**。
+
+| 类 | 位置 | 字段 |
+|----|------|------|
+| 站点文案（走三级配置） | 标签栏四项文字 | `navbar.navItems[].label`（按 `path` 对齐；**增删项无效**，标签栏永远是固定四项） |
+| | 首页英雄区大字 | `home.title`（样机：`SYNTHSPARK`） |
+| | 首页英雄区副文 | `home.desc` |
+| | 统计条三个标签 | `home.stats.articles` · `home.stats.creators` · `home.stats.reads` |
+| | 「最新文章」段标题 / 查看全部按钮 | `home.articles.title` · `home.articles.viewAll` |
+| | 「分组」/「标签」段标题 | `home.groups.title` · `home.tags.title` |
+| | 「全部文章」大卡片 | `home.allCard.title` · `home.allCard.hint` |
+| | 关于页要点块 / 正文 | `about.facts` · `about.body` |
+| | 底栏站点小字 | `footer.copyright` · `footer.slogan` · `site.icp`（P1 就接了） |
+| 机器字样 · 皮肤（硬编码，不进配置） | 8bit 外壳上的英文与代号 | `LATEST` / `GROUPS` / `TAGS`、页签英文小字 `HOME` / `POSTS` / `LINKS` / `ABOUT`、`SYNTHSPARK BIOS`、软键名、`SceneHead` 的「主页 · HOME」、键盘操作提示行 |
+| 运行期读数 · 空值占位（硬编码） | 数字与占位词 | `N 个分组`、`按使用次数排序`、`未分组`、`（暂无简介）`、`N 阅读`、`● LIVE / ○ DEMO`、`接口 /api 实时数据` |
+
+后两类的道理：前者是**外壳的身份**（换成中文或让管理员改，8bit 机器就不像机器了）；
+后者是**数据事实**（数字来自接口，占位词属于排版兜底），都不是「站点文案」。
+
+保留但 icespark 不渲染的字段（`home.badge` / `home.primaryBtn` / `home.secondaryBtn` /
+`about.badge` / `about.title` / `about.desc` / `about.techStack`）只为一件事：
+两个前端共用同一份后台配置，后台不会因为 icespark 而少显示几个输入框。
+
+### 18.3 保真与门
+
+- **逐字保真**：`config/defaults.ts` 的 `ABOUT_BODY` 与样机 `scenes/AboutScene.vue` 的 `MD`
+  在解开模板字面量转义后**字节相同**（1513 字符）；首页那几个位置逐个比过，同文。
+- **单测**（`src/config/__tests__/site.spec.ts`，17 条）：`tabLabels` 的四种情形（按 path 取值 /
+  改名生效 / 多出的项忽略 / 结尾斜杠与空标签兜底）、内置默认文案与样机一致、以及
+  **模板文件不改变可见内容**（拿 `public/site.config.example.json` 跑一遍合并，与内置默认逐项相等）
+  —— 这一条守的是「改了 defaults 却忘了改模板」那个只有本机能撞上的坑。
+- **e2e**（`e2e/site-config.spec.ts`，2 条）：从运行期取最高优先级覆盖层，核对首页 / 标签栏 /
+  关于页渲染出来的字；取不到覆盖层（全新克隆）就 `test.skip` —— 那种情况由单测钉住。
+- 本轮门：`npm run check` 通过（独立性门 66 文件 · 配色门 · 单测 · oxlint 0/0 · eslint ·
+  契约门 63 paths / 89 ops / 50 schemas · vue-tsc）。

@@ -21,7 +21,7 @@
  * 键盘监听器只有外壳 `@/input` 的 mountInput 一个，这里只用 onPad 注册处理器。
  * （下方 window 上的监听是 `pointermove`，属鼠标路径，不在键盘监听器之列。）
  */
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref } from 'vue'
 
 import { onPad } from '@/input/pad'
 import { activeScope } from '@/input/scopes'
@@ -36,6 +36,17 @@ import {
   blurTabs,
   moveTabCursor,
 } from '@/scene/tabs'
+import { tabLabels } from '@/config/site'
+import { useSiteStore } from '@/stores/site'
+
+const site = useSiteStore()
+
+/**
+ * 页签文字走三级配置（硬要求 2）：标签栏仍是**固定四项**，
+ * 配置只决定这四个标签的中文名 —— 映射规则见 `config/site.ts` 的 `tabLabels`。
+ * 英文小字（HOME / POSTS / …）是外壳的机器字样，属皮肤，不进配置。
+ */
+const labels = computed(() => tabLabels(site.config, TABS))
 
 const navEl = ref<HTMLElement | null>(null)
 
@@ -121,7 +132,7 @@ onUnmounted(() => {
       @click="clickTab(i)"
     >
       <span class="tab-en">{{ t.en }}</span>
-      <span class="tab-cn">{{ t.label }}</span>
+      <span class="tab-cn">{{ labels[i] }}</span>
     </button>
 
     <span class="tabbar-tail">

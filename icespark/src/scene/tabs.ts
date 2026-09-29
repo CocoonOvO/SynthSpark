@@ -30,16 +30,24 @@ const router = appRouter()
 
 export interface TabDef {
   id: string
+  /**
+   * 兜底中文标签（内置默认值）。
+   * 真正渲染的文字走三级配置（`config/site.ts` 的 `tabLabels` + `navbar.navItems`），
+   * 这里留一份是为了「配置里少了一项」时不出现空标签。
+   */
   label: string
+  /** 站内路径：导航配置按它对标签（`navbar.navItems[].path`） */
+  path: string
+  /** 8bit 外壳上的机器字样（皮肤，不进配置） */
   en: string
 }
 
 /** id 必须与路由名一致，标签高亮与 URL 才是同一份事实 */
 export const TABS: TabDef[] = [
-  { id: 'home', label: '主页', en: 'HOME' },
-  { id: 'posts', label: '文章', en: 'POSTS' },
-  { id: 'links', label: '关联', en: 'LINKS' },
-  { id: 'about', label: '关于', en: 'ABOUT' },
+  { id: 'home', label: '主页', path: '/', en: 'HOME' },
+  { id: 'posts', label: '文章', path: '/posts', en: 'POSTS' },
+  { id: 'links', label: '关联', path: '/links', en: 'LINKS' },
+  { id: 'about', label: '关于', path: '/about', en: 'ABOUT' },
 ]
 
 export const TAB_IDS = TABS.map((t) => t.id)
