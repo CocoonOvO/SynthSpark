@@ -43,6 +43,16 @@ export const routes: RouteRecordRaw[] = [
     meta: { scene: 'about', title: '关于' },
   },
   {
+    // 用户档案（P4）：旧前端 `frontend/src/views/user/UserProfileView.vue` 的那一页。
+    // 用户名走**路径参数**（`/user/:username`），因此深链接可以直接打开某个用户的主页。
+    // 路由名 / 场景 id / 标签页 id 三处同名（`user`），但它**不是**标签页
+    // （`scene/tabs.ts` 的 TABS 里没有它）：这一页没有标签栏，`activeTab` 为空是正确行为。
+    path: '/user/:username',
+    name: 'user',
+    component: () => import('@/views/UserProfileView.vue'),
+    meta: { scene: 'user', title: '用户主页' },
+  },
+  {
     // 兜底：must be last —— 404 必须是路由表最后一条
     path: '/:pathMatch(.*)*',
     name: 'not-found',

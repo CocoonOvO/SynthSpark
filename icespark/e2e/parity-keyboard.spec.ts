@@ -65,8 +65,10 @@ test('纯键盘：音效询问（左右选择 + 回车确认）与外壳软键�
   // 样机的这条口径写在同一处：`onTabScene` 为假时 `tabNext` 直接 return false。
   await page.goto('/no/such/path')
   await booted(page)
+  // 页内可聚焦项有四个（返回首页 / 文章列表 / 个人中心 / 返回上一页），
+  // 之后才轮到外壳的两个软键 —— 上界给宽一点，别把「页内多几个链接」当成回归
   let reached = false
-  for (let i = 0; i < 5 && !reached; i += 1) {
+  for (let i = 0; i < 10 && !reached; i += 1) {
     await page.keyboard.press('Tab')
     reached = await page.evaluate(
       () => document.activeElement?.getAttribute('data-testid') === 'softkey-sound',
@@ -139,4 +141,54 @@ test('纯键盘：焦点落点真的画出蓝底（懒加载后样式源序反�
   // 它必须压过组件 scoped 的 `background: var(--paper)`：视图是懒加载的，
   // 组件样式永远在 pixel.css 之后注入，平局（同为 (0,2,0)）会判给白底。
   await expect(focused).toHaveCSS('background-color', expected)
+})
+
+test('纯键盘：Tab 进正文后按方向键，键盘不会失效（焦点必须收回外壳内）', async ({ page }) => {
+  // 这是一条**回归门**。曾经的写法是「把原生焦点 `blur()` 掉」，焦点于是落到 `body`；
+  // 而键盘事件只沿**当前焦点的祖先链**冒泡，外壳的监听器挂在 `.app` 上 ——
+  // 焦点一掉出去，整块键盘当场失灵：Tab 进正文链接 → 按方向键 → 之后连 P 都打不开菜单。
+  // 正确做法是收回到外壳根节点（`src/input/index.ts` 的 `focusShellRoot()`）。
+  await installRecorder(page)
+  // 关掉首访的音效询问框：不然第一次按键会先被那个模态吃掉，P 就轮不到外壳
+  await page.addInitScript(() => localStorage.setItem('synthspark-icespark-sound-prompt', '1'))
+  const response = await page.request.get('/api/posts/?limit=1&status=published')
+  const data = response.ok()
+    ? ((await response.json()) as { items?: { id: string; slug?: string | null }[] })
+    : {}
+  const item = data.items?.[0]
+  test.skip(!item, '后端没有已发布文章，跳过（这条要一篇文章才走得通）')
+  const key = item!.slug || item!.id
+
+  await page.goto(`/post/${encodeURIComponent(key)}`)
+  await booted(page)
+  await expect(page.locator('[data-testid="md-body"]')).toBeVisible()
+
+  // Tab 若干次，直到焦点落进正文（页内原生焦点）。
+  // 注意：文章页在 Tab 时会先把原生焦点收回一次（见下），所以「一直按 Tab 往后走」
+  // 这件事在这一页本来就不成立（样机同行为，不在本轮改动范围内）—— 这里只要
+  // 「焦点确实进过正文」这个前置条件，后面验的才是收焦点那一下。
+  let inPage = false
+  for (let i = 0; i < 8 && !inPage; i += 1) {
+    await page.keyboard.press('Tab')
+    inPage = await page.evaluate(() => !!document.activeElement?.closest('.screen-inner'))
+  }
+  expect(inPage).toBe(true)
+
+  // 方向键一动，原生焦点必须被收回外壳内（不是 `body`）
+  await page.keyboard.press('ArrowDown')
+  const owner = await page.evaluate(() => {
+    const el = document.activeElement as HTMLElement | null
+    return { tag: el?.tagName ?? '', inShell: !!el?.closest('.app') }
+  })
+  expect(owner.tag).not.toBe('BODY')
+  expect(owner.inShell).toBe(true)
+
+  // 键盘仍然活着：P 还能呼出菜单
+  await page.keyboard.press('p')
+  await expect(page.locator('[data-testid="pause"]')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
+
+  const log = await readRecorder(page)
+  expect(log.mouse).toEqual([])
 })

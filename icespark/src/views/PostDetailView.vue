@@ -32,6 +32,7 @@
  */
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { useRoute } from 'vue-router'
+import { focusShellRoot } from '@/input'
 import { onPad } from '@/input/pad'
 import { useStatusBar } from '@/scene/clock'
 import { scrollScreenBy, scrollScreenTo } from '@/scene/screen'
@@ -164,7 +165,9 @@ function nativeFocusInside(): boolean {
 
 function dropNativeFocus() {
   if (!nativeFocusInside()) return
-  ;(document.activeElement as HTMLElement).blur()
+  // 收回到外壳根节点，**不是** `blur()` 到 body：焦点掉到 body 后键盘事件不再冒泡到
+  // 外壳的监听器上，整块键盘会失灵（实测：Tab 进正文链接 → 方向键 → 之后 P 打不开菜单）
+  focusShellRoot()
 }
 
 const off = onPad((a) => {

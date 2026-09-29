@@ -13,7 +13,22 @@ import { inputLocked } from './scopes'
  * 并在点到不可聚焦的空白处（焦点会掉回 body）时把焦点拉回来。
  * 少了这两句，键盘用户在按第一下之前得先用鼠标点一下 —— 那就不是「单独用键盘」了。
  */
+/**
+ * 外壳根节点（`mountInput` 挂的那一个）。
+ * 页面把焦点从「Tab 走出来的链接」收回来时必须回到它这里，**不能 `blur()` 到 body** ——
+ * 键盘事件只沿当前焦点的祖先链冒泡，焦点掉到 body 之后外壳的 `keydown` 监听器就再也收不到按键，
+ * 整块键盘当场失灵（实测：文章页 Tab 到正文链接 → 按方向键 → 之后按 P 菜单都打不开）。
+ */
+let shellRoot: HTMLElement | null = null
+
+/** 把焦点收回外壳根节点（页面自定义焦点模型接管时用，见上面的注释） */
+export function focusShellRoot(): void {
+  shellRoot?.focus({ preventScroll: true })
+}
+
 export function mountInput(root: HTMLElement): () => void {
+  shellRoot = root
+
   /** 可聚焦元素选择器：点在它们身上时不动焦点，交给浏览器 */
   const FOCUSABLE_SELECTOR = 'a, button, input, textarea, select, [tabindex]'
 

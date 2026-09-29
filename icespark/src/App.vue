@@ -108,7 +108,7 @@ const viewKey = computed(() => `${sceneId.value}:${route.params.key ?? ''}`)
  *
  * 文章页与 404 由页面自己给出 `h1`，这里让位 —— 一页两个一级标题没有意义。
  */
-const SELF_TITLED_SCENES = ['article', 'error']
+const SELF_TITLED_SCENES = ['article', 'error', 'user']
 
 const shellHeading = computed(() => {
   if (SELF_TITLED_SCENES.includes(sceneId.value)) return ''

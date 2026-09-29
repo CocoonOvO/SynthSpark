@@ -22,6 +22,26 @@ export async function fetchPosts(limit = 24): Promise<components['schemas']['Pos
 }
 
 /**
+ * 某个作者的已发布文章（P4 用户档案页新增，**不改动上面两个既有函数**）。
+ *
+ * 与 `fetchPosts` 是同一个端点（`GET /api/posts/`），只是多带一个 `author_id` 过滤：
+ * 契约里 `list_posts_api_posts__get` 本来就有 `author_id` 参数，不需要新接口。
+ * 走这个函数而不是 `stores/content` 的 `loadPosts()`：内容 store 的 `posts` 是
+ * 首页 / 列表页共享的唯一一份列表，拿它取某个作者的文章会把整站列表改掉。
+ *
+ * `limit` 默认 100（与旧前端一致）：档案页的三项统计要按返回的这一批现算，
+ * 所以一次尽量多拿；文章数用后端返回的 `total`，不是 `items.length`。
+ */
+export async function fetchPostsByAuthor(
+  authorId: string,
+  limit = 100,
+): Promise<components['schemas']['PostListResponse']> {
+  return getJson<components['schemas']['PostListResponse']>('/posts/', {
+    query: { author_id: authorId, status: 'published', limit },
+  })
+}
+
+/**
  * id 的形状判定。真实库的 id 是 UUID，slug 是中文可读串，因此按形状先选对接口：
  * 正常路径只发一次请求（不先打一个注定 404 的探测请求 —— 那会在控制台留红字）。
  * 猜错时再退到另一个接口，仍然鲁棒。

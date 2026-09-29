@@ -98,11 +98,15 @@ test('底栏三段顺序：场景指示 / 软键 / 数据源 / 站点小字', as
   expect(deck.footerText).toContain('©')
 })
 
-test('场景指示：6 个场景，当前场景显示 label，其余是点', async ({ page }) => {
+/**
+ * 场景指示的格子数 = `scene/scenes.ts` 的场景表条数（样机口径：一格一个场景）。
+ * 场景表随页面增加而变长：P3 时 6 格，P4 加用户档案页后 7 格 —— 数字要跟着表走。
+ */
+test('场景指示：7 个场景，当前场景显示 label，其余是点', async ({ page }) => {
   await page.goto('/')
   await booted(page)
 
-  await expect(page.locator('.deck-scene b')).toHaveCount(6)
+  await expect(page.locator('.deck-scene b')).toHaveCount(7)
   await expect(page.locator('.app')).toHaveAttribute('data-scene', 'home')
 
   const strip = await page.evaluate(() =>

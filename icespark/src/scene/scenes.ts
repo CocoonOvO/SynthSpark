@@ -24,6 +24,9 @@ export const SCENES: SceneDef[] = [
   { id: 'links', label: 'LINKS', hint: '关联链接' },
   { id: 'about', label: 'ABOUT', hint: '关于' },
   { id: 'article', label: 'ARTICLE', hint: '文章详情' },
+  // P4 用户档案页（`/user/:username`）。标签 USER 是 8bit 机器字样（皮肤），
+  // 底栏场景指示点亮的那一格显示的就是它；hint 顺带是外壳隐藏 h1 的兜底文案。
+  { id: 'user', label: 'USER', hint: '用户主页' },
 ]
 
 /** 取场景定义；不在表里（例如 404 的 `error`）返回 null —— 底栏不显示高亮，不编一个新场景 */

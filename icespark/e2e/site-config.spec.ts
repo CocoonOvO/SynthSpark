@@ -57,7 +57,10 @@ test('首页与标签栏：显示的字等于最高优先级覆盖层给的字',
   await booted(page)
 
   const layer = await topLayer(page)
-  test.skip(layer === null, '本机没有任何覆盖层（后台与本地文件都没配）')
+  if (layer === null) {
+    test.skip(true, '本机没有任何覆盖层（后台与本地文件都没配）')
+    return
+  }
 
   // 英雄区大字与副文
   const title = pick(layer.data, 'home.title')
@@ -129,7 +132,10 @@ test('关于页：要点块与正文都等于最高优先级覆盖层给的内�
   await booted(page)
 
   const layer = await topLayer(page)
-  test.skip(layer === null, '本机没有任何覆盖层（后台与本地文件都没配）')
+  if (layer === null) {
+    test.skip(true, '本机没有任何覆盖层（后台与本地文件都没配）')
+    return
+  }
 
   const facts = pick(layer.data, 'about.facts')
   if (Array.isArray(facts) && facts.length > 0) {
