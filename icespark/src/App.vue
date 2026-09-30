@@ -514,6 +514,18 @@ onUnmounted(() => {
   min-height: 0;
   display: flex;
   flex-direction: column;
+  /* 层级（**有意偏离样机**，§28.12）：样机这一份没有这一行，于是屏幕里的弹窗盖不住底栏软键。
+     原因是两件事凑在一起 ——
+       ① `.screen` 带 `isolation: isolate`（CRT 三层质感要它，见 crt.css），它因此是个**层叠上下文**，
+          遮罩写在里面的 `z-index: 200/220/240` 全被关在这层里，跟外面的东西比不了大小；
+       ② 底栏软键带 `.focusable` 的 `position: relative`（z-index auto），
+          与 `.screen`（也是 z-index auto）同属「定位元素」那一层，**树序在后的赢** ——
+          底栏在 `.screen` 之后，实测 `elementFromPoint` 命中的就是软键（看得见、点得到）。
+     给屏幕一个正数 z-index：`.screen` 落到「正 z-index」那一层，整块画面（含所有模态）
+     压在底栏之上。底栏是外框下方的机身按键，本就不该压住屏幕上的弹窗
+     （§28.10 记的口径就是「遮罩盖住 .deck」，实现一直没做到）。底栏与屏幕不重叠，
+     没有弹窗时外观与点击行为零影响。 */
+  z-index: 1;
   box-shadow:
     inset 1px 1px 0 0 var(--paper),
     inset -2px -2px 0 0 var(--blue-300);

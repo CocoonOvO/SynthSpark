@@ -39,7 +39,7 @@
  * 外壳的 ESC 分支见到它直接让位（`App.vue` 的 `inModal`），页面再不吃这个键，ESC 就成了
  * **死键**。§28.4 里那句「ESC 不消费」指的是基础态，页面级模态是既有先例的例外，已在 §28.9 记明。
  */
-import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import { ApiError } from '@/api/client'
@@ -709,6 +709,8 @@ async function runCreateGroup(): Promise<void> {
 
 const titleEl = ref<HTMLInputElement | null>(null)
 const editorEl = ref<InstanceType<typeof MarkdownSourceEditor> | null>(null)
+/** 窄屏预览面板的滚动容器（`tabindex="0"`，开面板时把原生焦点交给它，方向键才滚它） */
+const previewBody = ref<HTMLElement | null>(null)
 
 function openPanel(which: Panel): void {
   playSfx('confirm')
@@ -717,12 +719,22 @@ function openPanel(which: Panel): void {
   if (which === 'docs') docsFocus.set(0, true)
   if (which === 'meta') metaFocus.set(0, true)
   if (which === 'meta') void loadTags()
-  // 面板是自绘焦点的（不是原生焦点），进来先把焦点交给外壳
+  if (which === 'preview') {
+    // 预览面板的焦点**不**收回外壳：它是只读的滚动容器，原生焦点落在它身上，
+    // 方向键 / PageUp / PageDown / 空格才走浏览器自己的滚动（见 `panelPad` 那一支）
+    void nextTick(() => previewBody.value?.focus())
+    return
+  }
+  // 另两个面板是自绘焦点的（不是原生焦点），进来先把焦点交给外壳
   dropNativeFocus()
 }
 
 function closePanel(): void {
+  if (!panel.value) return
   panel.value = null
+  // 焦点可能正落在预览体上：面板一卸载那个节点就没了，焦点会掉到 `body` ——
+  // 键盘事件只沿当前焦点的祖先链冒泡，掉到 body 之后整块键盘当场失灵（§21 同一条坑）
+  focusShellRoot()
 }
 
 /** 同一个键再按一下 = 关（`N` / `M` / `V`） */
@@ -854,10 +866,11 @@ function panelPad(a: PadAction, which: Panel): boolean {
     closePanel()
     return true
   }
-  // 换到另一个面板：直接切，不要求先关
+  // 换到另一个面板：直接切，不要求先关。
+  // 焦点口径必须跟着走（预览 → 文稿时焦点还停在马上要被卸载的预览体上，
+  // 不收回外壳那一下键盘就掉线了），所以切面板复用 `openPanel` 那一套，不另写一份。
   if (PANEL_KEY[a]) {
-    panel.value = PANEL_KEY[a] as Panel
-    if (panel.value === 'meta') void loadTags()
+    openPanel(PANEL_KEY[a] as Panel)
     return true
   }
 
@@ -869,6 +882,10 @@ function panelPad(a: PadAction, which: Panel): boolean {
   }
 
   if (a === 'up' || a === 'down' || a === 'left' || a === 'right') {
+    // 预览面板：没有可选项，方向键整个交给浏览器。
+    // **先于 `dropNativeFocus()` 返回** —— 开放面板时焦点就在这个滚动容器上（`openPanel`），
+    // 收掉它方向键就没有滚动目标了，正文一长照样滚不动（§28.12）。
+    if (which === 'preview') return false
     dropNativeFocus()
     if (which === 'docs') {
       const next = spatialIndex(docsFocus.index.value, a, 1, docsRingCount.value)
@@ -882,7 +899,7 @@ function panelPad(a: PadAction, which: Panel): boolean {
       metaFocus.set(next)
       return true
     }
-    // 预览面板：没有可选项，方向键交给浏览器滚动（面板体是滚动容器）
+    // 预览在上面已经返回；这里兜底（新增面板时别漏掉焦点口径）
     return false
   }
 
@@ -1308,10 +1325,23 @@ onUnmounted(() => {
           </section>
         </template>
 
-        <!-- ── 预览（窄屏） ── -->
+        <!-- ── 预览（窄屏） ──
+             `inert` 只挂里面那层包装，**不挂滚动容器自己**：inert 元素不参与命中测试，
+             挂在容器上滚轮就再也落不到它身上，正文一长就滚不动（真机实测，见 §28.12）。
+             容器自己 `tabindex="0"`（与审计页那个可滚动原文框同一写法）：开面板时把原生焦点
+             交给它，方向键 / PageUp / PageDown / 空格才走浏览器原生滚动。 -->
         <template v-else>
-          <div class="preview-body is-sheet" inert>
-            <MarkdownBody :source="content" />
+          <div
+            ref="previewBody"
+            class="preview-body is-sheet"
+            tabindex="0"
+            role="group"
+            aria-label="预览正文（只读，可滚动）"
+            data-testid="write-preview-body"
+          >
+            <div class="preview-inert" inert>
+              <MarkdownBody :source="content" />
+            </div>
           </div>
         </template>
       </section>

@@ -604,6 +604,90 @@ test('写作页：窄屏把预览折成 V 面板，断点两侧来回切都跟�
   expect(splitW, '分屏不该比屏幕还宽').toBeLessThanOrEqual(innerW + 1)
 })
 
+/** 够长的正文：窄屏预览面板必须真的滚得动，短正文试不出滚轮/方向键 */
+const LONG_MD = Array.from(
+  { length: 60 },
+  (_, i) => `第 ${i + 1} 段：这是一段用来撑长度的正文。`,
+).join('\n\n')
+
+test('写作页：窄屏预览面板滚得动（滚轮 + 方向键），关掉之后键盘不掉线', async ({ page }) => {
+  await openWrite(page)
+  await page.setViewportSize({ width: 900, height: 720 })
+  await page.fill('[data-testid="write-content"]', LONG_MD)
+  await page.click('[data-testid="write-open-preview"]')
+
+  const body = page.locator('[data-testid="write-preview-body"]')
+  await expect(body).toBeVisible()
+
+  // 焦点必须在滚动容器本身上：方向键滚的是「当前焦点所在的滚动容器」，
+  // 焦点落在里面那层 inert 包装上（或掉在 body 上）就谁也滚不动（§28.12 的真机根因）
+  await expect(body).toBeFocused()
+  const scrollTop = () => body.evaluate((el) => el.scrollTop)
+  expect(await body.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeGreaterThan(200)
+
+  // ── 滚轮：指针落在正文里，遮罩铺满视口也不许吃掉滚轮 ──
+  const box = (await body.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.wheel(0, 240)
+  await expect.poll(scrollTop).toBeGreaterThan(0)
+
+  // ── 方向键：先回顶部，增量只能来自键盘 ──
+  await body.evaluate((el) => {
+    el.scrollTop = 0
+  })
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('ArrowDown')
+  await expect.poll(scrollTop).toBeGreaterThan(0)
+  await expect(body).toBeFocused()
+
+  // ── 切到资料面板：焦点跟着走（预览体马上要被卸载，不收焦点键盘就掉线） ──
+  await page.keyboard.press('m')
+  await expect(page.locator('[data-testid="write-panel-meta"]')).toBeVisible()
+  await expect(page.locator('.app')).toBeFocused()
+
+  // ── 关面板：焦点回外壳，ESC 还能起菜单（键盘真活着的硬证据） ──
+  await page.keyboard.press('Escape')
+  await expect(page.locator('[data-testid="write-panel-meta"]')).toHaveCount(0)
+  await expect(page.locator('.app')).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('[data-testid="pause"]')).toBeVisible()
+})
+
+test('写作页：页内模态盖住外壳底栏，软键不再浮在遮罩之上', async ({ page }) => {
+  await openWrite(page)
+  await page.setViewportSize({ width: 900, height: 720 })
+
+  /** 某个元素中心点上的最上层元素（点的到底是谁，一眼可辨） */
+  const topAt = (testid: string) =>
+    page.evaluate((id) => {
+      const el = document.querySelector(`[data-testid="${id}"]`) as HTMLElement
+      const rect = el.getBoundingClientRect()
+      const top = document.elementFromPoint(rect.x + rect.width / 2, rect.y + rect.height / 2)
+      return top ? top.className || top.tagName : 'NONE'
+    }, testid)
+
+  // ── 没有弹窗：软键照旧在最上层（层级修正对它零影响） ──
+  expect(await topAt('softkey-menu')).toContain('softkey')
+
+  // ── 页内模态（fixed 遮罩铺满视口，含底栏那一条）：软键必须让位 ──
+  await page.click('[data-testid="write-open-preview"]')
+  await expect(page.locator('[data-testid="write-panel-preview"]')).toBeVisible()
+  expect(await topAt('softkey-menu')).toContain('sheet-mask')
+  expect(await topAt('softkey-sound')).toContain('sheet-mask')
+
+  // 真按一下软键所在的位置：点到的是遮罩 —— 关掉面板，音效没被穿透改成 ON，菜单也没弹出
+  const key = (await page.locator('[data-testid="softkey-menu"]').boundingBox())!
+  await page.mouse.click(key.x + key.width / 2, key.y + key.height / 2)
+  await expect(page.locator('[data-testid="write-panel-preview"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="softkey-sound"]')).toHaveText(/OFF/)
+  await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
+
+  // ── 弹窗关掉：软键照旧点得到（点一下真的开菜单） ──
+  expect(await topAt('softkey-menu')).toContain('softkey')
+  await page.click('[data-testid="softkey-menu"]')
+  await expect(page.locator('[data-testid="pause"]')).toBeVisible()
+})
+
 /* ────────────── 标签从已有标签里挑 ────────────── */
 
 test('写作页：标签可以从已有标签里挑（常用在前、打字过滤、已加的不再出现）', async ({ page }) => {
