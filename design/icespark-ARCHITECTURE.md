@@ -2634,6 +2634,8 @@ localStorage 前缀的静态门 + 单测）；③ **真的没门**。第三类�
 | `e2e/shell-settings.spec.ts` | 设置弹窗**恰好 3 行**与负向行（无 `set-signal`/`set-source`）、菜单行列与登录前后差异、**登录失败展示后端 detail 原文**、刷新后登录态（含 `/api/auth/me` 404 时反向登出） |
 | `e2e/terminology.spec.ts` | **术语门**（样机 `gates.mjs` 第 3 节「用户要求第 1 条」）：六个页面的可见文本里都不许出现 18 个游戏术语；外加「减动效下自检照落主页、切页照样能用」 |
 | `e2e/md-and-pixels.spec.ts` | markdown 渲染（标题 / 代码块 / 表格 / 站内链接）+ 设计系统像素事实（屏幕白底、卡片 3px 边框、无封面卡另一套版式、焦点光标 8px 蓝块 `blink-step`、焦点不加粗不加 outline、keybar 常驻、旧左侧竖列不回来） |
+| `e2e/a11y-audit.spec.ts` | 整站 axe 收口（12 条路由 + 3 个外壳模态，放行清单只有 `e2e/a11y-known.ts` 一份）+ `/about` 那条结构性放行的**补偿断言**（见 §33） |
+| `e2e/chip-navigation.spec.ts` | 首页三个芯片区都在；列表栅格方向键按**视觉相邻**走（↓ 到下标 2 而不是 1）；筛选条是单行横滚、焦点芯片滚进视野；已选中芯片被聚焦时底色确实变了；`↑` 顶到标签栏 → `→` 换页签 → `ENTER` 进 `/links` |
 
 **第二条兜底账**：`scripts/check-independence.mjs` 的头注释写着「键名写在常量里再由常量传进去的情况，
 靠 P2 的运行时门（枚举 localStorage）兜底」—— 那道兜底此前**不存在**，本轮由
@@ -2779,7 +2781,7 @@ P7 六项里的「axe 审计」原话只有四个字，落地前先把现状量�
 
 ### 33.4 验收
 
-- `npx playwright test`：**158 passed / 0 failed**（155 → 158：收口门 3 条；22 → 23 个 spec）。
+- `npx playwright test`：**163 passed / 0 failed**（155 → 163：收口门 3 条 + 芯片/栅格导航 5 条；22 → 24 个 spec）。
 - 七处放行清单合并成一份，且**判得更严**：`admin-site` 从「只判 critical」升到节点级清单，
   `user-profile` 从「放过整类对比度」升到节点级 —— 两个都没红出来新问题。
 - `npm run check` **EXIT=0**（八段）。
