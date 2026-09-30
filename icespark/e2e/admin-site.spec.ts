@@ -1,6 +1,8 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
+import { scanViolations } from './a11y-known'
+
 import { booted } from './helpers'
 
 /**
@@ -381,7 +383,8 @@ test('站点设置：h1 唯一、h2 分节不跳级，axe 无新增违规', asyn
   expect(ids).not.toContain('heading-order')
   // 字段是「一排格子」，每个控件都得有名字（这一条是本页自己加的，防止以后越加越瞎）
   expect(ids).not.toContain('label')
-  expect(report.violations.filter((v) => v.impact === 'critical')).toEqual([])
+  // 再按全站唯一那份放行清单做**节点级**判定（原先只判 critical 级，太松）
+  expect(scanViolations(report).violations).toEqual([])
 })
 
 test('站点设置：非法 JSON 给人话提示（带行号）、拦住保存、不发请求', async ({ page }) => {

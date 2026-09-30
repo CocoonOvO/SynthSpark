@@ -1,6 +1,8 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
+import { scanViolations } from './a11y-known'
+
 import { booted } from './helpers'
 
 /**
@@ -192,6 +194,8 @@ test('用户档案：自己出一个 h1（显示名）、文章标题是 h2，�
   const ids = report.violations.map((v) => v.id)
   expect(ids).not.toContain('page-has-heading-one')
   expect(ids).not.toContain('heading-order')
+  // 清单级判定（`e2e/a11y-known.ts` 是唯一一份）：本页不该出现清单外的任何违规
+  expect(scanViolations(report).violations).toEqual([])
 })
 
 test('用户档案：这个人没有已发布文章时给空态', async ({ page }) => {

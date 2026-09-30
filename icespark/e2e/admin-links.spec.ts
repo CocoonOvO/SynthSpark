@@ -1,6 +1,8 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
+import { scanViolations } from './a11y-known'
+
 import { booted } from './helpers'
 
 /**
@@ -484,27 +486,6 @@ test('外链管理：h1 层级正确，axe 无新增违规', async ({ page }) =>
   expect(ids).not.toContain('page-has-heading-one')
   expect(ids).not.toContain('heading-order')
 
-  const known = [
-    '.deck-src',
-    '.is-copyright',
-    '.is-slogan',
-    '.is-icp',
-    '.post-title',
-    '.card-title',
-  ]
-  const violations = report.violations.flatMap((violation) =>
-    violation.nodes
-      .filter(
-        (node) =>
-          !known.some(
-            (selector) =>
-              node.target.join(' ').includes(selector) ||
-              (node.html ?? '').includes(selector.slice(1)),
-          ),
-      )
-      .map(
-        (node) => `[${violation.impact ?? 'unknown'}] ${violation.id} → ${node.target.join(' ')}`,
-      ),
-  )
-  expect(violations).toEqual([])
+  // 放行清单只有一份：`e2e/a11y-known.ts`（文件头写清了三条放行的理由与补偿物）
+  expect(scanViolations(report).violations).toEqual([])
 })

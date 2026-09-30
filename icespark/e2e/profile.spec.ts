@@ -1,6 +1,8 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page, type Route } from '@playwright/test'
 
+import { scanViolations } from './a11y-known'
+
 import { booted } from './helpers'
 
 /**
@@ -128,22 +130,9 @@ function collectErrors(page: Page): string[] {
   return errors
 }
 
-/** 已知放行的对比度节点（底栏小字，与 `a11y.spec.ts` 同一份清单） */
-const KNOWN_CONTRAST = ['.deck-src', '.is-copyright', '.is-slogan', '.is-icp']
-
-/** 扫描并返回「不在已知清单里」的违规（本页不该有卡片标题跳级那类放行项） */
+/** 扫描并返回「不在已知清单里」的违规（清单只有一份：`e2e/a11y-known.ts`，理由见该文件头） */
 async function scan(page: Page): Promise<string[]> {
-  const result = await new AxeBuilder({ page }).analyze()
-  const violations: string[] = []
-  for (const violation of result.violations) {
-    for (const node of violation.nodes) {
-      const target = node.target.join(' ')
-      const known =
-        violation.id === 'color-contrast' && KNOWN_CONTRAST.some((s) => target.includes(s))
-      if (!known) violations.push(`[${violation.impact ?? 'unknown'}] ${violation.id} → ${target}`)
-    }
-  }
-  return violations
+  return scanViolations(await new AxeBuilder({ page }).analyze()).violations
 }
 
 test('登录态深链接 /profile：表单里就是接口给的值，标题 / 分节 / 底栏提示都在', async ({

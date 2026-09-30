@@ -1,6 +1,8 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
+import { scanViolations } from './a11y-known'
+
 import { booted } from './helpers'
 
 /**
@@ -525,19 +527,12 @@ test('写作页：axe 扫描无违规（面板与确认框都要扫）', async (
   await openWrite(page)
 
   /**
-   * 全站已知取舍（`a11y.spec.ts` 的清单，本页不重复判）：外壳底栏那几行小字的对比度。
-   * 这里是外壳的东西，不是写作页自己的 —— 排除口径与 `admin-links.spec.ts` 逐字相同。
+   * 放行清单只有一份：`e2e/a11y-known.ts`（底栏小字对比度 / 样机卡片标题跳级 /
+   * 屏幕自身那条可滚动区域，理由都写在那个文件头）。这里不再抄一份口径。
    */
-  const KNOWN = ['.deck-src', '.is-copyright', '.is-slogan', '.is-icp']
-
   const clean = async () => {
-    const result = await new AxeBuilder({ page }).analyze()
-    const summary = result.violations.flatMap((v) =>
-      v.nodes
-        .filter((n) => !KNOWN.some((s) => n.target.join(' ').includes(s)))
-        .map((n) => `[${v.impact ?? 'unknown'}] ${v.id} → ${n.target.join(' ')}`),
-    )
-    expect(summary).toEqual([])
+    const { violations } = scanViolations(await new AxeBuilder({ page }).analyze())
+    expect(violations).toEqual([])
   }
 
   await clean()

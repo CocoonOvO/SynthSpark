@@ -2727,3 +2727,59 @@ localStorage 前缀的静态门 + 单测）；③ **真的没门**。第三类�
   点「清除」后 `activeElement = app`、`PgDn` 翻到第 2 页；文章页 TAB 序列按 DOM 顺序走。
 - 仍然挂着**一条待用户裁定**的缺陷：§31.5 的「`/post/:key` 打不开时永远停在『读取正文 …』」——
   样机没有这个交互，属于新增设计，不擅自实现。
+
+## 33. P7 第二件：axe 审计收口（2026-10-01）
+
+P7 六项里的「axe 审计」原话只有四个字，落地前先把现状量了一遍：**每页的 spec 各扫一次**
+（`a11y.spec.ts` + 四张管理页 + `profile` / `write` / `user-profile`），但放行清单被抄了**四份**
+（`a11y.spec.ts` 的 `KNOWN_*`、`admin-links` 的 `known[]`、`profile` 的 `KNOWN_CONTRAST`、
+`write` 的 `KNOWN`），而且各页判的**松紧不一**（`admin-site` 只判 critical 级、
+`admin-audit` 只按规则 id 过滤）。收口做三件事：
+
+### 33.1 先量：全路由**不带任何排除**跑一遍 axe
+
+一次性把 12 条路由 + 3 个外壳模态全扫，原始结果是**三类**违规，没有第四类：
+
+| 违规 | 级别 | 命中点 | 性质 |
+|---|---|---|---|
+| `color-contrast` | serious | 只有 `.deck-src` / `.is-copyright` / `.is-slogan` / `.is-icp`（底栏小字），每页 3 处 | 用户裁决保留的样式（样机定稿就是淡色小字） |
+| `heading-order` | moderate | 只有 `.post-title`（首页）/ `.card-title`（列表）：h1 → h3 | 样机卡片标题就是 h3，改 h2 等于改样机 DOM |
+| `scrollable-region-focusable` | serious | 只有 `/about` 的 `main.screen-inner` | 结构性的：关于页是纯静态正文，屏幕里一个可聚焦元素都没有 |
+
+量出来的结论有两条比数字本身重要：①**底栏小字的对比度是唯一一类全站性违规**，
+说明「屏幕里的内容」这一层是干净的；②`scrollable-region-focusable` **只出现在 `/about`**，
+其它页因为屏幕里有按钮 / 卡片 / 链接而不触发。
+
+### 33.2 收口：清单只留一份，且判定落到**节点级**
+
+新增 `icespark/e2e/a11y-known.ts`：
+
+- `KNOWN_CONTRAST_TARGETS`（四处底栏小字）、`KNOWN_HEADING_TARGETS`（两种样机卡片标题）、
+  `KNOWN_SCROLLABLE_TARGETS`（`.screen-inner`），每条旁边写着**为什么放行**；
+- `scanViolations(axeResult)` 返回 `{ violations, allowed }`，判据是**节点级**的 ——
+  同一条规则里只有清单内的那些节点被放行，所以「放行底栏对比度」不会顺手放行页面里
+  新出现的对比度问题（这是收口相对旧写法的实质改进，不是搬家）；
+- `a11y.spec.ts` / `admin-links` / `admin-site` / `admin-audit` / `profile` / `user-profile` / `write`
+  **七处全部改用它**，各自的数组与 `isKnown` 删掉。`admin-site` 原先只判 critical 级、
+  `user-profile` 原先把对比度整类放过 —— 现在七页一个口径。
+
+### 33.3 补齐：整站收口门 + 给唯一那条「结构性放行」配补偿断言
+
+新增 `icespark/e2e/a11y-audit.spec.ts`（3 条）：
+
+1. **公开路由**（`/` `/posts` `/links` `/about` `/nope-404` `/nope-404/deeper` + 文章详情 + 用户主页，
+   后两者按 `pages.spec.ts` 的口径探不到数据就跳过那一格）逐页扫描，清单外的违规一律红。
+2. **登录态五页 + 三个外壳模态**（`/profile` `/admin/site` `/admin/links` `/admin/audit` `/write`
+   + 暂停菜单 + 设置弹窗 + 登录弹窗；登录弹窗必须在**匿名**页面上开，登录态那一行的动作是登出）。
+3. **`/about` 那条放行要有等价的键盘路径**：先断言「这一页确实比屏幕高」且「可滚动容器里确实
+   没有可聚焦元素」（否则这条断言是空转），再断言 `↓` 与 `PgDn` 真的滚得动 —— 关于页自己接管
+   `↑↓` / `PgUp PgDn`（`AboutView.vue` 的 `onPad` → `scrollScreenBy`），这就是那条放行的代价等价物。
+   **不给 `.screen-inner` 加 `tabindex="0"`** 的理由也写在这里：那会让每一页的第一个 Tab 落点
+   变成整块屏幕，直接改掉样机冻结的「TAB 按 DOM 顺序遍历」（§25.1，§32.3 刚守过它）。
+
+### 33.4 验收
+
+- `npx playwright test`：**158 passed / 0 failed**（155 → 158：收口门 3 条；22 → 23 个 spec）。
+- 七处放行清单合并成一份，且**判得更严**：`admin-site` 从「只判 critical」升到节点级清单，
+  `user-profile` 从「放过整类对比度」升到节点级 —— 两个都没红出来新问题。
+- `npm run check` **EXIT=0**（八段）。

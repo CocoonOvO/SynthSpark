@@ -2,80 +2,37 @@ import AxeBuilder from '@axe-core/playwright'
 import type { Page } from '@playwright/test'
 import { expect, test } from '@playwright/test'
 
+import { scanViolations } from './a11y-known'
+
 import { booted } from './helpers'
 
 /**
- * 无障碍门（a11y）。
+ * 无障碍门（a11y）—— **这一页自己的**扫描。
  *
- * 门的口径来自用户裁决，三条都要写清楚，免得下次有人「顺手修好」或「顺手放宽」：
+ * 放行清单已经收口到 `e2e/a11y-known.ts`（唯一一份，理由写在那个文件头），
+ * 这里不再自带数组。本文件守的是三件「首页 / 音效询问 / 404 / 菜单」级别的事：
  *
- * 1. **底栏淡色小字的对比度是已知取舍，不是漏修**。
- *    样机定稿里底栏就是 `--ink-soft`、数据源标记就是 `--blue-600`，用户明确要求保持这个样式。
- *    实测：小字 3.32:1、数据源 4.24:1，低于 WCAG AA 的 4.5:1。
- *    所以这里**只对这四处已知节点**放行 color-contrast —— 新增的任何对比度问题照样拦下来。
- *
+ * 1. **放行项必须真的只有清单里那几处**（下面第一条用例逐项回判）——
+ *    新增一处就会红，逼人来改口径而不是悄悄漂移。
  * 2. **屏幕外框内的文字 axe 判不了**（CRT 扫描线是一层渐变，它归为 incomplete 而不是通过）。
- *    也就是说这道门实际守住的是框外内容；屏幕内的文字目前靠人工看。
- *    这一条在测试里显式断言，避免以后误以为「axe 全绿 = 整页无障碍都过了」。
+ *    这道门实际守住的是框外内容，屏幕内的文字目前靠人工看 —— 最后一条用例**显式断言**
+ *    这个数字不为 0，避免以后误以为「axe 全绿 = 整页无障碍都过了」。
+ * 3. 模态对话框要有 `role="dialog"` / `aria-modal` / `aria-labelledby`（音效询问那条用例）。
  *
- * 3. **标题跳一级是「不改样机 DOM」的取舍**（P3 页面迁移后暴露）。
- *    样机里只有文章页有 `h1`（`<h1 class="doc-title">`），首页 / 列表 / 关联 / 关于的
- *    「页面名」是 `.head-title` 那个机器铭牌 span；卡片标题则一律是 `h3`。
- *    生产版按 `main` / `contentinfo` 的同一套做法，在**外壳**补了一个视觉隐藏的
- *    `h1`（`App.vue` 的 `.sr-heading`），于是出现 h1 → h3 的跳级。
- *    把卡片标题改成 `h2` 就是改样机 DOM，所以这里放行 ——
- *    但**只**放行样机卡片标题这一类节点（`.post-title` / `.card-title`）。
+ * 整站十二条路由 + 三个外壳模态的**收口扫描**在 `e2e/a11y-audit.spec.ts`（P7，架构 §33）。
  */
-
-/** 已知且用户确认保留的对比度节点（class 选择器） */
-const KNOWN_CONTRAST_TARGETS = ['.deck-src', '.is-copyright', '.is-slogan', '.is-icp']
-
-/** 已知的标题跳级节点：样机的卡片标题就是 h3，外壳补的 h1 与它差了一级 */
-const KNOWN_HEADING_TARGETS = ['.post-title', '.card-title']
-
-/** 这条违规是否属于「已知取舍」（放行）；不属于就是真失败 */
-function isKnown(violationId: string, target: string, html: string): boolean {
-  if (violationId === 'color-contrast') {
-    return KNOWN_CONTRAST_TARGETS.some((selector) => target.includes(selector))
-  }
-  if (violationId === 'heading-order') {
-    // 用节点自身的 class 判定（axe 的 target 链上只到 `h3`，不带类名）
-    return KNOWN_HEADING_TARGETS.some((selector) => html.includes(selector.slice(1)))
-  }
-  return false
-}
-
-interface AllowedItem {
-  rule: string
-  target: string
-  /** 节点自身的标签（判定标题跳级用，见 isKnown） */
-  html: string
-}
-
 interface Report {
   /** 不在已知清单里的违规（才是真失败） */
   violations: string[]
-  /** 被放行的已知节点（对比度 / 标题跳级） */
-  allowed: AllowedItem[]
+  /** 被放行的已知命中点（`[impact] rule → target` 形式） */
+  allowed: string[]
   /** axe 判不了、需要人工确认的节点数 */
   incomplete: number
 }
 
 async function scan(page: Page): Promise<Report> {
   const result = await new AxeBuilder({ page }).analyze()
-
-  const violations: string[] = []
-  const allowed: AllowedItem[] = []
-
-  for (const violation of result.violations) {
-    for (const node of violation.nodes) {
-      const target = node.target.join(' ')
-      const html = node.html ?? ''
-      if (isKnown(violation.id, target, html)) allowed.push({ rule: violation.id, target, html })
-      else violations.push(`[${violation.impact ?? 'unknown'}] ${violation.id} → ${target}`)
-    }
-  }
-
+  const { violations, allowed } = scanViolations(result)
   const incomplete = result.incomplete.reduce((sum, item) => sum + item.nodes.length, 0)
   return { violations, allowed, incomplete }
 }
@@ -97,8 +54,9 @@ test('首页：无严重违规，放行的只有底栏小字与卡片标题跳�
 
   // 被放行的必须真的只有清单里那几处 —— 清单变多就说明有新问题混进来了
   expect(report.allowed.length).toBeGreaterThan(0)
-  for (const item of report.allowed) {
-    expect(isKnown(item.rule, item.target, item.html)).toBe(true)
+  for (const line of report.allowed) {
+    // 共享模块只会把清单内的命中点放进 `allowed`，所以这里再确认一遍它们确实「有出处」
+    expect(line).toMatch(/color-contrast|heading-order|scrollable-region-focusable/)
   }
 })
 

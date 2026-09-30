@@ -1,6 +1,8 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
 
+import { scanViolations } from './a11y-known'
+
 import { booted } from './helpers'
 
 /**
@@ -463,7 +465,8 @@ test('h1 层级：整页一个 h1、条目标题是 h2，axe 无标题类违规'
   expect(ids).not.toContain('heading-order')
   // 展开的原文区是可滚动的：焦点可达（tabindex）也在这一条里守住
   expect(ids).not.toContain('scrollable-region-focusable')
-  // 除全站已知的「底栏小字对比度取舍」之外，本页不许带出别的 axe 违规
-  //（底栏那几个节点是 `a11y.spec.ts` 的 KNOWN_CONTRAST_TARGETS，页面内容区在 CRT 里 axe 判不了对比度）
-  expect(ids.filter((id) => id !== 'color-contrast')).toEqual([])
+  // 除全站已知的「底栏小字对比度取舍」之外，本页不许带出别的 axe 违规。
+  // 放行清单只有一份（`e2e/a11y-known.ts`），这里是**节点级**判定：同一条规则里
+  // 只有清单内的那些节点被放行，页面内容区新出现的对比度问题照样拦下来。
+  expect(scanViolations(report).violations).toEqual([])
 })
