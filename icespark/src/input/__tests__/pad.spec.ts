@@ -5,6 +5,7 @@ import {
   dispatchPadAction,
   isEditableTarget,
   onPad,
+  resolveComboAction,
   resolvePadAction,
 } from '@/input/pad'
 import type { PadAction } from '@/input/pad'
@@ -84,6 +85,46 @@ describe('resolvePadAction：按键 → 动作', () => {
     expect(resolvePadAction(key('F5'))).toBeNull()
     expect(resolvePadAction(key('k'))).toBeNull()
     expect(resolvePadAction(key('/'))).toBeNull()
+  })
+})
+
+describe('resolveComboAction：编辑框里的 Shift + 字母', () => {
+  it('三个面板键放行（大写照样认，event.key 在按住 Shift 时是大写）', () => {
+    expect(resolveComboAction(key('N', true))).toBe('panelDocs')
+    expect(resolveComboAction(key('M', true))).toBe('panelMeta')
+    expect(resolveComboAction(key('V', true))).toBe('panelPreview')
+  })
+
+  it('没按 Shift 一律不放行 —— 那是正常输入，一个字都不能抢', () => {
+    expect(resolveComboAction(key('n'))).toBeNull()
+    expect(resolveComboAction(key('m'))).toBeNull()
+    expect(resolveComboAction(key('v'))).toBeNull()
+  })
+
+  it('带 Ctrl / Alt / Meta 不放行：Ctrl+S、Ctrl+A、⌘+P 是浏览器与系统的键', () => {
+    for (const mod of ['ctrlKey', 'altKey', 'metaKey'] as const) {
+      expect(resolveComboAction({ key: 'N', shiftKey: true, [mod]: true })).toBeNull()
+    }
+    // 定向不炸：真事件对象上这三项永远有值，只是都为 false
+    expect(resolveComboAction({ key: 'N', shiftKey: true, ctrlKey: false, altKey: false })).toBe(
+      'panelDocs',
+    )
+  })
+
+  it('输入法组字期间不放行（Shift 在中文输入里常用来切中英文 / 选字）', () => {
+    expect(resolveComboAction({ key: 'N', shiftKey: true, isComposing: true })).toBeNull()
+  })
+
+  it('白名单之外的字母不放行 —— 焦点移动与历史前进后退都假设「焦点不在输入框」', () => {
+    // W A S D = 方向键（场景分支会先 dropNativeFocus）、X Q E = 历史、Z = 确认、P = 菜单…
+    for (const letter of ['W', 'A', 'S', 'D', 'X', 'Q', 'E', 'Z', 'P', 'J', 'G', 'T', 'L', 'U']) {
+      expect(resolveComboAction(key(letter, true))).toBeNull()
+    }
+  })
+
+  it('只认字母：Shift+1 打出的是「!」，那是符号输入', () => {
+    expect(resolveComboAction(key('!', true))).toBeNull()
+    expect(resolveComboAction(key('ArrowDown', true))).toBeNull()
   })
 })
 

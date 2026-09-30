@@ -370,7 +370,7 @@ test('写作页：纯键盘 —— Tab 出正文到插入条、Enter 插入记�
   // 插完把焦点交回正文（接着打字就替换掉占位）—— 这是插入条能用的关键手感
   await expect(page.locator('[data-testid="write-content"]')).toBeFocused()
 
-  // 再 Tab 出正文 → N 开文稿面板（面板键在正文里收不到，出正文才有意义）
+  // 再 Tab 出正文 → N 开文稿面板（焦点在正文里时要用 Shift+N，见下一条用例；这里走 Tab 这条路）
   await page.keyboard.press('Tab')
   await expect(page.locator('[data-tool="bold"]')).toBeFocused()
   await page.keyboard.press('n')
@@ -389,7 +389,7 @@ test('写作页：纯键盘 —— Tab 出正文到插入条、Enter 插入记�
   await expect(page.locator('[data-testid="write-title"]')).toHaveValue('已发布一篇')
 
   // M 开资料面板。选中一篇之后焦点落在正文里（`fill()` 的既定行为：接着写字），
-  // 而面板键在可编辑目标里本来就收不到 —— 先 Tab 出正文，和上面 N 那一步同一条规矩。
+  // 而焦点在可编辑目标里时面板键要加 Shift 才响 —— 先 Tab 出正文，和上面 N 那一步同一条路。
   await page.keyboard.press('Tab')
   await expect(page.locator('[data-tool="bold"]')).toBeFocused()
   await page.keyboard.press('m')
@@ -405,11 +405,19 @@ test('写作页：纯键盘 —— Tab 出正文到插入条、Enter 插入记�
   await expect(page.locator('.app')).toHaveAttribute('data-scope', 'scene')
 })
 
-test('写作页：ESC 在正文里起菜单，面板开着时 P 不叠二层菜单', async ({ page }) => {
+test('写作页：正文里 ESC 先失焦、再起菜单，面板开着时 P 不叠二层菜单', async ({ page }) => {
   await openWrite(page)
 
-  // 正文里的 ESC 被内核截走并派发（可编辑目标只处理 Escape），基础态不消费 → 起菜单
+  // 第一下 ESC = 失焦（2026-09-30 用户裁定）：焦点交回外壳根节点，菜单还不许出来。
+  // 断言的是 `.app` 拿到焦点 —— 掉到 body 就整块键盘失灵（内核注释里那条坑）
   await page.click('[data-testid="write-content"]')
+  await expect(page.locator('[data-testid="write-content"]')).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.app')).toBeFocused()
+  await expect(page.locator('[data-testid="write-content"]')).not.toBeFocused()
+  await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
+
+  // 第二下：焦点已经不在编辑框里，基础态不消费 → 起菜单；再一下菜单自己关掉
   await page.keyboard.press('Escape')
   await expect(page.locator('[data-testid="pause"]')).toBeVisible()
   await page.keyboard.press('Escape')
@@ -425,6 +433,49 @@ test('写作页：ESC 在正文里起菜单，面板开着时 P 不叠二层菜�
   // 点遮罩关面板（鼠标路径）
   await page.locator('.sheet-mask').click({ position: { x: 8, y: 8 } })
   await expect(page.locator('[data-testid="write-panel-docs"]')).toHaveCount(0)
+})
+
+test('写作页：正文里 Shift+字母 直接开面板，白名单之外的字母照旧是打字', async ({ page }) => {
+  await openWrite(page)
+
+  // 1) 正文里 `Shift+N`：不必先 Tab 出正文（组合键白名单就是这三个面板键）
+  const content = page.locator('[data-testid="write-content"]')
+  const docs = page.locator('[data-testid="write-panel-docs"]')
+  const meta = page.locator('[data-testid="write-panel-meta"]')
+  await page.click('[data-testid="write-content"]')
+  await expect(content).toBeFocused()
+  await page.keyboard.press('Shift+N')
+  await expect(docs).toBeVisible()
+  // 组合键被吃掉：正文里没有多出一个「N」
+  await expect(content).toHaveValue('')
+
+  // 2) `Shift+M` 直接换面板（面板里的面板键归面板，不必先关再开）
+  await page.keyboard.press('Shift+M')
+  await expect(meta).toBeVisible()
+  await expect(docs).toHaveCount(0)
+  await page.keyboard.press('Escape')
+  await expect(meta).toHaveCount(0)
+
+  // 3) 白名单之外的字母不抢：`Shift+W` 就是个大写 W。
+  //    字母快捷键里它归方向键，那一路假设「焦点不在输入框」，抢了就成了
+  //    「想打大写字母，光标却掉了、字也没进去」
+  await page.click('[data-testid="write-content"]')
+  await page.keyboard.press('Shift+W')
+  await expect(content).toHaveValue('W')
+  await expect(content).toBeFocused()
+
+  // 4) 不带 Shift 的字母就是打字，面板不许开
+  await page.keyboard.press('n')
+  await expect(content).toHaveValue('Wn')
+  await expect(docs).toHaveCount(0)
+
+  // 5) 宽屏没有预览面板：`Shift+V` 不消费，照常打出大写 V
+  await page.keyboard.press('Shift+V')
+  await expect(content).toHaveValue('WnV')
+  await expect(page.locator('[data-testid="write-panel-preview"]')).toHaveCount(0)
+
+  // 全程不许冒出暂停菜单：组合键走的是页面动作，不是全局 START
+  await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
 })
 
 test('写作页：纯鼠标 —— 三个面板互相切换、删除走二次确认框', async ({ page }) => {

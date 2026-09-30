@@ -21,19 +21,23 @@
  *
  * ── 输入模型（三条与既有页面一字不差的惯例） ──
  *
- * 1. **可编辑目标只让 ESC 过去**：在正文 / 标题 / 标签框里打字时，手柄层完全静默
- *    （`input/index.ts` 对 `isEditableTarget` 的目标只处理 Escape）。所以 `N` / `M` / `V`
- *    要在 **TAB 出正文之后**才响 —— 页头那行按钮同时给了鼠标路径与 Tab 路径，不会成为死路。
+ * 1. **可编辑目标里只有两条例外**（`input/index.ts`）：`ESC` 失焦、`Shift + 字母` 走
+ *    `resolveComboAction` 的白名单。所以 `N` / `M` / `V` 在正文里用 **`Shift+N` / `Shift+M` /
+ *    `Shift+V`** 就能开（不必先退出正文）；`TAB` 出正文那条路照旧，两条路都通。
  * 2. **方向键一动就 `focusShellRoot()` 收掉原生焦点**（不是 `blur()`：焦点掉到 body 之后
  *    键盘事件不再冒泡到外壳，整块键盘当场失灵，§21 记的就是这条）。
+ *    这批「焦点移动」键**不在**组合键白名单里：它们假设焦点不在输入框
+ *    （见下面 `up/down/left/right` 分支），在正文里按 `Shift+A` 只会想打个大写 A。
  * 3. **原生焦点落在真实按钮 / 输入框上时回车归浏览器**（`nativeOwnsEnter()`），
  *    否则工具条那颗按钮会被本页的 `confirm` 吞掉。
  *
- * **ESC 的口径**：基础态**不消费**（全站口径 P / ESC = 菜单）。但**页内模态（面板 / 确认框）
- * 开着时消费它**去关模态 —— 这与 `AdminLinksView` 的删除确认框、§27 的长文本弹窗同一先例。
- * 为什么这里必须消费：面板一开就置了 `pageModalOpen`，外壳的 ESC 分支见到它直接让位
- * （`App.vue` 的 `inModal`），页面再不吃这个键，ESC 就成了**死键**。§28.4 里那句
- * 「ESC 不消费」指的是基础态，页面级模态是既有先例的例外，已在 §28.9 记明。
+ * **ESC 的口径**（2026-09-30 用户裁定，§28.11）：焦点在正文 / 标题 / 标签框里时，
+ * `ESC` 只做**失焦** —— 把焦点交回外壳根节点（不是 `blur()` 到 body），菜单留到失焦之后的
+ * 第二下。基础态（焦点不在编辑框里）本页**不消费** ESC，全站口径 P / ESC = 菜单；
+ * 但**页内模态（面板 / 确认框）开着时消费它**去关模态 —— 这与 `AdminLinksView` 的删除
+ * 确认框、§27 的长文本弹窗同一先例。为什么这里必须消费：面板一开就置了 `pageModalOpen`，
+ * 外壳的 ESC 分支见到它直接让位（`App.vue` 的 `inModal`），页面再不吃这个键，ESC 就成了
+ * **死键**。§28.4 里那句「ESC 不消费」指的是基础态，页面级模态是既有先例的例外，已在 §28.9 记明。
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
@@ -895,9 +899,11 @@ const off = onPad((a) => {
   }
 
   // 基础态**不消费** ESC：全站口径是它呼出菜单，页面抢走就等于把菜单入口堵死
+  // （编辑框里的 ESC 由内核拦下做「失焦」，到不了这里；见文件头的输入模型）
   if (a === 'cancel') return false
 
-  // 三个面板键（正文里收不到，见文件头；TAB 出正文后才有意义）
+  // 三个面板键：焦点不在编辑框里时是 N / M / V，在正文里是 Shift+N / Shift+M / Shift+V
+  // （组合键白名单就在这几个动作上，见 `input/pad.ts` 的 `COMBO_ACTIONS`）
   const which = PANEL_KEY[a]
   if (which) {
     if (which === 'preview' && !narrow.value) return false
@@ -913,8 +919,8 @@ const off = onPad((a) => {
 
   if (a === 'up' || a === 'down' || a === 'left' || a === 'right') {
     // 惯例二：方向键一动就收掉原生焦点，屏幕上永远只有一个光标。
-    // 正文里的方向键根本到不了这里（可编辑目标被内核整个让开），所以这里说的是
-    // 「焦点停在按钮上」那条路径：收掉它，然后把按键还给浏览器滚动页面。
+    // 正文里的方向键根本到不了这里（可编辑目标被内核让开，组合键白名单里也没有它），
+    // 所以这里说的是「焦点停在按钮上」那条路径：收掉它，然后把按键还给浏览器滚动页面。
     dropNativeFocus()
     return false
   }
@@ -1068,12 +1074,13 @@ onUnmounted(() => {
 
     <div class="keybar px">
       <span class="kb"><i class="kbd">TAB</i> 出正文</span>
-      <span class="kb"><i class="kbd">N</i> 文稿</span>
-      <span class="kb"><i class="kbd">M</i> 资料</span>
-      <span class="kb" v-if="narrow"><i class="kbd">V</i> 预览</span>
+      <span class="kb"><i class="kbd">ESC</i> 失焦</span>
+      <span class="kb"><i class="kbd">Shift</i>+<i class="kbd">N</i> 文稿</span>
+      <span class="kb"><i class="kbd">Shift</i>+<i class="kbd">M</i> 资料</span>
+      <span class="kb" v-if="narrow"><i class="kbd">Shift</i>+<i class="kbd">V</i> 预览</span>
       <span class="kb"><i class="kbd">Ctrl</i>+<i class="kbd">S</i> 存草稿</span>
       <span class="kb"><i class="kbd">Ctrl</i>+<i class="kbd">↵</i> 发布</span>
-      <span class="kb tail"><i class="kbd">Q</i> 返回 · <i class="kbd">P</i>/<i class="kbd">ESC</i> 菜单</span>
+      <span class="kb tail"><i class="kbd">Q</i> 返回 · <i class="kbd">P</i> 菜单</span>
     </div>
 
     <!-- ══════════ 覆盖面板 ══════════ -->

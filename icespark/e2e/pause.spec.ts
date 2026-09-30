@@ -159,7 +159,11 @@ test('登录：开登录框时菜单先关（两个模态不叠），ESC / 点�
   await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
   await expect(page.locator('[data-testid="login-dialog"]')).toBeVisible()
 
-  // 键盘这条路：ESC 取消 → 回菜单（不是掉回场景）
+  // 键盘这条路：ESC 两下 —— 第一下从输入框失焦，第二下才取消（§28.11 的编辑框口径）
+  await expect(page.locator('[data-testid="login-username"]')).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('.app')).toBeFocused()
+  await expect(page.locator('[data-testid="login-dialog"]')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.locator('[data-testid="login-dialog"]')).toHaveCount(0)
   await expect(page.locator('[data-testid="pause"]')).toBeVisible()
@@ -187,6 +191,10 @@ test('登录：密码错误时框不关（错误留在框里），取消后菜�
   await expect(page.locator('[data-testid="login-dialog"]')).toBeVisible()
   await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
 
+  // 提交失败后焦点被收回用户名框，所以 ESC 也是两下：先失焦、再取消（§28.11）
+  await expect(page.locator('[data-testid="login-username"]')).toBeFocused()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('[data-testid="login-dialog"]')).toBeVisible()
   await page.keyboard.press('Escape')
   await expect(page.locator('[data-testid="pause"]')).toBeVisible()
   // 取消登录不该留提示（提示只在登录成功/登出时给）
@@ -214,11 +222,71 @@ test('搜索态：菜单内直接检索真接口，ESC 逐层退回菜单', asyn
     timeout: 5000,
   })
 
+  // ESC 两下：第一下从输入框失焦（框还在），第二下才退出搜索态回行列表
+  await page.keyboard.press('Escape')
+  await expect(input).toBeVisible()
+  await expect(page.locator('.app')).toBeFocused()
   await page.keyboard.press('Escape')
   await expect(input).toHaveCount(0)
   await expect(page.locator('[data-testid="pause"]')).toBeVisible()
+  // 退回行列表之后键盘必须还活着：焦点还在原来那一行（搜索行）上，方向键照常走行。
+  // （`closeSearch` 早先是 `input.blur()`，焦点掉到 body 会让整块键盘当场失灵）
+  await expect(page.locator('[data-testid="pause-search"]')).toHaveClass(/is-focused/)
+  await page.keyboard.press('ArrowDown')
+  await expect(page.locator('[data-testid="pause-sound"]')).toHaveClass(/is-focused/)
 
   expect(errors).toEqual([])
+})
+
+test('搜索态：↓ 进入结果列表后键盘不掉线（焦点收进外壳，↑↓ / ENTER 照常）', async ({ page }) => {
+  // 真接口的命中条数取决于库里有什么，这个用例要的是**键盘链路**，所以自己给两条命中
+  await page.route('**/api/search/**', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        posts: [
+          { id: 'h-1', slug: 'hit-one', title: '命中一', author_name: '甲' },
+          { id: 'h-2', slug: 'hit-two', title: '命中二', author_name: '乙' },
+        ],
+      }),
+    }),
+  )
+
+  await page.goto('/')
+  await booted(page)
+  await page.keyboard.press('p')
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+
+  const input = page.locator('[data-testid="pause-search-input"]')
+  await input.fill('命中')
+  const hits = page.locator('[data-testid="pause-search-hits"] .hit')
+  await expect(hits).toHaveCount(2)
+
+  // ↓ 从输入框进入结果列表：焦点必须收进外壳。早先 `downToHits()` 是 `blur()`，
+  // 焦点掉到 body 之后内核再也收不到按键 —— 「选中了却按不动」
+  await page.keyboard.press('ArrowDown')
+  await expect(hits.nth(0)).toHaveClass(/is-focused/)
+  await expect(input).not.toBeFocused()
+  expect(
+    await page.evaluate(() => {
+      const el = document.activeElement as HTMLElement | null
+      return !!el && document.querySelector('.app')!.contains(el)
+    }),
+    '↓ 之后焦点应仍在外壳内部',
+  ).toBe(true)
+
+  // 进了列表之后 ↑↓ 照样走命中（方向键这时不再属于输入框）
+  await page.keyboard.press('ArrowDown')
+  await expect(hits.nth(1)).toHaveClass(/is-focused/)
+  await page.keyboard.press('ArrowUp')
+  await expect(hits.nth(0)).toHaveClass(/is-focused/)
+
+  // ENTER 打开这一条：关菜单 + 按 slug 跳文章页
+  await page.keyboard.press('Enter')
+  await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
+  await expect(page).toHaveURL(/\/post\/hit-one$/)
 })
 
 test('提示行不闪：红字提示是常亮的（样机挂过 blink，用户反馈太晃眼睛）', async ({ page }) => {

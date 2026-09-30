@@ -1,4 +1,4 @@
-import { dispatchPadAction, isEditableTarget, resolvePadAction } from './pad'
+import { dispatchPadAction, isEditableTarget, resolveComboAction, resolvePadAction } from './pad'
 import { inputLocked } from './scopes'
 
 /**
@@ -33,13 +33,28 @@ export function mountInput(root: HTMLElement): () => void {
   const FOCUSABLE_SELECTOR = 'a, button, input, textarea, select, [tabindex]'
 
   function onKeydown(event: KeyboardEvent): void {
-    // 输入框里不劫持按键，只留 Esc 给上层：
-    // 登录框 / 设置框里的 Tab、字母、回车都归浏览器与表单本身
+    // 焦点在输入框 / 可编辑区里时按键归输入本身（登录框 / 设置框里的 Tab、字母、
+    // 回车都交给浏览器与表单），只有两条例外：
+    //   ① `ESC`  = 从编辑框里出来（失焦），把焦点交回外壳；
+    //   ② `Shift + 字母` = 把被输入吃掉的字母快捷键按组合键还回来（见 `resolveComboAction`）。
     if (isEditableTarget(event.target)) {
+      // 输入法正在组字：这时的 `ESC` 是「取消这次组字」、`Shift` 常用来切中英文 / 选字，
+      // 抢过来就会打断正在打的词 —— 组字期间内核整个让开（中文输入是本站的主路径）
+      if (event.isComposing) return
+
+      // ESC = 失焦（2026-09-30 用户裁定：菜单留到失焦之后）。
+      // **不能** `blur()` 到 body —— 焦点掉到 body 之后外壳再也收不到按键，整块键盘当场失灵
+      // （见上面 `shellRoot` 的注释），所以这里是把焦点交回外壳根节点。
+      // 第二下 ESC 时焦点已经不在编辑框里，根本走不到这一支，由页面 / 外壳照常决定它干什么。
       if (event.key === 'Escape') {
         event.preventDefault()
-        dispatchPadAction('cancel')
+        focusShellRoot()
+        return
       }
+
+      // 只有当前场景真的用掉了这个动作才吞掉按键，否则还给浏览器（大写字母照常输入）
+      const combo = resolveComboAction(event)
+      if (combo && dispatchPadAction(combo)) event.preventDefault()
       return
     }
 

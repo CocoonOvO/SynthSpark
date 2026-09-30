@@ -22,9 +22,10 @@
  *
  * ── 键盘 ──
  *
- * - 正文里**只有 ESC 会被内核截走**（`input/index.ts` 对可编辑目标只处理 Escape），
- *   其余按键（含字母、方向键）全是浏览器与 textarea 的。所以这一页的
- *   `N` / `M` / `V` 三个面板键**要在 TAB 出正文之后**才响 —— 键位提示里写明了这点。
+ * - 正文里内核只留两条例外（`input/index.ts` 里 `isEditableTarget` 那一支）：
+ *   `ESC` 做**失焦**（焦点交回外壳根节点，菜单留到第二下），`Shift + 字母` 走
+ *   `resolveComboAction` 的白名单。所以 `Shift+N` / `Shift+M` / `Shift+V` 在正文里直接就能开面板，
+ *   不必先退出正文；其余按键（字母、方向键）仍是浏览器与 textarea 的。
  *   唯一的例外是 `Tab` 本身：它被本组件接过来送进插入条（理由见 `focusToolbar`），
  *   因为原生 Tab 从正文往后走会撞上页面末尾那两个隐藏的文件输入框。
  * - `Ctrl/⌘ + S` 存草稿、`Ctrl/⌘ + Enter` 发布：这两个组合键落在 textarea 上，
@@ -373,8 +374,9 @@ defineExpose({
 
     <!--
       正文。`spellcheck=false`：像素皮下面那些红色波浪线非常吵，而且这是中文正文。
-      Tab 在这里**故意不管**：光标在 textarea 里时浏览器原生 Tab 会走到下一个可聚焦元素，
-      那正是离开正文、去按 N / M 的唯一键盘通道（组件头部的注释写了这件事）。
+      这里的 `TAB` 被组件接去插入条（`onKeydown`），真正的「离开正文」两条路是
+      `ESC`（内核把焦点交回外壳）与插入条上的 Tab —— 出去之后 N / M / V 才响；
+      在正文里想直接开面板就用 `Shift+N / Shift+M / Shift+V`（组件头部注释写了这件事）。
     -->
     <textarea
       ref="area"

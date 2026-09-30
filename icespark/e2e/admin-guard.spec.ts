@@ -67,7 +67,12 @@ test('未登录深链接进需鉴权页：回主页 + 弹出登录框 + 一句�
     await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
     await expect(page.locator('.app')).toHaveAttribute('data-scope', 'pause')
 
-    // 退出这一轮，下一轮从头开始（关框走 ESC，与用户手动取消同一条路）
+    // 退出这一轮，下一轮从头开始（关框走 ESC，与用户手动取消同一条路）。
+    // 框一开就把焦点放进用户名框，所以按编辑框口径要两下：先失焦，再取消（§28.11）
+    await expect(page.locator('[data-testid="login-username"]')).toBeFocused()
+    await page.keyboard.press('Escape')
+    await expect(page.locator('.app')).toBeFocused()
+    await expect(page.locator('[data-testid="login-dialog"]')).toBeVisible()
     await page.keyboard.press('Escape')
     await expect(page.locator('[data-testid="login-dialog"]')).toHaveCount(0)
     // 关键：守卫进来的框关掉之后**不该**冒出暂停菜单（loginFromMenu 的意义）

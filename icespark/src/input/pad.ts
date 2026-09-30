@@ -201,6 +201,50 @@ export function resolvePadAction(event: Pick<KeyboardEvent, 'key' | 'shiftKey'>)
   return KEYMAP[key] ?? null
 }
 
+/** 组合键真正读的字段：修饰键与输入法状态都可缺省（缺省＝没按住 / 没在组字），单测好写 */
+export type ComboKeyEvent = Pick<KeyboardEvent, 'key' | 'shiftKey'> & {
+  ctrlKey?: boolean
+  altKey?: boolean
+  metaKey?: boolean
+  isComposing?: boolean
+}
+
+/**
+ * 编辑框里允许用 `Shift + 字母` 触发的动作 —— **只放这三个面板键**。
+ *
+ * 为什么不「有映射就放行」：场景监听器是**按「可编辑目标永远到不了这里」写的**。
+ * 写作页的方向键分支就是明证 —— 它先 `dropNativeFocus()` 再返回 false，于是
+ * 把 W / A / S / D 放进编辑框只会得到「想打大写 A，光标掉了、字也没进去」；
+ * 而 X / Q / E 是历史前进后退，在正文里误按一下就是整页跳走。这两类键的正路都是
+ * 先 `ESC` 失焦（见 `input/index.ts`），回到「不在输入」的状态再按原键。
+ * 面板键不一样：它们本来就是「离开编辑区去看别的东西」，开面板时收掉原生焦点正是应有之义。
+ */
+const COMBO_ACTIONS: ReadonlySet<PadAction> = new Set<PadAction>([
+  'panelDocs',
+  'panelMeta',
+  'panelPreview',
+])
+
+/**
+ * `Shift + 字母` → 白名单内的按键动作（纯函数，方便单测）。
+ *
+ * 三种情况必须让开：
+ *   - 没按 Shift：那是正常输入，一个字都不能抢；
+ *   - 带 Ctrl / Alt / Meta：`Ctrl+S` 存草稿、`Ctrl+A` 全选、`⌘+P` 打印是浏览器与系统的键，
+ *     抢过来就成了「想存草稿却开了面板」这类事故；
+ *   - 输入法组字期间（`isComposing`）：中文输入里 Shift 常用来切中英文 / 选字。
+ *
+ * 另外只认字母：`Shift+1` 打出来的是 `!`，那是符号输入，与快捷键无关。
+ * 单字符键照样做小写归一化 —— 按住 Shift 时 `event.key` 是大写。
+ */
+export function resolveComboAction(event: ComboKeyEvent): PadAction | null {
+  if (!event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return null
+  if (event.isComposing) return null
+  if (event.key.length !== 1 || !/[a-z]/i.test(event.key)) return null
+  const action = KEYMAP[event.key.toLowerCase()]
+  return action && COMBO_ACTIONS.has(action) ? action : null
+}
+
 /** 注销全部监听器（测试与卸载用） */
 export function clearPadListeners(): void {
   listeners.clear()

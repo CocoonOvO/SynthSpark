@@ -3,6 +3,7 @@ import { computed, onMounted, onUnmounted, ref } from 'vue'
 import { useRouter } from 'vue-router'
 
 import { postKey, searchPosts, type SearchPostHit } from '@/api/search'
+import { focusShellRoot } from '@/input'
 import { previewSfx, playSfx } from '@/input/sfx'
 import { useFocusGroup } from '@/input/focus'
 import { onPad } from '@/input/pad'
@@ -238,10 +239,18 @@ function openSearch(): void {
   window.setTimeout(() => searchInput.value?.focus(), 0)
 }
 
+/**
+ * 从搜索态退回行列表。
+ *
+ * 焦点用 `focusShellRoot()` 收回外壳根节点，**不是** `input.blur()`：
+ * 那一下会把焦点丢给 `body`，而键盘事件只沿当前焦点的祖先链冒泡，
+ * 挂在外壳根节点上的内核就再也收不到按键 —— 退回行列表之后方向键、ENTER 全体失灵
+ * （和内核注释里记的是同一条坑）。搜索框里的 ESC 现在只做「失焦」，这条路径更常被走到。
+ */
 function closeSearch(): void {
   mode.value = 'menu'
   hint.value = ''
-  searchInput.value?.blur()
+  focusShellRoot()
 }
 
 function onQueryInput(): void {
@@ -300,11 +309,11 @@ function onSearchAction(action: PadAction): boolean {
   return false
 }
 
-/** 从输入框按 ↓ 进入结果列表 */
+/** 从输入框按 ↓ 进入结果列表（焦点同样收给外壳，否则 ↑↓ / ENTER 到不了内核，见 closeSearch） */
 function downToHits(): void {
   if (hits.value.length === 0) return
   hitIndex.value = 0
-  searchInput.value?.blur()
+  focusShellRoot()
   playSfx('move')
 }
 
