@@ -50,7 +50,10 @@ const GROUPS = [
 ]
 
 const TAGS = [
-  { id: 't-1', name: '像素', description: null, color: null, post_count: 3, created_at: '2026-09-01T10:00:00' },
+  { id: 't-1', name: '草图', description: null, color: null, post_count: 9, created_at: '2026-09-01T10:00:00' },
+  { id: 't-2', name: '排版', description: null, color: null, post_count: 5, created_at: '2026-09-01T10:00:00' },
+  { id: 't-3', name: '像素', description: null, color: null, post_count: 3, created_at: '2026-09-01T10:00:00' },
+  { id: 't-4', name: '像素风', description: null, color: null, post_count: 1, created_at: '2026-09-01T10:00:00' },
 ]
 
 /** 完整文章模型（`GET /api/posts/{id}` 与 `GET /api/posts/slug/{slug}` 都回它） */
@@ -263,7 +266,8 @@ test('写作页：标题为空点发布不发请求，只给一句提示；填�
 
   // 落库后：地址栏换成这一篇，状态行变成「已保存 ……」
   await expect(page).toHaveURL(/\/write\/brand-new$/)
-  await expect(page.locator('[data-testid="write-status"]')).toContainText('已保存')
+  // 「人按的」这一次：不能写成「已自动保存 …」（两者不是子串关系，正则能分辨）
+  await expect(page.locator('[data-testid="write-status"]')).toContainText(/^已保存 \d{2}:\d{2}:\d{2}$/)
   // 存的是草稿 → 「查看」入口仍然不出现（它只给已发布的稿子）
   await expect(page.locator('[data-testid="write-view"]')).toHaveCount(0)
 })
@@ -281,7 +285,8 @@ test('写作页：发布走一次 PUT（status=published），发布后给「查
   expect(recorder.writes[0]?.body).toMatchObject({ status: 'published' })
 
   // 状态行与动作条都换成「已发布」那一套（按钮文案由 发布 → 更新）
-  await expect(page.locator('[data-testid="write-status"]')).toContainText('已保存')
+  // 「人按的」这一次：不能写成「已自动保存 …」（两者不是子串关系，正则能分辨）
+  await expect(page.locator('[data-testid="write-status"]')).toContainText(/^已保存 \d{2}:\d{2}:\d{2}$/)
   await expect(page.locator('[data-testid="write-publish"]')).toHaveText('更新')
 
   // D7：发布后**留在写作页**，另给一个「查看」入口
@@ -289,6 +294,11 @@ test('写作页：发布走一次 PUT（status=published），发布后给「查
   const view = page.locator('[data-testid="write-view"]')
   await expect(view).toBeVisible()
   await expect(view).toHaveAttribute('href', '/post/brand-new')
+
+  // 发布之后**不能**再冒出一次自动保存：它会拿本地那份（可能还是旧 status）再推一遍，
+  // 把刚发布的文章两秒后打回草稿。这一条就是为那个坑钉的。
+  await page.waitForTimeout(2600)
+  expect(recorder.writes, '发布之后不该再补一次写').toHaveLength(1)
 })
 
 test('写作页：已发布的稿子再改，走的是 PUT 而不是又建一篇', async ({ page }) => {
@@ -490,4 +500,133 @@ test('写作页：axe 扫描无违规（面板与确认框都要扫）', async (
   await page.click('[data-testid="write-open-meta"]')
   await expect(page.locator('[data-testid="write-panel-meta"]')).toBeVisible()
   await clean()
+})
+
+/* ────────────── 窄屏自适应（预览折成 V 面板） ────────────── */
+
+test('写作页：窄屏把预览折成 V 面板，断点两侧来回切都跟得上', async ({ page }) => {
+  await openWrite(page)
+  await page.fill('[data-testid="write-content"]', '# 窄屏\n\n预览也要跟着走。')
+
+  /** 源码列有没有独占整条分屏（曾经窄屏下栅格还是两列，源码只占左半屏） */
+  const sourceFillsSplit = async () => {
+    const [split, source] = await page.evaluate(() =>
+      ['.write-split', '.split-source'].map(
+        (s) => document.querySelector(s)!.getBoundingClientRect().width,
+      ),
+    )
+    return Math.abs((split ?? 0) - (source ?? 0)) < 4
+  }
+
+  // ── 宽屏：左右分屏，没有「预览」那颗按钮 ──
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await expect(page.locator('[data-testid="write-preview"]')).toBeVisible()
+  await expect(page.locator('[data-testid="write-open-preview"]')).toHaveCount(0)
+
+  // ── 原位缩到窄屏：分屏塌成一列、预览栏让位给 V 面板 ──
+  await page.setViewportSize({ width: 900, height: 800 })
+  await expect(page.locator('[data-testid="write-preview"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="write-open-preview"]')).toBeVisible()
+  expect(await sourceFillsSplit(), '窄屏下源码应当独占全宽').toBe(true)
+
+  // V 面板里就是同一份实时预览
+  await page.click('[data-testid="write-open-preview"]')
+  const panel = page.locator('[data-testid="write-panel-preview"]')
+  await expect(panel).toBeVisible()
+  await expect(panel).toContainText('预览也要跟着走。')
+
+  // ── 原位放大回宽屏：面板自动关（预览栏回来了，再叠一个面板是重复的） ──
+  await page.setViewportSize({ width: 1440, height: 800 })
+  await expect(panel).toHaveCount(0)
+  await expect(page.locator('[data-testid="write-preview"]')).toBeVisible()
+  await expect(page.locator('[data-testid="write-preview"]')).toContainText('预览也要跟着走。')
+  expect(await sourceFillsSplit(), '宽屏回到两栏').toBe(false)
+
+  // ── 更窄（手机宽）：仍然是一列、源码不被挤出去 ──
+  await page.setViewportSize({ width: 640, height: 800 })
+  await expect(page.locator('[data-testid="write-open-preview"]')).toBeVisible()
+  expect(await sourceFillsSplit(), '640 下源码也应当独占全宽').toBe(true)
+  const [splitW, innerW] = await page.evaluate(() => [
+    document.querySelector('.write-split')!.getBoundingClientRect().width,
+    document.querySelector('.screen-inner')!.clientWidth,
+  ])
+  expect(splitW, '分屏不该比屏幕还宽').toBeLessThanOrEqual(innerW + 1)
+})
+
+/* ────────────── 标签从已有标签里挑 ────────────── */
+
+test('写作页：标签可以从已有标签里挑（常用在前、打字过滤、已加的不再出现）', async ({ page }) => {
+  await openWrite(page)
+  await page.click('[data-testid="write-open-meta"]')
+  const picker = page.locator('[data-testid="write-tag-suggest"]')
+  await expect(picker).toBeVisible()
+
+  // 一个字都不打就先给「常用的几枚」，按篇数倒序（与全站标签取数口径一致）
+  const names = await picker.locator('button').evaluateAll((els) =>
+    els.map((el) => (el.textContent ?? '').trim()),
+  )
+  expect(names[0]).toContain('草图')
+  expect(names).toHaveLength(4)
+  await expect(page.locator('[data-testid="write-tag-suggest-草图"]')).toContainText('9')
+
+  // 点一枚就加上去，加上去的那枚从候选里消失（已加的不再出现）
+  await page.click('[data-testid="write-tag-suggest-像素风"]')
+  await expect(page.locator('[data-testid="write-tag-remove-像素风"]')).toBeVisible()
+  await expect(page.locator('[data-testid="write-tag-suggest-像素风"]')).toHaveCount(0)
+
+  // 打字按包含过滤：「像素」只剩没加过的那一枚
+  await page.fill('[data-testid="write-tag-input"]', '像素')
+  await expect(picker.locator('button')).toHaveCount(1)
+  await expect(page.locator('[data-testid="write-tag-suggest-像素"]')).toBeVisible()
+
+  // 键盘：↓ 高亮第一枚、Enter 收下它（不需要鼠标）
+  await page.keyboard.press('ArrowDown')
+  await expect(page.locator('[data-testid="write-tag-suggest-像素"]')).toHaveClass(/on/)
+  await page.keyboard.press('Enter')
+  await expect(page.locator('[data-testid="write-tag-remove-像素"]')).toBeVisible()
+  await expect(page.locator('[data-testid="write-tag-input"]')).toHaveValue('')
+
+  // 手打一个站上没有的词：候选空 → 提示可以新建，Enter 就新建
+  await page.fill('[data-testid="write-tag-input"]', '自造词')
+  await expect(picker).toHaveCount(0)
+  await expect(page.locator('.meta-note')).toContainText('自造词')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('[data-testid="write-tag-remove-自造词"]')).toBeVisible()
+})
+
+/* ────────────── 自动保存 ────────────── */
+
+test('写作页：停笔两秒自动存一次（已落库的稿子），新稿不自动建', async ({ page }) => {
+  const recorder = await openWrite(page)
+
+  // 新稿还没 id：写多少都不该自动建（否则「打开看看」也会留下空稿）
+  await page.fill('[data-testid="write-title"]', '自动保存试验')
+  await page.fill('[data-testid="write-content"]', '第一段。')
+  await page.waitForTimeout(2600)
+  expect(recorder.writes, '新稿不该被自动创建').toHaveLength(0)
+  await expect(page.locator('[data-testid="write-status"]')).toContainText('未保存')
+
+  // 手工存一次落库 → 之后再改动，停笔两秒应当自己 PUT 一次
+  await page.click('[data-testid="write-save"]')
+  await expect(page).toHaveURL(/\/write\/brand-new$/)
+  // 「人按的」这一次：不能写成「已自动保存 …」（两者不是子串关系，正则能分辨）
+  await expect(page.locator('[data-testid="write-status"]')).toContainText(/^已保存 \d{2}:\d{2}:\d{2}$/)
+
+  await page.fill('[data-testid="write-content"]', '第一段。第二段是停笔之后自己存的。')
+  await expect(page.locator('[data-testid="write-status"]')).toContainText('未保存')
+  await expect.poll(() => recorder.writes.length, { timeout: 8000 }).toBe(2)
+  expect(recorder.writes[1]).toMatchObject({ method: 'PUT', path: '/api/posts/p-new' })
+  expect(recorder.writes[1]?.body).toMatchObject({
+    content: '第一段。第二段是停笔之后自己存的。',
+    status: 'draft',
+  })
+
+  // 页头写清楚这一次是自动的（旧版口径「已自动保存」），并且不再是「未保存」
+  await expect(page.locator('[data-testid="write-status"]')).toContainText('已自动保存')
+  await expect(page.locator('[data-testid="write-status"]')).not.toContainText('未保存')
+
+  // 自动保存期间编辑区不能被打断（曾经 busy 会把 textarea 与标题一起 disabled）
+  await page.fill('[data-testid="write-content"]', '再写一段，接着写不该被卡住。')
+  await expect(page.locator('[data-testid="write-content"]')).toBeEnabled()
+  await expect(page.locator('[data-testid="write-title"]')).toBeEnabled()
 })

@@ -128,14 +128,41 @@ const postGroupId = ref<string | null>(null)
  * 已保存内容的指纹。`dirty` 只做一件事：页头那行状态与自动保存的判据。
  * 放在一处算，免得三处各写一份「什么算改过」。
  */
+function fingerprintOf(parts: {
+  title: string
+  content: string
+  tags: string[]
+  cover: string | null
+  status: 'draft' | 'published'
+  groupId: string | null
+}): string {
+  return JSON.stringify([
+    parts.title,
+    parts.content,
+    parts.tags,
+    parts.cover,
+    parts.status,
+    parts.groupId,
+  ])
+}
+
 function fingerprint(): string {
-  return JSON.stringify([title.value, content.value, tags.value, cover.value, status.value, postGroupId.value])
+  return fingerprintOf({
+    title: title.value,
+    content: content.value,
+    tags: tags.value,
+    cover: cover.value,
+    status: status.value,
+    groupId: postGroupId.value,
+  })
 }
 const snapshot = ref(fingerprint())
 const dirty = computed(() => fingerprint() !== snapshot.value)
 
 /** 落库那一刻的时间戳文字（空串 = 本次进来还没存过） */
 const savedAt = ref('')
+/** 最近这一次是自动保存还是人按的（页头那行字要分开说，旧版也是「已自动保存」） */
+const saveKind = ref<'manual' | 'auto'>('manual')
 const saving = ref(false)
 const publishing = ref(false)
 const busy = computed(() => saving.value || publishing.value)
@@ -147,7 +174,8 @@ const statusText = computed(() => {
   if (publishing.value) return '发布中…'
   if (saveError.value) return '保存失败'
   if (dirty.value) return '● 未保存'
-  return savedAt.value ? `已保存 ${savedAt.value}` : '未改动'
+  if (!savedAt.value) return '未改动'
+  return `${saveKind.value === 'auto' ? '已自动保存' : '已保存'} ${savedAt.value}`
 })
 
 /**
@@ -346,30 +374,62 @@ async function doSave(next: 'draft' | 'published', opts: { auto?: boolean } = {}
   else saving.value = true
   saveError.value = ''
 
+  // 发出去的就是这一份。请求飞在路上时用户还能接着写（编辑区**故意不禁用**），
+  // 所以「什么时候算干净」要以**发出去的那份**为准，而不是「回来时眼前的那份」。
+  const sent = {
+    title: cleanTitle,
+    content: content.value,
+    tags: [...tags.value],
+    cover: cover.value,
+    status: next,
+    groupId: postGroupId.value,
+  }
+  /** 发出时屏幕上那个标题（空标题会被规范化成「无标题」，那不是「有东西没存」） */
+  const titleAtSend = title.value
+
   try {
     const saved = postId.value
       ? await updatePost(postId.value, {
-          title: cleanTitle,
-          content: content.value,
-          tags: tags.value,
-          cover_image: cover.value,
-          status: next,
-          group_id: postGroupId.value,
+          title: sent.title,
+          content: sent.content,
+          tags: sent.tags,
+          cover_image: sent.cover,
+          status: sent.status,
+          group_id: sent.groupId,
         })
       : await createPost({
-          title: cleanTitle,
-          content: content.value,
-          tags: tags.value,
-          cover_image: cover.value,
-          status: next,
-          group_id: postGroupId.value,
+          title: sent.title,
+          content: sent.content,
+          tags: sent.tags,
+          cover_image: sent.cover,
+          status: sent.status,
+          group_id: sent.groupId,
         })
     postId.value = saved.id
     postSlug.value = saved.slug ?? null
-    title.value = saved.title ?? title.value
+    // 服务端回写的字段只在「这一项这段时间没被改过」时才落回本地：
+    // 否则一次慢请求会把用户刚打进去的新标题覆盖成服务器上那份旧的。
+    // 标题的判据是「跟发出时那份一样」——空标题那条路上 `title.value` 是空串而
+    // `sent.title` 是「无标题」，两者不等，正好不去往输入框里塞一个「无标题」。
+    if (title.value === titleAtSend || title.value === sent.title) {
+      title.value = saved.title ?? title.value
+    }
+    // 状态**无条件**采纳：发布 / 存草稿本身就是由这次调用发起的状态切换，
+    // 不是「用户的编辑」，拿它去比指纹只会让刚发布完的页面永远显示「未保存」，
+    // 然后被自动保存用旧的 status 再推一次（发布完两秒自己变回草稿）。
     status.value = saved.status === 'published' ? 'published' : 'draft'
-    postGroupId.value = saved.group_id ?? postGroupId.value
-    snapshot.value = fingerprint()
+    if (postGroupId.value === sent.groupId) postGroupId.value = saved.group_id ?? sent.groupId
+    saveKind.value = opts.auto ? 'auto' : 'manual'
+    // 干净与否按发出那份算：飞行途中又写了，就仍然算脏（状态行会显示「未保存」，
+    // 下面的 scheduleAutosave 会替它再排一次），绝不谎报「已保存」。
+    snapshot.value = fingerprintOf({
+      title: title.value === titleAtSend ? title.value : sent.title,
+      content: sent.content,
+      tags: sent.tags,
+      cover: sent.cover,
+      status: status.value,
+      groupId: postGroupId.value === sent.groupId ? postGroupId.value : sent.groupId,
+    })
     savedAt.value = new Date().toLocaleTimeString('zh-CN', { hour12: false })
     // 新建之后地址栏要变成这一篇（旧版口径：能直接分享 / 刷新回来还在原稿）
     syncUrl()
@@ -379,29 +439,53 @@ async function doSave(next: 'draft' | 'published', opts: { auto?: boolean } = {}
   } finally {
     saving.value = false
     publishing.value = false
+    // 刚才被 busy 挡掉的那次自动保存（或者飞行途中新写的字）补排一次
+    if (dirty.value) scheduleAutosave()
   }
 }
 
 const saveDraft = () => void doSave('draft')
 const publish = () => void doSave('published')
 
-/* ── 防抖自动保存：2 秒（旧版口径），**只对已落库的稿子**（新稿不自动建） ── */
+/* ══════════════════════ 自动保存 ══════════════════════
+ *
+ * 两条路（旧版就是这么配的，不是新设计）：
+ *   1. **停笔 2 秒**后存一次 —— 正常写作时走这条；
+ *   2. **每 30 秒**兜一次 —— 一直不停手地写时，防抖计时器会被每个字符重置，
+ *      光靠第 1 条可能几分钟都不落库（旧版的 `autoSaveInterval` 就是干这个的）。
+ *
+ * 只对**已落库**的稿子（有 id）自动保存：新稿自动建会给「打开写作页只是看看」
+ * 的人也留下一地空稿（旧版同样只给已有文章自动保存，D6 的「不拦截离开」也以此为前提）。
+ * 页头那行字会写成「已自动保存 12:34:56」。
+ */
+const AUTOSAVE_DEBOUNCE_MS = 2000
+const AUTOSAVE_BACKSTOP_MS = 30000
+
 let autoTimer = 0
 function scheduleAutosave(): void {
   window.clearTimeout(autoTimer)
-  // 新稿没有 id，自动保存无处可写 —— 旧版同样只给已有文章自动保存（D6 的「不拦截」前提）
   if (!postId.value) return
   autoTimer = window.setTimeout(() => {
-    if (dirty.value && !busy.value) void doSave(status.value, { auto: true })
-  }, 2000)
+    // 正在存 / 发布：不插队，交给 `doSave` 的收尾再排（否则这一次就丢了）
+    if (busy.value) return scheduleAutosave()
+    if (dirty.value) void doSave(status.value, { auto: true })
+  }, AUTOSAVE_DEBOUNCE_MS)
 }
 
-watch([title, content, tags, cover], () => {
+/** 兜底定时器：页面在的时候一直转，只对「已经脏了的已落库稿子」动手 */
+const autoBackstop = window.setInterval(() => {
+  if (!postId.value || busy.value || !dirty.value) return
+  void doSave(status.value, { auto: true })
+}, AUTOSAVE_BACKSTOP_MS)
+
+// 六个字段里漏一个，那一项就永远不会自动保存（分组归属原先就漏了：改完分组不动别处 = 不落库）
+watch([title, content, tags, cover, postGroupId, status], () => {
   scheduleAutosave()
 })
 
 onUnmounted(() => {
   window.clearTimeout(autoTimer)
+  window.clearInterval(autoBackstop)
   pageModalOpen.value = false
   stop()
 })
@@ -409,23 +493,43 @@ onUnmounted(() => {
 /* ══════════════════════ 标签 ══════════════════════ */
 
 const tagInput = ref('')
-const allTags = ref<string[]>([])
+/** 站上已有的标签（带篇数）——排序口径与 `stores/content.ts` 一致：`post_count` 倒序 */
+const allTags = ref<{ name: string; post_count: number }[]>([])
+/** 挑标签时高亮的那一枚（-1 = 没高亮，Enter 就是新建手打的那个词） */
+const tagCursor = ref(-1)
 
 async function loadTags(): Promise<void> {
   if (allTags.value.length) return
   try {
-    allTags.value = (await fetchTags()).map((t) => t.name)
+    const list = await fetchTags()
+    allTags.value = (list ?? [])
+      .map((t) => ({ name: t.name, post_count: t.post_count ?? 0 }))
+      .sort((a, b) => b.post_count - a.post_count)
   } catch {
     // 标签建议是锦上添花：读不到就不给建议，输入框照常能用
     allTags.value = []
   }
 }
 
-const tagSuggestions = computed(() => {
+/** 「从已有标签选」的候选：没打字给常用的 8 枚，打了字按包含过滤到 5 枚 */
+const tagPicker = computed(() => {
   const q = tagInput.value.trim().toLowerCase()
-  if (!q) return []
-  return allTags.value.filter((t) => t.toLowerCase().includes(q) && !tags.value.includes(t)).slice(0, 5)
+  const pool = allTags.value.filter((t) => !tags.value.includes(t.name))
+  if (!q) return pool.slice(0, 8)
+  return pool.filter((t) => t.name.toLowerCase().includes(q)).slice(0, 5)
 })
+
+// 候选换了（打字 / 加了一枚）就把高亮收回起点，免得 Enter 打在一枚已经不在列表里的标签上
+watch([tagInput, tagPicker], () => {
+  tagCursor.value = -1
+})
+
+function moveTagCursor(step: number): void {
+  const last = tagPicker.value.length - 1
+  if (last < 0) return
+  const next = tagCursor.value + step
+  tagCursor.value = next < 0 ? last : next > last ? 0 : next
+}
 
 function addTag(name = tagInput.value): void {
   const t = name.trim()
@@ -435,6 +539,13 @@ function addTag(name = tagInput.value): void {
   }
   tags.value = [...tags.value, t]
   tagInput.value = ''
+  tagCursor.value = -1
+}
+
+/** 输入框里的 Enter / 「加」：高亮着哪一枚就收哪一枚，否则收手打的那个词（= 新建） */
+function commitTag(): void {
+  const pick = tagPicker.value[tagCursor.value]
+  addTag(pick ? pick.name : tagInput.value)
 }
 
 function removeTag(name: string): void {
@@ -927,17 +1038,19 @@ onUnmounted(() => {
         type="text"
         placeholder="文章标题"
         data-testid="write-title"
-        :disabled="busy"
       />
     </label>
 
     <!-- 正文：宽屏左源码右预览；窄屏只有源码，预览走面板 -->
-    <div class="write-split">
+    <!-- 栅格列数必须跟 `narrow` 同源：窄屏下预览那一栏从 DOM 里拿掉了，
+         若 `.write-split` 还留着两列，源码就只剩左半屏、右半屏空着（实测 900 下只有 403px/818px）。 -->
+    <div class="write-split" :class="{ 'is-narrow': narrow }">
+      <!-- 不把 `busy` 传给编辑器：那会 `disabled` 掉 textarea，自动保存每 2 秒把光标打断一次。
+           编辑区任何时候都能写；「保存中」只体现为动作条按钮禁用 + 页头那行字。 -->
       <MarkdownSourceEditor
         ref="editorEl"
         v-model="content"
         class="split-source"
-        :busy="busy"
         @save="saveDraft()"
         @publish="publish()"
         @image="pickImage()"
@@ -1111,22 +1224,33 @@ onUnmounted(() => {
                 aria-label="给文章加标签"
                 data-testid="write-tag-input"
                 @focus="loadTags()"
-                @keydown.enter.prevent="addTag()"
+                @keydown.enter.prevent="commitTag()"
+                @keydown.down.prevent="moveTagCursor(1)"
+                @keydown.up.prevent="moveTagCursor(-1)"
               />
-              <button type="button" class="chip" data-testid="write-tag-add" @click="addTag()">加</button>
+              <button type="button" class="chip" data-testid="write-tag-add" @click="commitTag()">加</button>
             </div>
-            <div v-if="tagSuggestions.length" class="tag-suggest">
+
+            <!-- 已有标签的口子：输入框空着时给「常用的几枚」，打字时按包含过滤。
+                 光靠手打，站上已有的同义标签会越攒越乱（旧版也只有「打字才出建议」这一层）。 -->
+            <div v-if="tagPicker.length" class="tag-suggest" data-testid="write-tag-suggest">
+              <span class="tag-suggest-note">{{ tagInput.trim() ? '匹配到' : '从已有标签选' }}</span>
               <button
-                v-for="s in tagSuggestions"
-                :key="s"
+                v-for="(s, i) in tagPicker"
+                :key="s.name"
                 type="button"
                 class="chip"
-                :data-testid="`write-tag-suggest-${s}`"
-                @click="addTag(s)"
+                :class="{ on: i === tagCursor }"
+                :data-testid="`write-tag-suggest-${s.name}`"
+                @mouseenter="tagCursor = i"
+                @click="addTag(s.name)"
               >
-                {{ s }}
+                {{ s.name }}<i class="tag-count">{{ s.post_count }}</i>
               </button>
             </div>
+            <p v-else-if="tagInput.trim()" class="meta-note">
+              按 <i class="kbd">Enter</i> 新建「{{ tagInput.trim() }}」
+            </p>
           </section>
 
           <section class="meta-block">
@@ -1373,6 +1497,11 @@ onUnmounted(() => {
   grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
   gap: 12px;
   align-items: stretch;
+}
+
+/* 窄屏（`narrow` 为真、预览改成覆盖面板）：一列到底，源码独占全宽 */
+.write-split.is-narrow {
+  grid-template-columns: minmax(0, 1fr);
 }
 
 .split-source,
@@ -1655,8 +1784,34 @@ onUnmounted(() => {
 
 .tag-suggest {
   display: flex;
+  align-items: center;
   gap: 5px;
   flex-wrap: wrap;
+}
+
+.tag-suggest-note {
+  font-size: 12px;
+  color: var(--ink-faint);
+}
+
+/* 高亮的那一枚与面板里自绘的焦点环同一套视觉（`.chip.on` 就是被选中态） */
+.tag-suggest .chip.on {
+  background: var(--blue-500);
+  border-color: var(--blue-600);
+  color: var(--paper);
+}
+
+.tag-count {
+  font-style: normal;
+  font-size: 11px;
+  margin-left: 4px;
+  opacity: 0.75;
+}
+
+.meta-note {
+  font-size: 12px;
+  color: var(--ink-faint);
+  margin: 0;
 }
 
 .cover {

@@ -42,10 +42,8 @@ const props = withDefaults(
     modelValue: string
     /** 占位提示 */
     placeholder?: string
-    /** 保存中 / 发布中：禁用输入与工具条，避免半截状态被写进后端 */
-    busy?: boolean
   }>(),
-  { placeholder: '在这里写正文……支持 Markdown。', busy: false },
+  { placeholder: '在这里写正文……支持 Markdown。' },
 )
 
 const emit = defineEmits<{
@@ -327,7 +325,6 @@ defineExpose({
         :title="t.title"
         :aria-label="t.title"
         :data-tool="t.id"
-        :disabled="busy"
         @mousedown.prevent
         @click="t.run()"
       >
@@ -341,7 +338,6 @@ defineExpose({
         <select
           class="lang-select"
           :value="lang"
-          :disabled="busy"
           data-testid="write-lang"
           title="代码块语言（光标在代码块里时改的是那一段）"
           @change="changeLang(($event.target as HTMLSelectElement).value)"
@@ -356,7 +352,6 @@ defineExpose({
         title="代码块 ```lang"
         aria-label="代码块"
         data-tool="fence"
-        :disabled="busy"
         @mousedown.prevent
         @click="insertFence()"
       >
@@ -369,7 +364,6 @@ defineExpose({
         title="上传图片并插入 ![](url)"
         aria-label="插入图片"
         data-tool="image"
-        :disabled="busy"
         @mousedown.prevent
         @click="onImage()"
       >
@@ -388,7 +382,6 @@ defineExpose({
       data-testid="write-content"
       :value="modelValue"
       :placeholder="placeholder"
-      :disabled="busy"
       spellcheck="false"
       aria-label="正文 Markdown"
       @input="emit('update:modelValue', ($event.target as HTMLTextAreaElement).value)"
