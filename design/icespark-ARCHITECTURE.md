@@ -2536,3 +2536,45 @@ TAB 出正文 · ESC 失焦 · Shift+N 文稿 · Shift+M 资料 · [Shift+V 预�
 | e2e | 16 个 spec / **117 条**：a11y 4 · admin-audit 8 · admin-guard 4 · admin-links 10 · admin-site 9 · pages 11 · palette 4 · parity-keyboard 5 · parity-mouse 2 · pause 11 · profile 10 · shell 8 · site-config 2 · skeleton 7 · user-profile 7 · write 15 |
 | P7 待办 | 字体子集化（§14.5）· highlight.js + DOMPurify `span` 白名单 · meta / JSON-LD / sitemap · axe 审计收口 · 预渲染 · 性能预算门 |
 | 挂着的待裁定 | ①面板切换鼠标与键盘口径不对称（键盘可直切、鼠标要先关）②删除线要开 GFM `strikethrough`（动样机渲染器）③`PostListItem` 是否补 `group_id` ④`COMBO_ACTIONS` 是否放宽（`Shift+P` 之类） |
+
+## 30. P7 首件：性能预算门 + 数据层收口（2026-10-01）
+
+P7 六项里，**性能预算门**是唯一不需要先问设计的（它只测量、不改变样子），所以先落地；
+同轮把 §24.6 挂着的那笔数据层账收掉。
+
+### 30.1 性能预算门：`npm run check:budget`
+
+`icespark/scripts/check-budget.mjs`（新增）量五件事，全部读 **`dist/` 构建产物**：
+
+| 判据 | 基线（2026-10-01 实测） | 回归线 |
+|---|---|---|
+| 入口 JS 合计（`dist/index.html` 直接引的 .js） | 54.76 kB gz | 72 kB |
+| 入口 CSS 合计 | 4.27 kB gz | 8 kB |
+| 最大懒加载块（当前是 `MarkdownBody`，内含 markdown-it + DOMPurify） | 54.77 kB gz | 72 kB |
+| 像素字体（`ark-pixel-12px-zh-hans.woff2`，未子集化） | 738.23 kB | 800 kB |
+| `dist/` 总量（37 个懒加载块） | 1,226.13 kB | 2 MB |
+
+- **它是回归线，不是产品指标**：数字取自当下实测 + 约 25% 余量。真正的目标（字体子集化到多大、
+  入口 JS 压到多少）属于 P7 与预渲染一起定的事，等用户裁定后只改 `BUDGET` 一处。
+- **gzip 口径**：脚本用 `zlib.gzipSync` 自己压（与部署侧的压缩近似），字体按原始字节（woff2 已压过）。
+- **它是独立的第八段，而且自己先构建**：`check:budget` = `npm run build && node scripts/check-budget.mjs`
+  （4~5 秒）。理由是不能读到**上次的陈旧产物** —— 若只读现成的 `dist/`，源码改了却忘了构建，
+  门会拿旧数字给出假 PASS。所以它自己构建一次，然后挂到 `npm run check` 的最后一段；
+  想让 `check` 不碰构建时，单跑 `npm run check:independence …` 那几段即可。
+- **反例验证**：`node scripts/check-budget.mjs --selftest` 把「超线 / 贴线 / 字体超标」三种假数据
+  喂给同一套判定函数，断言「应红 2 条、应绿 1 条」—— 证明门不是永远 PASS。
+  实测：`npm run check` 现在八段，**EXIT=0**。
+
+### 30.2 数据层收口：`resetPassword()`
+
+§24.6 第 2 条记的是「`api/auth.ts` 缺一个 `resetPassword()`，页面直接用了 `client.request()`」。
+本轮补上 `icespark/src/api/auth.ts`：`resetPassword(old, next)` —— `POST /api/auth/password/reset`，
+参数走 **query string**、`body` 留空（参数塞进 JSON body 后端会当成缺少参数，与登录正相反）。
+`ProfileView.vue` 里那段手写请求删掉、改调它，文件头那条「只能借 `client.request()`」的说明同步改写。
+
+登录**仍然**留在 `stores/auth.ts`：`POST /api/auth/token` 要的是
+`application/x-www-form-urlencoded` 表单体（`postJson` 只会 JSON 序列化），且登录要顺手写令牌并刷新
+状态层 —— 那些副作用不属于数据层。这条取舍在 `src/api/auth.ts` 的文件头写明了。
+
+`profile.spec.ts` 里「改密码：两次不一致在前端拦下不发请求；一致时参数走 query string 且 body 为空」
+一条未改、照旧通过 —— 形状没变，只是搬了家。

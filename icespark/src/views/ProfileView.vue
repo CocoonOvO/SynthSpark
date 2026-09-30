@@ -20,9 +20,9 @@
  * · **保存后要同步 `stores/auth`**：暂停菜单那行账号昵称读的是 `auth.displayName`，
  *   只改页面自己的表单，菜单里还是旧昵称（§23.2 明写这一点）。这里调 `auth.loadMe()`
  *   重新拉一次 `/api/auth/me`，与旧前端「同步 authStore」是同一件事。
- * · **改密码只能借 `client.request()`**：`/api/auth/password/reset` 在 `src/api/` 里没有
- *   对应函数，而本轮红线是不许往 `api/` 加东西。`request()` 本来就支持 `method:'POST'` + `query`
- *   且 `body` 留空，正好是这个端点的形状（把参数塞进 JSON body 会被后端当成参数缺失）。
+ * · **改密码走数据层的 `resetPassword()`**（`src/api/auth.ts`）：参数走 query string、
+ *   body 留空，形状与登录相反（把参数塞进 JSON body 会被后端当成参数缺失）。
+ *   这一段原本借 `client.request()` 长在页面里（§24.6 记过这笔账），现已经收回数据层。
  * · **绝不自己 `window.addEventListener('keydown')`**：全站唯一的键盘监听器是外壳的
  *   `mountInput`，页面只用 `onPad(handler)`，卸载时释放。
  * · **原生焦点的两条惯例**（§21，与文章页 / 用户档案页同源）：
@@ -45,7 +45,8 @@
 import { computed, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 
 import { uploadAvatar } from '@/api/admin'
-import { ApiError, request } from '@/api/client'
+import { resetPassword } from '@/api/auth'
+import { ApiError } from '@/api/client'
 import { fetchMe, updateMe, type User, type UserUpdate } from '@/api/users'
 import { focusShellRoot } from '@/input'
 import { useFocusGroup } from '@/input/focus'
@@ -266,12 +267,7 @@ async function changePassword(): Promise<void> {
 
   pwBusy.value = true
   try {
-    // 参数在 query string 里；body 留空（`request()` 只在 body 有值时才写 Content-Type）
-    await request<Record<string, unknown>>('/auth/password/reset', {
-      method: 'POST',
-      query: { old_password: pw.old, new_password: pw.next },
-      auth: true,
-    })
+    await resetPassword(pw.old, pw.next)
     pw.old = ''
     pw.next = ''
     pw.confirm = ''
