@@ -2578,3 +2578,152 @@ P7 六项里，**性能预算门**是唯一不需要先问设计的（它只测�
 
 `profile.spec.ts` 里「改密码：两次不一致在前端拦下不发请求；一致时参数走 query string 且 body 为空」
 一条未改、照旧通过 —— 形状没变，只是搬了家。
+
+## 31. 样机完整性审计（2026-10-01）：三个只读审计 + 按缺口补的五道门
+
+硬要求 1 是「样机已实现的页面与交互**一个都不许遗漏**」。P3–P6 落地时逐轮记过账（§17.2 十六条、
+§17.7 五条 D1–D5、§18–§28 各轮偏差），但**从来没有做过一次「照样机全量对读」的独立审计** ——
+本轮补上，并且顺手把审计暴露出来的**验证缺口**变成门。
+
+### 31.1 方法（可复核，全程只读）
+
+三个只读审计员分头做，**只报告、不改任何文件**，所有结论都带 `文件:行号`：
+
+| 审计 | 范围 | 判据 |
+|---|---|---|
+| A. 场景 | 样机 `src/scenes/` 六个场景 | 逐条对读 ① `<template>` 全文 diff ② 交互标记计数（`@click`/`@mouseenter`/`@wheel`/`@keydown`/`v-if`/`v-for`/`data-testid`/`focusable`）③ testid 集合 ④ `onPad` 动作名集合 |
+| B. 组件与工具层 | 9 个 `ui/*.vue` + 9 个 `ui/*.ts` + `data/api.ts` + `router` + `App.vue` + `pixel.css` + `tokens.ts` | 逐个导出符号 / prop / emit / testid / 键盘动作 / localStorage 键 / CSS 变量名 |
+| C. e2e 覆盖 | 样机 `e2e/{gates,smoke,round5,round6}.mjs` 的**全部 176 条 `check(...)`** | 在生产 `e2e/` 里找行为等价断言（不要求同名） |
+
+### 31.2 六个场景：一致 97 / 有意偏差 35 / **缺失 0**
+
+- 样机 6 个场景的 **26 个 `data-testid` 一个不少**（`home-post-*`、`group-*`、`tag-*`、`post-card`、
+  `pager-*`、`page-dot-*`、`jump-*`、`chips`、`chip-*-*`、`actions`、`action-*`、`keybar`、
+  `about-facts`、`links-grid`、`link-card` …），**两侧交互标记计数与 `onPad` 动作名集合完全一致**
+  （13 种动作名计数逐项相等）。
+- 唯一被删掉的两个分支是 `AboutScene`/`LinksScene` 的 `cancel → focusTabs()`，§25.1 已记账
+  （用户口径：ESC 在每一页都能起菜单）。
+- 35 条有意偏差全部能在 §16/§17/§18/§21/§25 找到依据，**没有一条是「样机有、生产没记账」**。
+
+### 31.3 公共组件与工具层：一致 238 / 有意偏差 53 / **缺失 0**（另有 17 处有意新增）
+
+- 样机 **6 个 `localStorage` 键**、**18 个 token CSS 变量名**、**17 个 `PadAction`**、
+  **24 个 `KEYMAP` 键**、`pixel.css` 的 **28 个类选择器与 7 个 keyframes** —— 逐项核对，
+  全部在 icespark 有同名或明确记账的对应物。
+- 有意偏差 53 条按依据归类：§16.1/§16.2/§16.3（不迁 `usePad`/`focusIndex`/`DEMO_*`/`forceDemo` 等）、
+  §17.2 的第 3/4/5/7/12/13/14/16 条、§15.4/§11.1（转场时序与路由机制改写）、§15.6、§26.1、
+  §17.8-2、§25.1、§23/§24（管理页路径）、§18.1、§28.12.2。
+- 有意**新增** 17 处（样机没有、生产需要）：aria 三件套、隐藏 `h1`、`.deck-footer` 站点小字、
+  e2e 锚点 testid、`pageModalOpen`、`sticky-foot`、8 个半透明 token、`SCALE` 刻度等。
+- 专项核查三条结论：**没有任何页面绕过数据层**（视图只 `import { ApiError }`；三处非 `api/` 的 HTTP
+  都有记账：`stores/auth.ts` 登录、`config/site.ts` 三级配置、`api/upload.ts` 内部）；
+  **浏览状态保留成立**（`viewKey` 不含 query → 列表不重建；`goPosts` 只在 `page>1` 时写参数；
+  `goBackOrPosts()` 有历史就 `router.back()`）；**`cover.ts`/`prefs.ts` 逐字一致**。
+
+### 31.4 样机 176 条断言 → 生产 e2e：已覆盖 46 / 等价替代 39 / 未覆盖 91
+
+「未覆盖 91」听着吓人，逐簇看是**三类**：① 口径已变（未知路径→404、菜单行数 9→11、
+「演示版路径提示」随 `/write` 变真页面而消失）；② 由别的门等价承担（axe、tokens、无 JS 报错、
+localStorage 前缀的静态门 + 单测）；③ **真的没门**。第三类就是本轮要补的，按收益补了五道：
+
+| 新门 | 补的是什么（原来只有样机有） |
+|---|---|
+| `e2e/list-paging.spec.ts` | 分页 / 跳页 / 筛选写 URL / 返回保留浏览状态 / 纯鼠标翻页（样机 round5 一整簇，生产源码早已实现却零 e2e） |
+| `e2e/keyboard-journey.spec.ts` | 文章页与列表页的纯键盘旅程：`G`/`L`/`U`、芯片区、`↓` 退出操作条、TAB 严格按 DOM 顺序、Shift+TAB 反向、焦点自动滚进视野、正文站内链接回车不整页刷新 |
+| `e2e/runtime-gates.spec.ts` | ① 运行期资源请求全部同源（376 条请求、外站 0）② localStorage/sessionStorage 键前缀的**运行时枚举门**（含反向自证：故意塞一个违规键，判定函数必须认得）③ 动效开关真的生效（`data-motion=off` + `animationName === 'none'`） |
+| `e2e/shell-settings.spec.ts` | 设置弹窗**恰好 3 行**与负向行（无 `set-signal`/`set-source`）、菜单行列与登录前后差异、**登录失败展示后端 detail 原文**、刷新后登录态（含 `/api/auth/me` 404 时反向登出） |
+| `e2e/terminology.spec.ts` | **术语门**（样机 `gates.mjs` 第 3 节「用户要求第 1 条」）：六个页面的可见文本里都不许出现 18 个游戏术语；外加「减动效下自检照落主页、切页照样能用」 |
+| `e2e/md-and-pixels.spec.ts` | markdown 渲染（标题 / 代码块 / 表格 / 站内链接）+ 设计系统像素事实（屏幕白底、卡片 3px 边框、无封面卡另一套版式、焦点光标 8px 蓝块 `blink-step`、焦点不加粗不加 outline、keybar 常驻、旧左侧竖列不回来） |
+
+**第二条兜底账**：`scripts/check-independence.mjs` 的头注释写着「键名写在常量里再由常量传进去的情况，
+靠 P2 的运行时门（枚举 localStorage）兜底」—— 那道兜底此前**不存在**，本轮由
+`runtime-gates.spec.ts` 的 B 组补上，注释承诺与实现终于对齐。
+
+### 31.5 审计查出的一个真缺陷（**待用户裁定**，不擅自改）
+
+**现象**：`/post/:key` 打不开（已删除 / 改过标题 / 深链接敲错）时，页面**永远停在「读取正文 …」**。
+
+- 证据（真机探针，5175 + 8002）：`goto('/post/definitely-not-a-real-key-7f3a')` 后等 2.5 秒，
+  屏幕文本仍是 `文章 · 未分组 / ▌ 读取正文 …`，**没有任何错误或空态文案**。
+- 根因：`stores/content.ts` 的 `loadPost()` 失败时把 `post` 置 `null`、`dataSource` 置 `'demo'`；
+  而 `PostDetailView.vue` 只按 `!post` 分支渲染加载行，**从不读 `dataSource`**。
+- 为什么会这样：样机在同样情形下渲染的是 `DEMO_POST`（样张兜底），所以**样机没有 error 态**；
+  §16.2 裁决「样张一律不迁」之后，这条路径就漏成了死循环观感 —— 是**裁决的直接后果**，不是谁写错。
+
+**为什么不当场修**：样机没有这个交互，按硬要求 4「样机尚未实现的交互必须先与用户交流确认再实现」，
+这是**新增设计**（§16.5 规则 2 也禁止迁移时自行发明）。建议形态（与用户档案页的 `user-missing`
+同款，已有先例）：正文区换成页内空态「这篇文章不存在或已被删除」+ 两行自绘焦点动作
+「返回列表 / 回主页」，并让底栏 `● LIVE / ○ DEMO` 保持 `demo`。等一句话裁定即可落地。
+
+### 31.6 顺手修掉的两笔小账
+
+1. `machine/PauseMenu.vue:493`、`:697` 把「提示行去掉 `blink`」的依据写成 **§26.2**，
+   文档里实为 **§26.1**（§26.2 是「登出后回主页」）—— 注释改正。
+2. **一处此前没记账的差异**：样机 `router/index.ts` 明确写 `scrollBehavior: () => false`
+   （屏内滚动归 `.screen-inner`），生产改成 `savedPosition / { top: 0 }`。生产版 document 本身
+   不滚动（`.app` 100vh + `overflow: hidden`），观感无差，且对「刷新/前进后退恢复位置」更友好 ——
+   **属有意偏差，记在 §31 这里**（不另开一节）。
+3. 口径澄清：此前口头常说「§17 的 19 条偏差」，准确数是 **§17.2 的 16 条 + §17.7 的 5 条 = 21 条**。
+
+## 32. 审计顺出来的四个真缺陷（2026-10-01）：三条是键盘，一条是样机口径
+
+§31 的三个审计员之外，本轮还派了五个 agent **给缺口补门**。补门的过程里撞出**四个真实产品缺陷**
+（写用例的人先按 `test.fail` 标成「预期失败」让套件保持绿，修完再转正 —— 这正是那种标注的用途）。
+四个都已修：
+
+### 32.1 跳页框：一下 ESC 不关框（样机冻结口径被 §28.11 打破）
+
+- **现象**：`/posts` → `J` 开跳页框 → 按一下 `ESC`，框**还在**（要按第二下才关）；两下都不叠菜单。
+- **根因**：§28.11 把「编辑框里的 ESC」统一改成「先失焦」（用户裁定），内核在
+  `input/index.ts` 的 `isEditableTarget` 分支里 `preventDefault()` + `focusShellRoot()` 后**直接 `return`** ——
+  于是 `PostListView.vue` 里那段「跳页框开着时吃掉 ESC」成了**死代码**。
+- **改法**：跳页输入框自己挂 `@keydown.esc.stop="closeJump"`（`.stop` 让这一下到不了外壳，
+  内核根本没机会拦）。依据是**既有先例**：§28.11 的表格里 `TextEditorDialog` 就是「弹窗自己有一条
+  局部规则」而不受内核影响 —— 一个临时小框不该套用「正文编辑器」的失焦语义。
+- **样机依据**：`design/icespark-prototype/e2e/round5.mjs`「跳页框 ESC 只关框不开菜单」。
+
+### 32.2 焦点掉回 `body` → 整块键盘失灵（同一类坑的第三次，这次收进内核）
+
+- **现象**（两处，同一根因）：
+  1. `J` → 输页码 → 回车（**确实跳页了**）→ 之后 `PgDn` / `P` / `J` 全部没反应，得先用鼠标点一下；
+  2. 点场景头那颗 `✕ 清除`（`v-if="activeFilterLabel"`）清掉筛选 → 同样整块键盘失灵。
+- **根因**：这两处**被卸载的正好是当时持有原生焦点的节点**（跳页输入框、清除按钮自己），
+  浏览器把焦点丢回 `body`；而外壳的 `keydown` 挂在**外壳根节点**上，`body` 上的按键不经过它 ——
+  正是 §21 记的那条坑（§28.11.3、§28.12.1 各踩过一次，都是逐点补 `focusShellRoot()`）。
+- **改法（这一次是统一的兜底，不再逐点补）**：输入层新挂 `document` 上的 `focusout`（**捕获**阶段，
+  因为卸载后那次 focusout 的目标已脱离文档、靠冒泡收不到），推迟一个 tick 后判两件事：
+  ①原来持有焦点的节点**已不在文档里** ②焦点此刻真的空在 `body` 上 —— 两条都成立才把焦点收回外壳。
+  - 为什么不能当场判：实测那一刻 `document.contains(target)` 仍是 `true`（Chrome 在移除过程中就派发
+    focusout），`activeElement` 也已经是 `body`，**这两个信号单独用都会误伤**；
+  - 为什么用「节点已不在文档」而不是「焦点 = body」：用户去点地址栏时 `activeElement` 同样是 body，
+    但那个节点还在文档里 —— 加这一条才不会把焦点从地址栏抢回来。
+- 既有的显式 `focusShellRoot()` 调用**照旧保留**：它们更早（同一时刻就收口）、语义也更具体。
+
+### 32.3 文章页 TAB 不再按 DOM 顺序遍历（§21 的修法带出来的回归）
+
+- **现象**：文章详情页连按 `TAB`，焦点**永远停在第一个落点**（第一枚分组芯片），到不了操作条、
+  也到不了正文链接 —— 样机第六轮冻结的「文章页 TAB 严格按 DOM 顺序遍历」在生产页整体失效。
+- **根因**：`PostDetailView.vue` 的 `onPad` 在分支之前**对每一个动作**都调 `dropNativeFocus()`，
+  `tabNext` / `tabPrev` 也是动作之一；而 `focusShellRoot()` = `.app.focus()` 会把浏览器的
+  **顺序焦点导航起点**（sequential focus navigation starting point）挪到 `.app` 上，
+  于是下一次 `TAB` 又从文档里第一个可聚焦项重新开始。
+  样机当年用 `blur()`（焦点落 `body`）**不会**挪动这个起点 —— §21 为了修「焦点掉 body 后键盘失灵」
+  把它换成 `focusShellRoot()` 时，把这条口径一起带走了（真正的回归点）。
+- **改法**：`tabNext` / `tabPrev` 在 `dropNativeFocus()` **之前**直接让路返回（把 TAB 还给浏览器，
+  与 `App.vue` 里「文章页没有标签栏 → TAB 交给浏览器」那条注释同一口径）。
+- **真机实测**：`TAB` 序列 `chip-group-0 → chip-tag-1 → action-like → action-comment`（修复前是
+  `chip-group-0 → chip-group-0`）。
+
+### 32.4 验收
+
+- `npx playwright test`：**155 passed / 0 failed**（117 → 155，本轮新增 38 条）。
+  新增的六个 spec：`list-paging` 9 · `keyboard-journey` 7 · `md-and-pixels` 11 ·
+  `shell-settings` 6 · `runtime-gates` 3 · `terminology` 2。
+- 四个缺陷的用例先以 `test.fail` 记录（证明门不是空转），修完自动翻红 → 删掉标注转正。
+- `npm run check` **EXIT=0**（八段，含性能预算门：入口 JS 54.83/72 kB、字体 738.23/800 kB、
+  总量 1,226.43/2,048 kB）。
+- 真机（5175 + 8002，真库 12 篇文章 / 分组「工程实践」）：
+  跳页框一下 `ESC` 关掉且无菜单；跳页回车后 `activeElement = app`、`PgUp` 回到第 1 页；
+  点「清除」后 `activeElement = app`、`PgDn` 翻到第 2 页；文章页 TAB 序列按 DOM 顺序走。
+- 仍然挂着**一条待用户裁定**的缺陷：§31.5 的「`/post/:key` 打不开时永远停在『读取正文 …』」——
+  样机没有这个交互，属于新增设计，不擅自实现。

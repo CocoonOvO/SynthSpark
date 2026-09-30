@@ -197,6 +197,20 @@ function openJump() {
   })
 }
 
+/**
+ * 关跳页框。
+ *
+ * 输入框是它自己持有原生焦点的，`jumpOpen = false` 会把这个节点卸载掉 —— 焦点会掉回 `body`，
+ * 键盘当场失灵（真 bug：跳页回车之后 PgDn / P / J 全没反应，得先用鼠标点一下）。
+ * 这里不再自己补 `focusShellRoot()`：输入层现在有统一的兜底（`input/index.ts` 的
+ * `onFocusOut`：**持有焦点的节点被卸载**且焦点空在 body 上时收回外壳），
+ * 点「✕ 清除」把按钮自己筛掉那一处也一并治了。
+ *
+ * `@keydown.esc.stop` 是另一件事：内核把「编辑框里的 ESC」定义成「先失焦」（2026-09-30 用户裁定），
+ * 若不 `.stop`，这一下会被内核吃掉、`closeJump()` 永远收不到 —— 样机冻结的口径是
+ * **按一下 ESC 就关框**（`round5.mjs` 的「跳页框 ESC 只关框不开菜单」）。
+ * 一个临时小框不该套用「正文编辑器」的失焦语义，所以照 `TextEditorDialog` 的先例走局部规则。
+ */
 function closeJump() {
   jumpOpen.value = false
 }
@@ -599,6 +613,7 @@ const rangeText = computed(() => {
           inputmode="numeric"
           spellcheck="false"
           @keydown.enter.prevent="submitJump"
+          @keydown.esc.stop="closeJump"
         />
         <span class="jump-of px">/ {{ pageCount }}</span>
         <button class="pbtn focusable mini" data-testid="jump-go" @click="submitJump">跳转</button>

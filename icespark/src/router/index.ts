@@ -20,7 +20,13 @@ export function createAppRouter() {
     history: createWebHistory(import.meta.env.BASE_URL),
     routes,
     scrollBehavior(to, _from, savedPosition) {
-      // 后退/前进回到原位置，其余情况回顶；带锚点时交给浏览器
+      // 后退/前进回到原位置，其余情况回顶；带锚点时交给浏览器。
+      //
+      // 这**与样机不同**（样机写死 `scrollBehavior: () => false`，口径是「屏内滚动归
+      // `.screen-inner`，别让浏览器动 document」）：生产的 document 本来就不滚动
+      // （`.app` 是 100vh + `overflow: hidden`），所以观感没有差别，而
+      // `savedPosition` 让浏览器级的「前进后退 / 刷新恢复位置」更自然。
+      // 有意偏差，记账在架构 §31.6 第 2 条。
       if (savedPosition) return savedPosition
       if (to.hash) return { el: to.hash }
       return { top: 0 }

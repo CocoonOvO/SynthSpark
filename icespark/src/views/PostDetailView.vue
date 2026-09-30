@@ -174,6 +174,15 @@ const off = onPad((a) => {
   if (dialogLines.value) return false // 对话框自己处理按键
 
   if (a === 'confirm' && nativeFocusInside()) return false
+
+  // TAB 必须**原样还给浏览器**：这一页没有标签栏，样机冻结的口径是
+  // 「TAB 严格按 DOM 顺序遍历可聚焦项」（`round6.mjs`）。而下面那句 `dropNativeFocus()`
+  // 会调 `focusShellRoot()` = `.app.focus()`，它同时把浏览器的**顺序焦点导航起点**挪到
+  // `.app` 上 —— 于是下一次 TAB 又从文档里第一个可聚焦项开始，焦点永远卡在第一枚芯片上
+  // （真 bug，实测 `chip-group-0` → `chip-group-0`）。样机当年用 `blur()`（焦点落 body）
+  // 不会挪那个起点，§21 把 `blur()` 换成 `focusShellRoot()` 时引入了这个回归。
+  if (a === 'tabNext' || a === 'tabPrev') return false
+
   dropNativeFocus()
 
   if (a === 'up' || a === 'down') {

@@ -79,8 +79,38 @@ export function mountInput(root: HTMLElement): () => void {
     root.focus({ preventScroll: true })
   }
 
+  /**
+   * 「焦点掉到 body」的兜底（第三次撞上同一个坑了，这次收进内核）。
+   *
+   * 场景：正持有焦点的节点被**卸载** —— 跳页框提交后自己消失、点了那个 `v-if` 的
+   * 「✕ 清除」按钮（它自己被筛掉）、面板 / 对话框关掉…… 浏览器这时把焦点丢回 `body`，
+   * 而键盘监听器挂在**外壳根节点**上，body 上的按键根本不经过它 —— 表现就是
+   * 「按了回车跳页，之后 PgDn / P / J 全部没反应，得先用鼠标点一下」。
+   *
+   * 为什么不能在 `focusout` 里直接判断：那一刻 `document.contains(target)` 还是 `true`
+   * （Chrome 在移除过程中就派发了 focusout），`activeElement` 也已经是 `body`。
+   * 所以推迟一个 tick 再判，两个条件一起看：
+   *   ① 原来持有焦点的节点**已经不在文档里**（= 被卸载，而不是「焦点被有意挪走」）；
+   *   ② 焦点此刻真的在 `body` 上空着。
+   * 两个都成立才收回来。这样「用户去点地址栏」不会把焦点抢回来（那个节点还在文档里），
+   * 而卸载导致的失焦一定能接住。显式的 `focusShellRoot()` 调用照旧保留 ——
+   * 它们比这里早一个 tick，语义也更具体（关面板、关对话框时立刻收口）。
+   */
+  function onFocusOut(event: FocusEvent): void {
+    const from = event.target as Node | null
+    if (!from) return
+    window.setTimeout(() => {
+      if (document.contains(from)) return
+      const active = document.activeElement
+      if (!active || active === document.body) focusShellRoot()
+    }, 0)
+  }
+
   root.addEventListener('keydown', onKeydown)
   root.addEventListener('pointerdown', onPointerDown)
+  // focusout 要**捕获**阶段挂：它在目标任务上不冒泡到 root（焦点节点可能是 root 的后代，
+  // 但卸载后的那次 focusout 目标已经脱离文档，靠冒泡收不到），挂 document 捕获层最稳
+  document.addEventListener('focusout', onFocusOut, true)
 
   // 首次加载：焦点在 body 上，先接管一次
   root.focus({ preventScroll: true })
@@ -88,5 +118,6 @@ export function mountInput(root: HTMLElement): () => void {
   return () => {
     root.removeEventListener('keydown', onKeydown)
     root.removeEventListener('pointerdown', onPointerDown)
+    document.removeEventListener('focusout', onFocusOut, true)
   }
 }
