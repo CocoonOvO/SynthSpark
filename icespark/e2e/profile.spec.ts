@@ -372,3 +372,35 @@ test('改密码：两次不一致在前端拦下不发请求；一致时参数�
   // 参数不在 body 里：契约收的是 query string，塞 JSON 会被后端当成参数缺失
   expect(stub.pwPosts[0]!.body).toBeNull()
 })
+
+test('登出：在需要权限的页面上登出后自动回主页（普通页面上则原地不动）', async ({ page }) => {
+  // 用户口径：登出前停在需要权限的页面时，登出必须把人送回主页 ——
+  // 否则地址栏写着 /profile、屏幕上却是登出后的空壳，URL 与画面互相矛盾。
+  await loggedIn(page)
+  await page.goto('/profile')
+  await booted(page)
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'profile')
+
+  // 菜单 → 账号行（已登录时它是「退出登录」）
+  await page.keyboard.press('p')
+  await expect(page.locator('[data-testid="pause"]')).toBeVisible()
+  await page.click('[data-testid="pause-account"]')
+
+  // 回主页：URL、场景、令牌一起收口
+  await expect(page).toHaveURL(/\/$/)
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'home')
+  expect(await page.evaluate(() => localStorage.getItem('synthspark-token'))).toBeNull()
+  // 提示照旧留在菜单里（反馈没丢，只是人换了地方）
+  await expect(page.locator('[data-testid="pause-hint"]')).toContainText('已退出登录')
+
+  // 反向：在**不**需要权限的页面上登出，不该被挪走（否则就是多管闲事）
+  await page.goto('/posts')
+  await booted(page)
+  await page.evaluate(() => localStorage.setItem('synthspark-token', 'e2e-token-2'))
+  await page.reload()
+  await booted(page)
+  await page.keyboard.press('p')
+  await page.click('[data-testid="pause-account"]')
+  await expect(page).toHaveURL(/\/posts$/)
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'posts')
+})

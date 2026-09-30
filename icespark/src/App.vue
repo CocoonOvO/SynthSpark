@@ -1,6 +1,6 @@
 <script setup lang="ts">
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 
 import {
   markSoundPromptShown,
@@ -90,6 +90,7 @@ const menuNotice = ref('')
 const pauseOpen = ref(false)
 
 const route = useRoute()
+const router = useRouter()
 const site = useSiteStore()
 const auth = useAuthStore()
 const shell = useShellStore()
@@ -190,6 +191,25 @@ function openLogin(): void {
   loginNotice.value = ''
   loginOpen.value = true
 }
+
+/**
+ * 登出后的收口（用户反馈）：登出前停在**需要权限的页面**上时，登出要把人送回主页。
+ *
+ * 为什么不能只改菜单那一处：登出确实只有菜单一个入口，但 `loadMe()` 撞到 401
+ * （令牌过期）也会登出。那条路同样不该把人留在 `/profile` / `/admin/*` 上 ——
+ * 否则地址栏写着 `/admin/site`、屏幕上却是「仅超管可见」的空壳，
+ * URL 与画面互相矛盾，正是 P5「未登录深链接回主页」那条裁定要避免的东西。
+ *
+ * 挂在 `isLoggedIn` 由真变假这一刻，而不是挂在 `logout()` 里：`stores/auth.ts`
+ * 不能 import router（`router/index.ts` 已经 import 了它，会绕成一个环）。
+ */
+watch(
+  () => auth.isLoggedIn,
+  (logged, wasLogged) => {
+    if (!wasLogged || logged) return
+    if (route.meta.requiresAuth) void router.push('/')
+  },
+)
 
 /**
  * 守卫要登录框（P5）：未登录深链接进需鉴权页时被送到这里。

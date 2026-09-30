@@ -481,7 +481,11 @@ function clickHit(i: number): void {
         </div>
       </template>
 
-      <div v-if="hint" class="pause-hint blink" data-testid="pause-hint">{{ hint }}</div>
+      <!-- 提示行**不闪**（用户反馈：一整句红字反复明灭太晃眼）。
+           样机这里挂的是 `blink`，闪的是「▌ 检索中 …」那种光标字形 —— 一个方块闪才像光标，
+           一整句话闪就是干扰。这一处是**有意偏离样机**，理由见架构 §26.2；
+           仍然保留 `--spark` 红与位置，反馈一点没少，只是不再明灭。 -->
+      <div v-if="hint" class="pause-hint" data-testid="pause-hint">{{ hint }}</div>
     </div>
 
     <!-- 子弹窗：只剩设置。登录框是外壳级模态（App.vue），不在这里叠 -->
@@ -683,5 +687,7 @@ function clickHit(i: number): void {
   color: var(--spark);
   font-family: 'Source Han Sans CN', 'Noto Sans CJK SC', sans-serif;
   font-size: 12.5px;
+  /* 不挂 `.blink`：这里是一整句提示，反复明灭会晃眼睛（架构 §26.2）。
+     于是这条规则与样机的差别只有「没有动画」，字号 / 颜色 / 位置一个字没动 */
 }
 </style>

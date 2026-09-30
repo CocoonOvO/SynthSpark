@@ -1559,7 +1559,7 @@ P0–P3 期间的 `NotFoundView` 是占位皮肤（约 19 行），本轮按**�
 | 路由 | 视图 | 行数 | 自己的 e2e |
 |---|---|---|---|
 | `/profile` 个人信息编辑 | `views/ProfileView.vue` | 976（原占位 33） | `e2e/profile.spec.ts` 7 条 |
-| `/admin/site` 站点设置 | `views/AdminSiteView.vue` | 1484 | `e2e/admin-site.spec.ts` 7 条 |
+| `/admin/site` 站点设置 | `views/AdminSiteView.vue` | 1484 | `e2e/admin-site.spec.ts` 7 条（底栏顺序那条见 §26.3） |
 | `/admin/links` 外链管理 | `views/AdminLinksView.vue` | 1129 | `e2e/admin-links.spec.ts` 9 条 |
 | `/admin/audit` 审计日志 | `views/AdminAuditView.vue` | 1122 | `e2e/admin-audit.spec.ts` 7 条 |
 
@@ -1782,3 +1782,96 @@ U 回顶部 · Q 返回 · P / ESC 菜单`。顺带把关于页底条里那句�
 本轮只改代码与测试、不擅自重启用户在跑的服务；下次重启后审计页的「共 N 条」即为真值
 （真后端目前 3 条，重启前后显示都是 `共 3 条 第 1 / 1 页`，要看差别得先攒够 11 条记录）。
 
+
+## 26. 用户反馈四条（2026-09-29 深夜；第二条当场撤回）
+
+用户一次提了四条，其中第二条（个人信息页的改密码功能）当场说「不用管，留着也挺好」，
+于是本轮落地三条。**三条都不是「按感觉改一下」，都是先量出事实再改，并留下能量红的用例。**
+
+### 26.1 菜单里的红字提示不再闪
+
+**现象（用户）**：菜单里部分场景会弹一条红字提示，**不断闪烁**，太晃眼睛。
+
+**根因**：`machine/PauseMenu.vue` 的提示行挂了全局 `.blink`
+（`animation: blink-step var(--motion-blink) steps(1, end) infinite`）——
+这是**照搬样机的**（`design/icespark-prototype/src/ui/PauseMenu.vue:415` 同样写着
+`class="pause-hint blink"`）。但 `.blink` 在样机里是给**光标字形**用的（`▌ 检索中 …` / `▼` / `▶`），
+一个方块明灭才像光标；这条 `.pause-hint` 却是一整句话（「还没有下一页」「已退出登录」
+「写作页还没做（P6）…」），一句话反复明灭就是干扰。
+
+**改法**：`PauseMenu.vue` 的提示行去掉 `blink` 类（`.pause-hint` 规则里也只有这一处差别），
+颜色 / 字号 / 位置一个字没动；`.blink` 本身与其余三处光标用法原样保留。
+**这是本轮唯一一处有意偏离样机的地方**，理由即上 —— 归入既定偏差清单（§19 那张表的同一类）。
+
+**验证**：`e2e/pause.spec.ts` 新增「提示行不闪」——
+断言 `[data-testid="pause-hint"]` 的 `getComputedStyle().animationName === 'none'`，
+**同时**断言焦点光标伪元素 `::before` 的 `animationName === 'blink-step'`（该闪的没被误伤）。
+一行字闪不闪，静止截图里看不出来，只能量计算值。把 `blink` 加回去，用例立刻红（已验）。
+
+### 26.2 登出后回主页（仅当当前页需要权限）
+
+**现象（用户）**：在需要权限的页面上登出，应该自动跳回主页。
+
+**改法**：`App.vue` 挂一个 `watch(() => auth.isLoggedIn)`：由真变假**且**当前路由
+`meta.requiresAuth` 时 `router.push('/')`。
+
+- **为什么挂在 store 而不是菜单那一处 `auth.logout()`**：登出确实只有菜单一个入口，
+  但 `stores/auth.ts` 的 `loadMe()` 撞到 401（令牌过期）也会调 `logout()`。
+  那条路同样不该把人留在 `/admin/site` 上 —— 否则地址栏写着管理页、屏幕上却是
+  「仅超管可见」的空壳，正是 P5「未登录深链接回主页」那条裁定要避免的矛盾。
+- **为什么不写在 `stores/auth.ts` 里**：`router/index.ts` 已经 import 了 `useAuthStore`
+  （守卫要用），store 再 import router 会绕成一个环。外壳本来就是路由与 store 的会合处。
+- 只在 `requiresAuth` 为真时跳：在不需权限的页面上登出**原地不动**，不多管闲事。
+
+**验证**：`e2e/profile.spec.ts` 新增用例 —— `/profile` 上登出 → URL 回 `/`、
+`data-scene` 变 `home`、`synthspark-token` 被清、菜单里那句「已退出登录」还在；
+再在 `/posts` 上登出 → URL 仍是 `/posts`。把那一行 `router.push` 注释掉，用例立刻红（已验）。
+
+### 26.3 站点设置页的底边栏顺序（用户抓到的第二个真缺陷）
+
+**现象（用户）**：「站点设置页底边栏布局错了，为什么快捷键指引可以在保存栏的上面？」
+
+**实测**：滚到底时，快捷键指引停在屏幕 `y=190`（页面中部、JSON 编辑器上方），
+保存栏反而在它下面 `y=524`。
+
+**根因不是 DOM 顺序** —— `.foot` 本来就是 `.admin-site` 的最后一个孩子。真正的原因是布局：
+页面根节点被外壳的 `.screen-inner > * { flex: 1 1 auto; min-height: 100% }` 定成一屏高，
+而页内 `.work { flex: 1 }`（= `1 1 auto`）**允许收缩**，于是内容（左段列表 635 + 保存栏 55 = 704）
+比一屏高时，`.work` 的**盒子**被压回 301px，内容溢到盒子外面继续渲染；
+紧随其后的 `.foot` 是按**盒子的底**定位的，自然落在溢出的内容中间 —— 视觉上就是
+「指引压到保存栏上面」，而且这块白底（`z-index: 5`）还会盖住滚过去的保存按钮。
+
+**改法**：`.work { flex: 1 0 auto }` —— 那个 `0` 是**不许收缩**。
+`.work` 的盒子于是等于内容高，`.foot` 回到保存栏下面；内容不足一屏时 `flex-grow: 1` 照旧撑满。
+代码里留了注释，写明「别改回 `flex: 1`」以及为什么。
+
+**顺带把这一整族页面查了一遍**（用户问「你自己不检查的吗」——该查）：
+九张挂了 `.sticky-foot` 的页面（首页 / 列表 / 关联 / 404 / 个人信息 / 用户档案 / 三张管理页），
+在 1180×620 的短视口下逐一滚到底量过：**只有 `/admin/site` 有这个缺陷**，
+其余八张的底条下沿都正好压在可见区下沿、下面什么都没有（`/links` 不滚动，底条下沿距下沿 16px
+= 页面自身的下内边距，属正常）。
+
+**验证**：两处 ——
+1. `e2e/shell.spec.ts` 的「底条常驻」补一条**通用判据**：滚到底时，
+   底条下面不许再有别的**流内可见元素**（绝对/固定定位的装饰不算）。
+   这条判据是全局的，任何页面重演同一个错都会红。
+2. `e2e/admin-site.spec.ts` 新增「底栏顺序」：先钉住根因本身（`.work` 的盒子高 ≥ 内容高），
+   再断言指引顶边 ≥ 保存栏底边、指引下沿≈可见区下沿、保存按钮**命中测试**落在按钮自己身上
+   （不是被盖住点不到）。
+两条都验过能红（把 `.work` 改回 `flex: 1 1 auto` → 两条立刻红）。
+
+### 26.4 顺手修掉一条会让门变红的既有 flaky
+
+全量跑第一遍时 `admin-links.spec.ts` 的「新建一条」红了：`expect(recorder.writes).toHaveLength(1)`
+读到空数组。**与本轮改动无关**（那页一个字没碰），是既有写法的问题：
+`page.click()` 返回只代表点击已派发，请求还在路上，紧接着同步读数组就会先读到 `[]`
+（并行跑 97 条时更容易撞上）。改法：新建那条改成 `expect.poll` 等请求落地，
+编辑那条改成先 `page.waitForRequest` 再点。**改完全量连跑两遍 97 条全绿。**
+
+### 26.5 门与计数（本轮）
+
+- `npm run check` EXIT=0（独立性门 / tokens / 单测 5 文件 64 条 / oxlint 0/0 / eslint /
+  契约门 63-89-50 / `vue-tsc`）。
+- `npx playwright test` **97 passed**（本轮 +3：提示行不闪、登出回主页、底栏顺序），连跑两遍稳定。
+- 改动面：`machine/PauseMenu.vue`、`App.vue`、`views/AdminSiteView.vue` 各一处，
+  加三个 e2e 文件与这条文档记录。

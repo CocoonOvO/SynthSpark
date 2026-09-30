@@ -204,8 +204,10 @@ test('外链管理：新建一条 —— 请求体正确，列表就地多一条
   await page.fill('[data-testid="link-sort"]', '7')
   await page.click('[data-testid="link-save"]')
 
-  // 请求体只有契约那四项，一个不多一个不少（配图空串送 null）
-  expect(recorder.writes).toHaveLength(1)
+  // 请求体只有契约那四项，一个不多一个不少（配图空串送 null）。
+  // 这里必须**等一下**再读数组：`click` 返回只是「点击已派发」，请求还在路上；
+  // 并行跑（全量 97 条）时这条同步断言会先读到空数组 —— 实测红过一次。
+  await expect.poll(() => recorder.writes.length, { message: 'POST 应当已经发出去' }).toBe(1)
   expect(recorder.writes[0]).toMatchObject({
     method: 'POST',
     path: '/api/links/',
@@ -239,7 +241,11 @@ test('外链管理：编辑一条 —— PUT 到那条 id，列表就地改名',
 
   await page.fill('[data-testid="link-name"]', '站内服务台 v2')
   await page.fill('[data-testid="link-cover"]', 'https://example.com/c.png')
+  const edited = page.waitForRequest(
+    (r) => r.method() === 'PUT' && r.url().includes('/api/links/l-0001'),
+  )
   await page.click('[data-testid="link-save"]')
+  await edited
 
   expect(recorder.writes).toHaveLength(1)
   expect(recorder.writes[0]).toMatchObject({

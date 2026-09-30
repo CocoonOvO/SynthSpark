@@ -457,3 +457,60 @@ test('站点设置：读取失败给后端 detail 原文；从没保存过时是
   expect(second.puts).toEqual([])
   expect(second.gets()).toBe(1)
 })
+
+test('底栏顺序：快捷键指引在保存栏**下面**，滚到底两者不重叠、保存按钮点得到', async ({ page }) => {
+  // 用户报的缺陷：指引跑到了保存栏上面（实测滚到底时指引停在 y=190、保存栏在 y=524）。
+  // 根因不是 DOM 顺序 —— `.foot` 本来就是 `.admin-site` 的最后一个孩子 ——
+  // 而是 `.work` 的 `flex: 1`（= `1 1 auto`）被压回一屏高度、内容溢出到盒子外面，
+  // 紧跟其后的 `.foot` 于是落在「盒子的底」而不是「内容的底」上。
+  // 修法是 `.work` 不收缩。这里按**几何**断言，不再靠肉眼。
+  await loggedIn(page, true)
+  await stubAdminSite(page, { get: { status: 200, body: fixture() } })
+
+  // 短视口才有得滚 —— 页面比一屏高正是这个缺陷的触发条件
+  await page.setViewportSize({ width: 1180, height: 620 })
+  await page.goto('/admin/site')
+  await booted(page)
+  await expect(page.locator('[data-testid="admin-site-ready"]')).toBeVisible()
+
+  const scroller = page.locator('.screen-inner')
+  const scrolled = await scroller.evaluate((el) => el.scrollHeight > el.clientHeight + 40)
+  expect(scrolled, '这一页应当比视口高，否则证明不了什么').toBe(true)
+
+  // 顺带钉住根因本身：`.work` 的盒子高度必须跟得上内容（收缩回一屏就是那个 bug）
+  const boxes = await page.evaluate(() => {
+    const work = document.querySelector('.work') as HTMLElement
+    const cols = document.querySelector('.cols') as HTMLElement
+    const bar = document.querySelector('.savebar') as HTMLElement
+    return { work: work.offsetHeight, content: cols.offsetHeight + bar.offsetHeight }
+  })
+  expect(
+    boxes.work,
+    '`.work` 必须装得下左段列表 + 保存栏（否则溢出的内容会跑到底条下面）',
+  ).toBeGreaterThanOrEqual(boxes.content)
+
+  // 滚到底：底条是页面最下面那一条，保存栏在它上面，两者不重叠
+  await scroller.evaluate((el) => void (el.scrollTop = el.scrollHeight))
+  const geo = await page.evaluate(() => {
+    const foot = document.querySelector('.foot')!.getBoundingClientRect()
+    const bar = document.querySelector('.savebar')!.getBoundingClientRect()
+    const screen = document.querySelector('.screen-inner')!.getBoundingClientRect()
+    return {
+      footTop: foot.top,
+      footBottom: foot.bottom,
+      barBottom: bar.bottom,
+      screenBottom: screen.bottom,
+    }
+  })
+  expect(geo.footTop, '指引必须在保存栏下面').toBeGreaterThanOrEqual(geo.barBottom - 1)
+  expect(Math.abs(geo.footBottom - geo.screenBottom), '指引就是最下面那一条').toBeLessThanOrEqual(3)
+
+  // 而且真的点得到保存（不是被指引盖住）：命中测试必须落在按钮自己身上
+  const save = page.locator('[data-testid="admin-site-save"]')
+  const hit = await save.evaluate((el) => {
+    const r = el.getBoundingClientRect()
+    const top = document.elementFromPoint(Math.round(r.left + r.width / 2), Math.round(r.top + r.height / 2))
+    return top ? (top === el || el.contains(top) || top.contains(el)) : false
+  })
+  expect(hit, '保存按钮不该被底条挡住').toBe(true)
+})

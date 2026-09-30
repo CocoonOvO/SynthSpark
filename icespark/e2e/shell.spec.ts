@@ -271,5 +271,31 @@ test('底条常驻：屏幕不高、正文又长时，键位/翻页条仍在下�
       return [getComputedStyle(el).backgroundColor, getComputedStyle(screen).backgroundColor]
     }, sel)
     expect(bar, `${path} 的底条不应当有自己的色带`).toBe(canvas)
+
+    // 常驻的另一个前提：它得真是页面最下面那一条。
+    // 曾经的缺陷（用户在 /admin/site 上发现的）：页面根节点被 `.screen-inner > *` 定死一屏高，
+    // 内部那个 `flex: 1` 的容器被压回一屏、内容溢到盒子外面，于是紧随其后的底条落在
+    // 「盒子的底」而不是「内容的底」上 —— 滚到底时指引停在页面中部、保存栏反在它下面。
+    // 判据放在滚到底这一刻：底条此时处于自然位置，任何**可见的流内元素**都不该出现在它下面。
+    await scroller.evaluate((el) => void (el.scrollTop = el.scrollHeight))
+    const below = await page.evaluate((s) => {
+      const foot = document.querySelector(s) as HTMLElement
+      const viewport = document.querySelector('.screen-inner')!.getBoundingClientRect()
+      const ft = foot.getBoundingClientRect()
+      const hits: string[] = []
+      for (const el of foot.parentElement!.querySelectorAll('*')) {
+        if (foot.contains(el)) continue
+        const cs = getComputedStyle(el)
+        if (cs.position === 'absolute' || cs.position === 'fixed') continue
+        if (cs.display === 'none' || cs.visibility === 'hidden') continue
+        const rc = el.getBoundingClientRect()
+        if (rc.height === 0 || rc.width === 0) continue
+        if (rc.top > ft.top + 1 && rc.bottom <= viewport.bottom + 1) {
+          hits.push(`${el.className || el.tagName}@${Math.round(rc.top)}`)
+        }
+      }
+      return hits
+    }, sel)
+    expect(below, `${path} 的底条下面不该还有别的元素`).toEqual([])
   }
 })
