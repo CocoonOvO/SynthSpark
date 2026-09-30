@@ -35,10 +35,16 @@
  *
  * ── 输入模型（结构照 `UserProfileView.vue`，说的话也一样） ──
  *
- * 自定义焦点只覆盖两块**看得见的动作**：页头那颗「新建」按钮，以及每张卡片的
- * 「编辑 / 删除」两个按钮（平铺成 `卡 * 2` 的一维索引，`spatialIndex` 按视觉相邻走）。
- * 表单**不进**自定义焦点：输入框用原生焦点，Tab 在四个字段与保存按钮之间走
- * （本页没有标签栏，外壳把 Tab 还给浏览器 —— 见 `App.vue` 全局监听器那条注释）。
+ * 自定义焦点只覆盖**一块**看得见的动作：每张卡片的「编辑 / 删除」两个按钮
+ * （平铺成 `卡 * 2` 的一维索引，`spatialIndex` 按视觉相邻走）。表单**不进**自定义焦点：
+ * 输入框用原生焦点，Tab 在四个字段与保存按钮之间走（本页没有标签栏，外壳把 Tab
+ * 还给浏览器 —— 见 `App.vue` 全局监听器那条注释）。
+ *
+ * 面板头那颗「＋ 新建」按钮已按用户口径撤掉（2026-10-01）：表单**天生就是新建态**
+ * （`editingId === null`），而「清空」做的正是同一件事（`startNew()` 清字段 + 把光标放回
+ * 名称框），那颗按钮是重复入口。撤掉之后方向键的落点跟着改：非卡片态按 `↓` 进第一张卡的
+ * 「编辑」，卡片首行再按 `↑` **没有落点**（原来回那颗按钮），回车在非卡片态什么也不做
+ * （没有自绘光标就不该替谁按下去，回车仍然归浏览器）。
  *
  * 三条惯例与 §21、§23.3 一字不差：
  *   · 方向键 / 鼠标 hover 一动 → `focusShellRoot()` 收掉原生焦点（**不是 `blur()`**：
@@ -294,13 +300,13 @@ async function confirmDelete(): Promise<void> {
    焦点：自定义焦点只覆盖动作按钮，表单走原生焦点
    ══════════════════════════════════════════════ */
 
-/** `new` = 「新建」按钮 · `card` = 卡片动作按钮 · `form` = 焦点在表单里（不自绘光标） */
-type Zone = 'new' | 'card' | 'form'
+/** `card` = 卡片动作按钮 · `form` = 焦点不在卡片上（表单字段里 / 外壳根节点上，都不自绘光标） */
+type Zone = 'card' | 'form'
 
 /** 每张卡两个动作按钮，平铺成一维：`i * 2 + 0` 编辑、`+ 1` 删除 */
 const ACTIONS_PER_CARD = 2
 
-const zone = ref<Zone>('new')
+const zone = ref<Zone>('form')
 const cardFocus = useFocusGroup({ initial: 0 })
 const targetCount = computed(() => links.value.length * ACTIONS_PER_CARD)
 
@@ -311,9 +317,6 @@ function isEditSlot(i: number): boolean {
   return i % ACTIONS_PER_CARD === 0
 }
 
-function isNewFocused(): boolean {
-  return zone.value === 'new'
-}
 function isActionFocused(card: number, action: 'edit' | 'del'): boolean {
   if (zone.value !== 'card') return false
   return cardFocus.index.value === card * ACTIONS_PER_CARD + (action === 'edit' ? 0 : 1)
@@ -327,11 +330,11 @@ function focusCard(id: string): void {
   cardFocus.set(i * ACTIONS_PER_CARD, true)
 }
 
-/** 删完之后索引可能越界，收敛到最后一个动作；列表空了就回到「新建」 */
+/** 删完之后索引可能越界，收敛到最后一个动作；列表空了就没有卡片落点，退回非卡片态 */
 function clampFocus(): void {
   const n = targetCount.value
   if (n <= 0) {
-    zone.value = 'new'
+    zone.value = 'form'
     return
   }
   if (cardFocus.index.value >= n) cardFocus.set(n - 1, true)
@@ -354,10 +357,6 @@ function nativeOwnsEnter(): boolean {
 }
 
 /** 鼠标划过：共享同一个焦点（静音），顺手收掉原生焦点 —— 屏幕上永远只有一个光标 */
-function hoverNew(): void {
-  dropNativeFocus()
-  zone.value = 'new'
-}
 function hoverAction(card: number, action: 'edit' | 'del'): void {
   dropNativeFocus()
   zone.value = 'card'
@@ -423,11 +422,11 @@ const off = onPad((a) => {
   if (a === 'cancel') return false
 
   if (a === 'confirm') {
+    // 原生焦点在真按钮 / 输入框上时回车归浏览器（惯例二）
     if (nativeOwnsEnter()) return false
-    if (zone.value === 'new') {
-      startNew()
-      return true
-    }
+    // 没有自绘光标落在卡片上时什么都别做：原来这一档是「回车 = 切到新建态」的那颗按钮，
+    // 按钮撤掉之后这里没有对应的动作 —— 不然会「替」某张卡按下一个动作
+    if (zone.value !== 'card') return false
     const l = links.value[cardOf(cardFocus.index.value)]
     if (!l) return false
     clickAction(l, isEditSlot(cardFocus.index.value) ? 'edit' : 'del')
@@ -439,15 +438,10 @@ const off = onPad((a) => {
     dropNativeFocus()
 
     if (zone.value !== 'card') {
-      // 焦点在「新建」或表单里：下 → 第一张卡；上 → 回到「新建」
+      // 非卡片态：下 → 第一张卡的「编辑」（键盘进列表的唯一入口），其余方向没有落点
       if (a === 'down' && targetCount.value > 0) {
         zone.value = 'card'
         cardFocus.set(0, true)
-        playSfx('move')
-        return true
-      }
-      if (a === 'up' && zone.value === 'form') {
-        zone.value = 'new'
         playSfx('move')
         return true
       }
@@ -456,12 +450,7 @@ const off = onPad((a) => {
 
     const next = spatialIndex(cardFocus.index.value, a, ACTIONS_PER_CARD, targetCount.value)
     if (next === null) {
-      // 首行再往上 → 焦点交给「新建」（表单面板在列表上面，视觉顺序一致）
-      if (a === 'up' && cardFocus.index.value < ACTIONS_PER_CARD) {
-        zone.value = 'new'
-        playSfx('move')
-        return true
-      }
+      // 列表两端之外没有落点（首行再往上原来是那颗「新建」按钮，已撤）：交还给外壳
       return false
     }
     cardFocus.set(next)
@@ -506,16 +495,6 @@ function plate(i: number): string {
         <div class="panel-head">
           <h2 class="panel-title">{{ formTitle }}</h2>
           <span v-if="editingId" class="panel-id px hint">#{{ editingId }}</span>
-          <button
-            class="btn mini focusable"
-            data-testid="link-new"
-            type="button"
-            :class="{ 'is-focused': isNewFocused() }"
-            @mouseenter="hoverNew"
-            @click="startNew"
-          >
-            ＋ 新建
-          </button>
         </div>
 
         <form class="form" data-testid="link-form" @submit.prevent="submitForm">
@@ -786,11 +765,6 @@ function plate(i: number): string {
   white-space: nowrap;
   text-overflow: ellipsis;
   max-width: 32ch;
-}
-
-/* 「新建」贴在面板右上角：它是自定义焦点的第一格 */
-.panel-head .btn {
-  margin-left: auto;
 }
 
 .form {

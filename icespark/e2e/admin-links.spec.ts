@@ -190,12 +190,20 @@ test('外链管理：新建一条 —— 请求体正确，列表就地多一条
   await booted(page)
   await expect(page.locator('[data-testid="admin-link-card"]')).toHaveCount(2)
 
-  // 初始焦点在「新建」上：回车把光标送进名称输入框（原生焦点，直接能打字）
-  await expect(page.locator('[data-testid="link-new"]')).toHaveClass(/is-focused/)
-  await page.keyboard.press('Enter')
-  await expect(page.locator('[data-testid="link-name"]')).toBeFocused()
+  // 表单**天生**就是新建态：面板头那颗「＋ 新建」按钮已按用户口径撤掉（它与「清空」
+  // 完全重复，见视图文件头的记账），所以这里第一件可做的动作就是打字。
+  await expect(page.locator('[data-testid="link-form-panel"]')).toContainText('新建外链')
+  await expect(page.locator('[data-testid="link-new"]')).toHaveCount(0)
 
-  // 表单里 Tab 走原生焦点（本页没有标签栏，外壳把 Tab 还给浏览器，见 App.vue 全局监听器）
+  // 没有自绘光标落在任何东西上，回车什么也不该发生（不许「替」某张卡按下动作）
+  await page.keyboard.press('Enter')
+  await expect(page.locator('[data-testid="link-del-dialog"]')).toHaveCount(0)
+  expect(recorder.writes).toEqual([])
+
+  // Tab 走原生焦点（本页没有标签栏，外壳把 Tab 还给浏览器，见 App.vue 全局监听器）：
+  // 外壳根节点 → 名称 → 链接
+  await page.keyboard.press('Tab')
+  await expect(page.locator('[data-testid="link-name"]')).toBeFocused()
   await page.keyboard.press('Tab')
   await expect(page.locator('[data-testid="link-url"]')).toBeFocused()
 
@@ -268,6 +276,34 @@ test('外链管理：编辑一条 —— PUT 到那条 id，列表就地改名',
   expect(recorder.getCount()).toBe(1)
 })
 
+test('外链管理：编辑态按「清空」回到新建态（撤掉那颗按钮之后，入口只剩它）', async ({ page }) => {
+  const recorder = await stubApi(page)
+  await page.goto('/admin/links')
+  await booted(page)
+
+  // 点第一条的「编辑」：表单被这条的现值填满，标题与提交按钮都换成编辑口径
+  await page
+    .locator('[data-testid="admin-link-card"]')
+    .first()
+    .locator('[data-testid="link-edit"]')
+    .click()
+  await expect(page.locator('[data-testid="link-form-panel"]')).toContainText('编辑外链')
+  await expect(page.locator('[data-testid="link-name"]')).toHaveValue('站内服务台')
+  await expect(page.locator('[data-testid="link-save"]')).toHaveText('保存修改')
+
+  // 「清空」= 回到新建态 + 把光标放回名称框（原来那颗「＋ 新建」按钮做的同一件事）
+  await page.click('[data-testid="link-reset"]')
+  await expect(page.locator('[data-testid="link-form-panel"]')).toContainText('新建外链')
+  await expect(page.locator('[data-testid="link-name"]')).toHaveValue('')
+  await expect(page.locator('[data-testid="link-url"]')).toHaveValue('')
+  await expect(page.locator('[data-testid="link-save"]')).toHaveText('新建外链')
+  await expect(page.locator('[data-testid="link-name"]')).toBeFocused()
+
+  // 清空不发任何请求：它只是把表单退回空白
+  expect(recorder.writes).toEqual([])
+  expect(recorder.getCount()).toBe(1)
+})
+
 test('外链管理：删除要二次确认 —— 取消不发请求，确认后才发 DELETE', async ({ page }) => {
   const recorder = await stubApi(page)
   await page.goto('/admin/links')
@@ -336,8 +372,8 @@ test('外链管理：纯键盘走完全程（方向键 / ENTER 确认删除 / Q 
   await page.goto('/admin/links')
   await booted(page)
 
-  // 焦点顺序：「新建」→ ↓ 第一张卡的「编辑」→ → 「删除」
-  await expect(page.locator('[data-testid="link-new"]')).toHaveClass(/is-focused/)
+  // 进入卡片列表的唯一键盘入口：↓ → 第一张卡的「编辑」→ → 「删除」
+  // （原来 ↓ 之前还有一格「新建」按钮，已撤；首行再往上也不再回那一格）
   await page.keyboard.press('ArrowDown')
   await expect(page.locator('[data-testid="link-edit"]').first()).toHaveClass(/is-focused/)
   await page.keyboard.press('ArrowRight')
@@ -385,7 +421,6 @@ test('外链管理：后端拒绝的原文照贴（读 500 与写 400 两种，�
   await expect(page.locator('[data-testid="admin-links-grid"]')).toHaveCount(0)
 
   // 写失败：前端**不自己拦**非法 url（拦了就永远看不到后端原文）
-  await page.click('[data-testid="link-new"]')
   await page.fill('[data-testid="link-name"]', '危险链接')
   await page.fill('[data-testid="link-url"]', 'javascript:alert(1)')
   await page.click('[data-testid="link-save"]')
@@ -414,9 +449,10 @@ test('外链管理：登录了但不是超管 → 页内「仅超管可见」，
   await expect(denied).toBeVisible()
   await expect(denied).toContainText('仅超管可见')
 
-  // 真内容一个都不许出现：表单、列表、「新建」按钮全都没有
+  // 真内容一个都不许出现：表单、列表、表单里的任何按钮全都没有
   await expect(page.locator('[data-testid="link-form"]')).toHaveCount(0)
-  await expect(page.locator('[data-testid="link-new"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="link-save"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="link-form-panel"]')).toHaveCount(0)
   await expect(page.locator('[data-testid="admin-links-grid"]')).toHaveCount(0)
   await expect(page.locator('[data-testid="admin-link-card"]')).toHaveCount(0)
 
