@@ -2837,3 +2837,49 @@ ICESPARK_E2E_USER=xxx ICESPARK_E2E_PW=yyy npx playwright test e2e/real-login.spe
    （它是外壳级内容，不该随页面变）；④ 全站 `footer` 元素计数为 0 —— 不做传统页脚区块。
 
 验收：`2 passed`；全量 **165 passed / 3 skipped**（168 条），`npm run check` 八段 **EXIT=0**。
+
+## 36. 产物冒烟门：第二个 Playwright 项目跑 `vite preview`（2026-10-01）
+
+P1 收尾时做过一次**人工**产物验证（§14.6：「`npm run build` 后用 `vite preview` 实测渲染、
+`data-scene`、状态行内容、字体加载、3px 边框、零 4xx」），此后所有 e2e 都跑在 **dev 服务器（5175）**
+上 —— 也就是说「dev 全绿」被当成了「能上线」。dev 与产物是两套东西，至少有四类差异只在产物里成立：
+
+1. **SPA 回退**：深链接刷新 `/posts`、`/about` 要靠服务端把 index.html 交回来；
+2. **hash 文件名与按路由切分的懒加载 chunk**：每个视图一个 chunk，首屏只下入口；
+3. **静态资源路径**：`/fonts/*.woff2` 是 `public/` 直出，打包后路径变了会静默退回系统字体；
+4. **「跑的是产物而不是源码」**：`/src/*.ts` 与 `/@vite/*` 的请求必须一条都没有。
+
+### 36.1 做法：第二个 project + 第二条 webServer
+
+- `playwright.config.ts`：`projects` 变成两个 —— `chromium`（`testIgnore: production.spec.ts`，
+  跑在 5175 的 26 个 spec）与 **`preview`**（`testMatch: production.spec.ts`，
+  `baseURL: http://localhost:4175`）；`webServer` 变成数组，第二条是
+  `npm run build && npx vite preview --port 4175 --strictPort`。
+  - **命令里带构建**、且 `reuseExistingServer: false`：复用旧服务就会拿旧产物给假 PASS；
+    端口被占直接失败（那本来也该先收拾现场）。
+- `vite.config.ts`：`preview` 补上与 `server` 同一份 `proxy`（`/api` → 8002）。
+  部署时 `/api` 由反向代理分流（AGENTS.md 第 9 节），本地 preview 要验证**产物**就得同样能打到真后端；
+  这条只影响 `vite preview`，不影响构建产物本身。
+
+### 36.2 `e2e/production.spec.ts`（5 条）
+
+| 用例 | 钉住什么 |
+|---|---|
+| 自检播完落主页、外壳三段与底栏小字都在 | 产物里 boot → 落页、`.screen`/`.deck`/小字、**像素字体真的加载**（`document.fonts.check('12px ArkPixel')`）、零控制台报错 |
+| 跑的是打包产物 | 全程收集请求：**零** `/src/` `/@vite/` `/@fs/` `?t=` 请求；所有 `/assets/*` 都是带 hash 的 `.js/.css`；列表页确实下了自己的懒加载 chunk |
+| 真 URL 与 SPA 回退 | `/about` 刷新式直达（`data-scene=about`）；`/no/such/deep/path` 落**前端自己的 404 皮肤**（不是服务器 404 页） |
+| 切页 / 菜单 / 转场 | 键盘 `Tab` 切页、`P`/`ESC` 开关菜单、转场遮罩能收（产物里的 keyframes 还在） |
+| `/api` 代理 | `preview` 下 `/api/site-config` 仍是 200 —— 显式守住 `preview.proxy` 这一条配置 |
+
+### 36.3 反例验证（证明门不是空转）
+
+把 `preview` 项目的 `baseURL` 临时改回 5175 再跑第一条：**红**在
+「产物里出现了只在 dev 才有的请求：`/@vite/client`、`/src/main.ts`、`/src/App.vue`」——
+正是这道门要拦的那类差异。验完已还原配置。
+
+### 36.4 验收
+
+- `npx playwright test`：**170 passed / 3 skipped**（173 条 / 27 个 spec；其中 `preview` 项目 5 条跑在产物上）。
+- `npm run check` 八段 **EXIT=0**（独立性门会把新加的 `e2e/production.spec.ts` 一起扫）。
+- 代价记明白：整套 e2e 现在多起一个「构建 + preview」服务，约 +8 秒；
+  只跑 dev 那套可以用 `npx playwright test --project=chromium`。

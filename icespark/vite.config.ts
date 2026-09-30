@@ -79,6 +79,15 @@ export default defineConfig(({ mode }) => {
 
     preview: {
       port: 4175,
+      // 与 `server.proxy` 同一份：部署时 `/api` 由反向代理分流（AGENTS.md 第 9 节），
+      // 本地 `npm run preview` 要验证**打包产物**就得让它也能打到真后端 ——
+      // e2e 的 `preview` 项目（`e2e/production.spec.ts`）跑的就是这个服务。
+      proxy: {
+        '/api': {
+          target: apiTarget,
+          changeOrigin: true,
+        },
+      },
     },
   }
 })
