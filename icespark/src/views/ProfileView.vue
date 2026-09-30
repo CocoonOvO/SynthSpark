@@ -11,7 +11,10 @@
  *      点保存后才随 `avatar_url` 一起提交 —— 旧前端原话就是「上传成功，点击保存设置后生效」；
  *      限制照抄旧前端：只能图片、≤5MB；
  *   4. 改密码 `POST /api/auth/password/reset` —— 参数走 **query string**（不是 JSON body），
- *      两次新密码不一致在前端先拦下（旧前端同样拦）。
+ *      两次新密码不一致在前端先拦下（旧前端同样拦）；
+ *   5. 放大编辑：窄格子里写长文本不方便（用户反馈），每格给一个 F2 / 按钮打开的弹窗
+ *      （`machine/TextEditorDialog.vue`）。弹窗只换画布，写回的还是这一格的表单字段。
+ *      密码三格与文件框不接 —— 密码不该平铺在大框里，头像走文件选择器。
  *
  * ── 为什么有几处必须这么写（不是风格问题，是行为问题）──
  * · **保存后要同步 `stores/auth`**：暂停菜单那行账号昵称读的是 `auth.displayName`，
@@ -46,10 +49,12 @@ import { ApiError, request } from '@/api/client'
 import { fetchMe, updateMe, type User, type UserUpdate } from '@/api/users'
 import { focusShellRoot } from '@/input'
 import { useFocusGroup } from '@/input/focus'
-import { onPad } from '@/input/pad'
+import { onPad, type PadAction } from '@/input/pad'
 import { playSfx } from '@/input/sfx'
 import SceneHead from '@/machine/SceneHead.vue'
+import TextEditorDialog from '@/machine/TextEditorDialog.vue'
 import { useStatusBar } from '@/scene/clock'
+import { useLongText, type LongTextField } from '@/scene/longtext'
 import { canGoBack, goBack, goTab } from '@/scene/nav'
 import { scrollScreenTop } from '@/scene/screen'
 import PixelAvatar from '@/signal/PixelAvatar.vue'
@@ -416,7 +421,87 @@ function releaseFileFocus(): void {
   if (document.activeElement === fileEl.value) dropNativeFocus()
 }
 
+/* ══════════════ 放大编辑（用户反馈：窄格子里写长文本不方便） ══════════════ */
+
+/**
+ * 可放大编辑的三格。`bio` 是多行；另两格单行，ENTER 就保存。
+ * `focusId` 指向那一格自己的 `id` —— 关掉弹窗后焦点要还回它（见 `scene/longtext.ts`）。
+ */
+type LongKey = 'display_name' | 'email' | 'bio'
+
+const LONG_FIELDS: Record<LongKey, Omit<LongTextField, 'value'>> = {
+  display_name: {
+    key: 'display_name',
+    label: '昵称',
+    maxlength: NAME_MAX,
+    focusId: 'profile-display-name',
+    hint: '上限与那一格一致（≤100 字）。',
+  },
+  email: {
+    key: 'email',
+    label: '邮箱',
+    placeholder: 'you@example.com',
+    focusId: 'profile-email',
+  },
+  bio: {
+    key: 'bio',
+    label: '简介',
+    multiline: true,
+    maxlength: BIO_MAX,
+    placeholder: '一两句话介绍自己（≤500 字）',
+    focusId: 'profile-bio',
+    hint: '这里只是换块大画布：保存后同样要点「保存资料」才写进账号。',
+  },
+}
+
+const { editing, openLongText, closeLongText } = useLongText()
+
+function openLong(key: LongKey): void {
+  playSfx('confirm')
+  openLongText({ ...LONG_FIELDS[key], value: form[key] })
+}
+
+/** F2 = 放大编辑当前这一格（内核 `KEYMAP` 里没有 F2，不会被外壳吃掉） */
+function onFieldKey(event: KeyboardEvent, key: LongKey): void {
+  if (event.key !== 'F2') return
+  event.preventDefault()
+  openLong(key)
+}
+
+/** 弹窗保存：写回原来那一格。先取 key 再关 —— `closeLongText()` 会把 `editing` 清空 */
+function onLongSave(value: string): void {
+  const key = editing.value?.key as LongKey | undefined
+  closeLongText()
+  if (!key) return
+  form[key] = value
+  // 与手输同一口径：旧的「已保存」反馈到此失效（否则文案会说谎）
+  clearSaveFeedback()
+}
+
+/**
+ * 放大编辑弹窗开着时的按键归属（写法与 `AdminLinksView` 的 `dialogPad` 同源）。
+ *
+ * `cancel` 在**这里**关框，而不是只靠弹窗自己的 DOM 监听：点过遮罩之后外壳会把原生焦点
+ * 收回根节点，那时弹窗内的监听器根本收不到按键，只剩这一条路。
+ * 其余按键一律吞掉 —— 下面的方向键分支会把原生焦点收回外壳，焦点一离开弹窗，
+ * 框里的键盘当场就死了（§21 记的那条链条）。
+ * Tab 例外：焦点还在编辑区里时内核本来就让浏览器自己走，这里放行不会多一次触发。
+ */
+function longTextPad(a: PadAction): boolean {
+  if (a === 'cancel') {
+    closeLongText()
+    return true
+  }
+  if (a === 'tabNext' || a === 'tabPrev') return false
+  return true
+}
+
 const off = onPad((a) => {
+  // 放大编辑弹窗开着时，页面层把按键交给它先处理。
+  // 守卫必须写在**自己**这个监听器里：外壳的 `runPass` 会遍历全部同作用域监听器、不提前退出，
+  // 少这一句，弹窗里按方向键会被下面的分支把焦点收回外壳，框里的键盘当场失灵。
+  if (editing.value) return longTextPad(a)
+
   // Q：全站的历史后退键。显式接管只为补一个兜底 —— 深链接进来没有上一页时回主页，
   // 否则键盘用户会卡死在这一页（`canGoBack` / `goBack` / `goTab` 都是 nav.ts 现成的能力）
   if (a === 'back') {
@@ -580,8 +665,19 @@ onUnmounted(off)
           :maxlength="NAME_MAX"
           autocomplete="nickname"
           @input="clearSaveFeedback"
+          @keydown="onFieldKey($event, 'display_name')"
         />
         <span class="count px">{{ form.display_name.length }}/{{ NAME_MAX }}</span>
+        <button
+          class="expand"
+          data-testid="profile-display-name-expand"
+          type="button"
+          aria-label="放大编辑：昵称"
+          title="放大编辑（F2）"
+          @click="openLong('display_name')"
+        >
+          放大
+        </button>
       </div>
 
       <div class="field">
@@ -596,7 +692,18 @@ onUnmounted(off)
           autocomplete="email"
           placeholder="you@example.com"
           @input="clearSaveFeedback"
+          @keydown="onFieldKey($event, 'email')"
         />
+        <button
+          class="expand"
+          data-testid="profile-email-expand"
+          type="button"
+          aria-label="放大编辑：邮箱"
+          title="放大编辑（F2）"
+          @click="openLong('email')"
+        >
+          放大
+        </button>
       </div>
 
       <div class="field">
@@ -611,8 +718,19 @@ onUnmounted(off)
           :maxlength="BIO_MAX"
           placeholder="一两句话介绍自己（≤500 字）"
           @input="clearSaveFeedback"
+          @keydown="onFieldKey($event, 'bio')"
         ></textarea>
         <span class="count px">{{ form.bio.length }}/{{ BIO_MAX }}</span>
+        <button
+          class="expand"
+          data-testid="profile-bio-expand"
+          type="button"
+          aria-label="放大编辑：简介"
+          title="放大编辑（F2）"
+          @click="openLong('bio')"
+        >
+          放大
+        </button>
       </div>
 
       <div class="act-row">
@@ -708,8 +826,23 @@ onUnmounted(off)
     </form>
 
     <div class="foot sticky-foot px hint">
-      TAB 在字段间走 · ENTER 原生提交 / 激活 · ↑↓ 选动作 · Q 返回 · P / ESC 菜单
+      TAB 在字段间走 · ENTER 原生提交 / 激活 · F2 放大编辑这一格 · ↑↓ 选动作 · Q 返回 · P / ESC 菜单
     </div>
+
+    <!-- 放大编辑：页内模态，一次只开一个（`editing` 非空就是开着）。
+         遮罩点击不关闭是有意的 —— 框里可能是几百字，一次误点不该丢 -->
+    <TextEditorDialog
+      v-if="editing"
+      :label="editing.label"
+      :value="editing.value"
+      :multiline="editing.multiline"
+      :maxlength="editing.maxlength"
+      :placeholder="editing.placeholder"
+      :mono="editing.mono"
+      :hint="editing.hint"
+      @save="onLongSave"
+      @close="closeLongText"
+    />
   </div>
 </template>
 
@@ -793,6 +926,31 @@ onUnmounted(off)
   flex: 0 0 auto;
   padding-top: 8px;
   color: var(--ink-faint);
+}
+
+/*
+ * 「放大」触发器：不加 `.focusable`（那是外壳自绘光标那一套），
+ * 走**浏览器原生 Tab 顺序** —— 表单页的既有口径就是「输入框用原生焦点」，
+ * 硬塞进 `.focusable` 反而会改动方向键的焦点分区与既有 e2e 的计数。
+ */
+.expand {
+  flex: 0 0 auto;
+  margin-top: 7px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  background: var(--paper);
+  border: 2px solid var(--blue-400);
+  color: var(--blue-700);
+  padding: 2px 7px;
+  cursor: pointer;
+}
+
+.expand:hover,
+.expand:focus-visible {
+  background: var(--blue-100);
+  outline: none;
+  border-color: var(--blue-500);
 }
 
 /* 输入框焦点：描边 + 浅蓝底，用插入光标当指示（与 LoginDialog 同一套；不叠闪烁方块） */

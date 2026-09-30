@@ -404,3 +404,112 @@ test('登出：在需要权限的页面上登出后自动回主页（普通页�
   await expect(page).toHaveURL(/\/posts$/)
   await expect(page.locator('.app')).toHaveAttribute('data-scene', 'posts')
 })
+
+test('放大编辑（多行）：F2 / 按钮两个入口，保存写回那一格、ESC 丢弃，打开期间 P 不叠菜单', async ({
+  page,
+}) => {
+  const errors = collectErrors(page)
+  const stub = await loggedIn(page)
+  await page.goto('/profile')
+  await booted(page)
+
+  const bio = page.locator('[data-testid="profile-bio"]')
+  const dialog = page.locator('[data-testid="long-text-dialog"]')
+  const area = page.locator('[data-testid="long-text-area"]')
+
+  // 入口一：焦点在那一格里按 F2（内核 KEYMAP 里没有 F2，不会被外壳吃掉）
+  await bio.focus()
+  await page.keyboard.press('F2')
+  await expect(dialog).toBeVisible()
+  // 模态该有的语义，缺了屏幕阅读器只会念到一堆孤立的文本框与按钮
+  await expect(dialog).toHaveAttribute('role', 'dialog')
+  await expect(dialog).toHaveAttribute('aria-modal', 'true')
+  await expect(dialog).toHaveAttribute('aria-labelledby', 'long-text-title')
+  await expect(area).toHaveValue('旧简介')
+  // 上限跟那一格同一个（多行是 500）
+  await expect(page.locator('[data-testid="long-text-count"]')).toContainText('/ 500')
+
+  // 焦点不在编辑区里时（这里落在「取消」按钮上）P 也不该再叠一层暂停菜单
+  await page.locator('[data-testid="long-text-cancel"]').focus()
+  await page.keyboard.press('p')
+  await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
+  await expect(dialog).toBeVisible()
+
+  // ESC 丢弃：那一格还是原来的值，一个字符都没写进去。
+  // 这里先点一下遮罩：它**不关**框（框里可能是几百字，一次误点不该丢），
+  // 但焦点会被外壳收回根节点 —— 于是这一下 ESC 只剩页面 `longTextPad` 那条路能关框，
+  // 弹窗自己的 DOM 监听已经收不到这个键了（守卫被拿掉时这条断言就红）
+  await area.fill('这一段不要了')
+  await page.locator('[data-testid="long-text-mask"]').click({ position: { x: 5, y: 5 } })
+  await expect(dialog).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(bio).toHaveValue('旧简介')
+
+  // 弹窗关掉后 P 要恢复（`pageModalOpen` 没还回去的话菜单就再也打不开）。
+  // 先把焦点移出输入框：焦点在编辑区里时字母本来就该是打字（全站口径，不是 bug）
+  await page.locator('.app').focus()
+  await page.keyboard.press('p')
+  await expect(page.locator('[data-testid="pause"]')).toBeVisible()
+  await page.keyboard.press('Escape')
+  await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
+
+  // 入口二：那一格边上的按钮
+  await page.locator('[data-testid="profile-bio-expand"]').click()
+  await expect(dialog).toBeVisible()
+  await area.fill('一段很长的简介')
+  await page.locator('[data-testid="long-text-save"]').click()
+  await expect(dialog).toHaveCount(0)
+  await expect(bio).toHaveValue('一段很长的简介')
+  // 焦点还给原来那一格（弹窗卸载时焦点先落回外壳，这一句排在它之后）
+  await expect(bio).toBeFocused()
+  // 弹窗只换画布：写回的是这一格的表单字段，不会自己发请求
+  expect(stub.puts).toHaveLength(0)
+
+  // 打开状态下的无障碍：模态语义齐备，没有新增违规
+  await page.locator('[data-testid="profile-bio-expand"]').click()
+  await expect(dialog).toBeVisible()
+  expect(await scan(page)).toEqual([])
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+
+  expect(errors).toEqual([])
+})
+
+test('放大编辑（单行）：按钮打开、ENTER 保存，取消不动原值；密码格与文件框不接这个功能', async ({
+  page,
+}) => {
+  await loggedIn(page)
+  await page.goto('/profile')
+  await booted(page)
+
+  const name = page.locator('[data-testid="profile-display-name"]')
+  const dialog = page.locator('[data-testid="long-text-dialog"]')
+  const area = page.locator('[data-testid="long-text-area"]')
+
+  await page.locator('[data-testid="profile-display-name-expand"]').click()
+  await expect(dialog).toBeVisible()
+  await expect(area).toHaveValue('旧昵称')
+  await expect(page.locator('[data-testid="long-text-count"]')).toContainText('/ 100')
+
+  // 单行：ENTER 就是「写完了」（多行模式里 ENTER 是换行，那条在上一支用例里验过）
+  await area.fill('放大编辑写的新昵称')
+  await page.keyboard.press('Enter')
+  await expect(dialog).toHaveCount(0)
+  await expect(name).toHaveValue('放大编辑写的新昵称')
+  await expect(name).toBeFocused()
+
+  // 「取消」按钮：值回滚到打开那一刻，不是实时写回
+  await name.fill('手输的昵称')
+  await page.locator('[data-testid="profile-display-name-expand"]').click()
+  await area.fill('这一份不算数')
+  await page.locator('[data-testid="long-text-cancel"]').click()
+  await expect(dialog).toHaveCount(0)
+  await expect(name).toHaveValue('手输的昵称')
+
+  // 密码三格与文件框有意不接：密码不该平铺在大框里，头像走文件选择器
+  await expect(page.locator('[data-testid="profile-pw-old-expand"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="profile-pw-new-expand"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="profile-pw-confirm-expand"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="profile-avatar-file-expand"]')).toHaveCount(0)
+})

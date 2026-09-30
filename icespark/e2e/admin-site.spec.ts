@@ -514,3 +514,66 @@ test('底栏顺序：快捷键指引在保存栏**下面**，滚到底两者不�
   })
   expect(hit, '保存按钮不该被底条挡住').toBe(true)
 })
+
+test('放大编辑：窄格里按 F2 / 点「放大」都能开弹窗，写回与那一格、整段 JSON 是同一份数据', async ({
+  page,
+}) => {
+  await loggedIn(page, true)
+  await stubAdminSite(page, { get: { status: 200, body: fixture() } })
+  const errors = pageErrors(page)
+
+  await page.goto('/admin/site')
+  await booted(page)
+
+  const dialog = page.locator('[data-testid="long-text-dialog"]')
+  const area = page.locator('[data-testid="long-text-area"]')
+  const json = page.locator('[data-testid="admin-site-json"]')
+
+  // ── 入口一：格子里的 F2（这一栏本来就窄，长文本在一格里改字别扭）──
+  const desc = page.locator('[data-field="site.description"] input')
+  await expect(desc).toHaveValue('E2E 站点描述')
+  await desc.focus()
+  await page.keyboard.press('F2')
+  await expect(dialog).toBeVisible()
+  await expect(area).toHaveValue('E2E 站点描述')
+
+  // 打开期间 P 不叠暂停菜单（页内模态让外壳的全局键让位）—— 焦点落在按钮上时也照样拦住
+  await page.locator('[data-testid="long-text-save"]').focus()
+  await page.keyboard.press('p')
+  await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
+  await expect(dialog).toBeVisible()
+
+  await area.fill('改过的站点描述')
+  await page.locator('[data-testid="long-text-save"]').click()
+  await expect(dialog).toHaveCount(0)
+  await expect(desc).toHaveValue('改过的站点描述')
+  // 焦点还给原来那一格
+  await expect(desc).toBeFocused()
+  // 同一份数据：整段 JSON 立刻跟着变（页面没有第二份草稿）
+  await expect(json).toHaveValue(/改过的站点描述/)
+
+  // ── 入口二：整段 JSON 的「放大」（等宽 / 多行）──
+  await page.locator('[data-testid="admin-site-json-expand"]').click()
+  await expect(dialog).toBeVisible()
+  await expect(page.locator('[data-testid="long-text-area"].mono')).toHaveCount(1)
+  await expect(area).toHaveValue(/改过的站点描述/)
+
+  // 多行模式：ENTER 是换行，不许被当成保存（CTRL/⌘ + ENTER 才是保存）
+  await area.fill('{\n  "name": "整段改过的名字"\n}')
+  await page.keyboard.press('Control+Enter')
+  await expect(dialog).toHaveCount(0)
+  await expect(json).toHaveValue(/整段改过的名字/)
+  // 整段写回是真的：字段列表按新的 JSON 重算，description 这一格没有了
+  await expect(page.locator('[data-field="site.name"] input')).toHaveValue('整段改过的名字')
+  await expect(page.locator('[data-field="site.description"]')).toHaveCount(0)
+
+  // ── ESC 丢弃：整段 JSON 一个字符都没改 ──
+  await page.locator('[data-testid="admin-site-json-expand"]').click()
+  await area.fill('{ "name": "这一份不算数" }')
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(json).toHaveValue(/整段改过的名字/)
+  await expect(json).not.toHaveValue(/这一份不算数/)
+
+  expect(errors).toEqual([])
+})

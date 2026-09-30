@@ -51,6 +51,11 @@
  * **ESC 一律不消费**（基础态）：全站口径是「ESC = 菜单」，这里 `cancel` 直接 `return false`。
  * 唯一的例外是删除确认框开着时 —— 页内模态必须能被 ESC 关掉，否则键盘用户被关在里面
  * （`LoginDialog.vue` 是同一个先例）。基础态不吃 ESC 这件事 e2e 有断言。
+ *
+ * **放大编辑**（用户反馈：窄格里写长文本不方便）：名称 / 链接 / 配图三格各给一个 `F2` /
+ * 「放大」按钮打开的弹窗（`machine/TextEditorDialog.vue`）。保存写回的还是表单里那三个字段，
+ * 数据流没变；**排序**是 `type="number"`，不进这一套。
+ * 于是这里有两个页内模态，`onPad` 的首行守卫按「谁开着」分流。
  */
 import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 
@@ -63,7 +68,9 @@ import { pageModalOpen } from '@/input/scopes'
 import { onPad, type PadAction } from '@/input/pad'
 import { playSfx } from '@/input/sfx'
 import SceneHead from '@/machine/SceneHead.vue'
+import TextEditorDialog from '@/machine/TextEditorDialog.vue'
 import { useStatusBar } from '@/scene/clock'
+import { useLongText, type LongTextField } from '@/scene/longtext'
 import { canGoBack, goBack, goTab } from '@/scene/nav'
 import { scrollScreenTop } from '@/scene/screen'
 import { useAuthStore } from '@/stores/auth'
@@ -409,8 +416,87 @@ function dialogPad(a: PadAction): boolean {
   return false
 }
 
+/* ══════════════════════════════════════════════
+   放大编辑（用户反馈：窄格里写长文本不方便）
+   ══════════════════════════════════════════════ */
+
+/**
+ * 可放大编辑的三格 —— **排序不进**：它是 `type="number"`，
+ * 在大框里写「整数，小的在前」没有任何意义。
+ */
+type LinkLongKey = 'name' | 'url' | 'cover'
+
+const LONG_FIELDS: Record<LinkLongKey, Omit<LongTextField, 'value'>> = {
+  name: {
+    key: 'name',
+    label: '名称',
+    maxlength: 100,
+    focusId: 'link-name',
+    placeholder: '外链名称（1–100 字）',
+    hint: '上限与那一格一致（≤100 字）。',
+  },
+  url: {
+    key: 'url',
+    label: '链接',
+    maxlength: 500,
+    focusId: 'link-url',
+    placeholder: 'https://… 或 /api/services/xxx/',
+    hint: 'URL 规则由后端判定，这里只是把一行写得下。',
+  },
+  cover: {
+    key: 'cover',
+    label: '配图',
+    maxlength: 500,
+    focusId: 'link-cover',
+    placeholder: '可空，图片 URL',
+    hint: '可空；填图片 URL。',
+  },
+}
+
+const { editing, openLongText, closeLongText } = useLongText()
+
+function openLong(key: LinkLongKey): void {
+  playSfx('confirm')
+  openLongText({ ...LONG_FIELDS[key], value: form[key] })
+}
+
+/** F2 = 放大编辑这一格（内核 `KEYMAP` 里没有 F2，不会被外壳吃掉） */
+function onFieldKey(event: KeyboardEvent, key: LinkLongKey): void {
+  if (event.key !== 'F2') return
+  event.preventDefault()
+  openLong(key)
+}
+
+/** 弹窗保存：写回表单里那一个字段。先取 key 再关 —— `closeLongText()` 会把 `editing` 清空 */
+function onLongSave(value: string): void {
+  const key = editing.value?.key as LinkLongKey | undefined
+  closeLongText()
+  if (!key) return
+  form[key] = value
+}
+
+/**
+ * 放大编辑弹窗开着时的按键归属（与上面的 `dialogPad` 同一写法）。
+ *
+ * `cancel` 在**这里**关框，而不是只靠弹窗自己的 DOM 监听：点过遮罩之后外壳会把原生焦点
+ * 收回根节点，那时弹窗内的监听器根本收不到按键，只剩这一条路。
+ * 其余按键一律吞掉 —— 下面的方向键分支会把原生焦点收回外壳，焦点一离开弹窗，
+ * 框里的键盘当场就死了（§21 记的那条链条）。
+ * Tab 例外：焦点还在编辑区里时内核本来就让浏览器自己走，这里放行不会多一次触发。
+ */
+function longTextPad(a: PadAction): boolean {
+  if (a === 'cancel') {
+    closeLongText()
+    return true
+  }
+  if (a === 'tabNext' || a === 'tabPrev') return false
+  return true
+}
+
 const off = onPad((a) => {
-  // 页内模态优先：它开着的时候别让底下的列表跟着动
+  // 页内模态优先：它开着的时候别让底下的列表跟着动。
+  // 两个模态各有各的分支，顺序无所谓（同时只会开一个：遮罩盖着整页，点不到另一个入口）
+  if (editing.value) return longTextPad(a)
   if (delTarget.value) return dialogPad(a)
 
   if (a === 'back') {
@@ -519,9 +605,12 @@ function plate(i: number): string {
         </div>
 
         <form class="form" data-testid="link-form" @submit.prevent="submitForm">
-          <label class="field">
-            <span class="field-cap">名称</span>
+          <!-- 四格都是「标签 + 输入框 + 放大」的一行；名称 / 链接 / 配图三格带放大编辑，
+               排序是数字框、不带（理由见脚本里的 LONG_FIELDS） -->
+          <div class="field">
+            <label class="field-cap" for="link-name">名称</label>
             <input
+              id="link-name"
               ref="nameEl"
               v-model="form.name"
               class="input"
@@ -533,12 +622,24 @@ function plate(i: number): string {
               spellcheck="false"
               placeholder="外链名称（1–100 字）"
               @focus="onFieldFocus"
+              @keydown="onFieldKey($event, 'name')"
             />
-          </label>
+            <button
+              class="expand"
+              data-testid="link-name-expand"
+              type="button"
+              aria-label="放大编辑：名称"
+              title="放大编辑（F2）"
+              @click="openLong('name')"
+            >
+              放大
+            </button>
+          </div>
 
-          <label class="field">
-            <span class="field-cap">链接</span>
+          <div class="field">
+            <label class="field-cap" for="link-url">链接</label>
             <input
+              id="link-url"
               v-model="form.url"
               class="input"
               data-testid="link-url"
@@ -549,12 +650,24 @@ function plate(i: number): string {
               spellcheck="false"
               placeholder="https://… 或 /api/services/xxx/"
               @focus="onFieldFocus"
+              @keydown="onFieldKey($event, 'url')"
             />
-          </label>
+            <button
+              class="expand"
+              data-testid="link-url-expand"
+              type="button"
+              aria-label="放大编辑：链接"
+              title="放大编辑（F2）"
+              @click="openLong('url')"
+            >
+              放大
+            </button>
+          </div>
 
-          <label class="field">
-            <span class="field-cap">配图</span>
+          <div class="field">
+            <label class="field-cap" for="link-cover">配图</label>
             <input
+              id="link-cover"
               v-model="form.cover"
               class="input"
               data-testid="link-cover"
@@ -564,12 +677,24 @@ function plate(i: number): string {
               spellcheck="false"
               placeholder="可空，图片 URL"
               @focus="onFieldFocus"
+              @keydown="onFieldKey($event, 'cover')"
             />
-          </label>
+            <button
+              class="expand"
+              data-testid="link-cover-expand"
+              type="button"
+              aria-label="放大编辑：配图"
+              title="放大编辑（F2）"
+              @click="openLong('cover')"
+            >
+              放大
+            </button>
+          </div>
 
-          <label class="field">
-            <span class="field-cap">排序</span>
+          <div class="field">
+            <label class="field-cap" for="link-sort">排序</label>
             <input
+              id="link-sort"
               v-model="form.sort"
               class="input input-sort"
               data-testid="link-sort"
@@ -579,7 +704,7 @@ function plate(i: number): string {
               placeholder="整数，小的在前"
               @focus="onFieldFocus"
             />
-          </label>
+          </div>
 
           <!-- 写失败 / 成功都在这一行：失败是后端 detail 的原文，成功是就地更新的回执 -->
           <p v-if="formError" class="err" data-testid="link-form-error">✕ {{ formError }}</p>
@@ -729,8 +854,23 @@ function plate(i: number): string {
 
     <!-- 页脚一行键位提示：与首页 / 关于页同一套措辞（品牌与站点状态行由外壳 .deck 负责） -->
     <div class="foot sticky-foot px hint">
-      ↑↓←→ 移动 · ENTER 确认 · TAB 到输入框 · Q 返回 · P / ESC 菜单
+      ↑↓←→ 移动 · ENTER 确认 · TAB 到输入框 · F2 放大编辑这一格 · Q 返回 · P / ESC 菜单
     </div>
+
+    <!-- 放大编辑：页内模态，一次只开一个（`editing` 非空就是开着）。
+         遮罩点击不关闭是有意的 —— 框里可能写着一条长 URL，一次误点不该丢 -->
+    <TextEditorDialog
+      v-if="editing"
+      :label="editing.label"
+      :value="editing.value"
+      :multiline="editing.multiline"
+      :maxlength="editing.maxlength"
+      :placeholder="editing.placeholder"
+      :mono="editing.mono"
+      :hint="editing.hint"
+      @save="onLongSave"
+      @close="closeLongText"
+    />
   </div>
 </template>
 
@@ -824,6 +964,29 @@ function plate(i: number): string {
 
 .input-sort {
   flex: 0 0 120px;
+}
+
+/*
+ * 「放大」触发器：不加 `.focusable`（那是外壳自绘光标那一套），走**浏览器原生 Tab 顺序** ——
+ * 表单里的既定口径就是「输入框用原生焦点」，硬塞进 `.focusable` 会连方向键的焦点链一起改。
+ */
+.expand {
+  flex: 0 0 auto;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  background: var(--paper);
+  border: 2px solid var(--blue-400);
+  color: var(--blue-700);
+  padding: 3px 7px;
+  cursor: pointer;
+}
+
+.expand:hover,
+.expand:focus-visible {
+  background: var(--blue-100);
+  outline: none;
+  border-color: var(--blue-500);
 }
 
 /* 输入框的焦点：描边 + 浅蓝底（用插入光标当指示，不叠两侧闪烁方块） */

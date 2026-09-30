@@ -45,6 +45,13 @@
  *
  * 8. **`h1` 自己出**（`admin-site` 已在 `App.vue` 的 `SELF_TITLED_SCENES` 里）：
  *    页头「站点设置」是全页唯一的一级标题，各分节是 `h2`，不跳级。
+ *
+ * 9. **放大编辑**（用户反馈：窄格子里写长文本不方便）。右列这一栏本来就不宽，
+ *    「站点描述」「关于页正文」这类字段摆在一格里改字很别扭，所以每一格（含整段 JSON）
+ *    都给一个 `F2` / 「放大」按钮打开的弹窗（`machine/TextEditorDialog.vue`）。
+ *    弹窗**只换画布**：保存仍旧写回同一份 `texts`，数据流一个字没变 ——
+ *    字段走 `setField`、JSON 走 `setJsonText`，都是下面原来那两个 @input 处理器现用的路径。
+ *    打开期间按 `pageModalOpen` + 本页 `onPad` 的守卫把按键留在框里（见 `longTextPad`）。
  */
 import { computed, onMounted, onUnmounted, ref, watch } from 'vue'
 
@@ -52,10 +59,12 @@ import { fetchAdminSiteConfig, saveAdminSiteConfig } from '@/api/admin'
 import { ApiError } from '@/api/client'
 import { focusShellRoot } from '@/input'
 import { useFocusGroup } from '@/input/focus'
-import { onPad } from '@/input/pad'
+import { onPad, type PadAction } from '@/input/pad'
 import { playSfx } from '@/input/sfx'
 import SceneHead from '@/machine/SceneHead.vue'
+import TextEditorDialog from '@/machine/TextEditorDialog.vue'
 import { useStatusBar } from '@/scene/clock'
+import { useLongText } from '@/scene/longtext'
 import { canGoBack, goBack, goTab } from '@/scene/nav'
 import { scrollScreenTop } from '@/scene/screen'
 import { useAuthStore } from '@/stores/auth'
@@ -457,22 +466,114 @@ function toggleTo(index: number): void {
 }
 
 /**
- * 字段编辑：把改动写回**这一段的 JSON 文本**，整段重新序列化。
- * 没有第二份草稿 —— 输入框与下面的 JSON 永远是同一份数据的两种看法。
+ * 把某一格的字符串写回**这一段的 JSON 文本**，整段重新序列化。
+ * 没有第二份草稿 —— 输入框、放大编辑弹窗与下面的 JSON 永远是同一份数据的三种看法。
+ * `seg` 默认是当前段；放大编辑传的是**打开弹窗那一刻**记下的那一段（见 `onLongSave`）。
  */
-function onField(key: string, event: Event): void {
-  const current = parsed.value[activeKey.value]
+function setField(key: string, value: string, seg: string = activeKey.value): void {
+  const current = parsed.value[seg]
   if (!current?.ok || !isPlainObject(current.value)) return
-  const value = (event.target as HTMLInputElement | HTMLTextAreaElement).value
   const next: Record<string, unknown> = { ...current.value, [key]: value }
-  texts.value = { ...texts.value, [activeKey.value]: stringifySegment(next) }
+  texts.value = { ...texts.value, [seg]: stringifySegment(next) }
   savedFlash.value = false
 }
 
-function onJson(event: Event): void {
-  const value = (event.target as HTMLTextAreaElement).value
-  texts.value = { ...texts.value, [activeKey.value]: value }
+function setJsonText(value: string, seg: string = activeKey.value): void {
+  texts.value = { ...texts.value, [seg]: value }
   savedFlash.value = false
+}
+
+/** 格子上的 @input 只是把原生控件的值递给 `setField` */
+function onField(key: string, event: Event): void {
+  setField(key, (event.target as HTMLInputElement | HTMLTextAreaElement).value)
+}
+
+function onJson(event: Event): void {
+  setJsonText((event.target as HTMLTextAreaElement).value)
+}
+
+/* ══════════════ 放大编辑（用户反馈：窄格子里写长文本不方便） ══════════════ */
+
+/**
+ * 打开弹窗那一刻「正在改哪儿」。
+ * 段名与字段名都**记下来**而不是保存时现读 `activeKey` —— 弹窗开着的时候段不可能被换掉
+ * （遮罩盖住了整页），但记下来后这段逻辑与「弹窗开着时页面状态会不会变」无关，更耐改。
+ * `field === null` 表示改的是这一段的整段 JSON。
+ */
+const longSeg = ref('')
+const longField = ref<string | null>(null)
+
+const { editing, openLongText, closeLongText } = useLongText()
+
+function openFieldLong(row: FieldRow): void {
+  if (row.kind === 'struct') return
+  longSeg.value = activeKey.value
+  longField.value = row.key
+  playSfx('confirm')
+  openLongText({
+    key: row.key,
+    label: row.label,
+    value: row.text,
+    multiline: row.kind === 'area',
+    focusId: fieldId(row.key),
+    hint: `这一段（${activeKey.value}）里的一个字段，改动与在上面那一格里改是同一份数据。`,
+  })
+}
+
+function openJsonLong(): void {
+  longSeg.value = activeKey.value
+  longField.value = null
+  playSfx('confirm')
+  openLongText({
+    key: activeKey.value,
+    label: `${activeKey.value} 这一段的 JSON`,
+    value: textOf(activeKey.value),
+    multiline: true,
+    mono: true,
+    focusId: 'admin-site-json',
+    hint: '整段写回：数组与嵌套对象都在这里改，未知键原样保留。',
+  })
+}
+
+/** F2 = 放大编辑这一格（内核 `KEYMAP` 里没有 F2，不会被外壳吃掉） */
+function onFieldKey(event: KeyboardEvent, row: FieldRow): void {
+  if (event.key !== 'F2') return
+  event.preventDefault()
+  openFieldLong(row)
+}
+
+function onJsonKey(event: KeyboardEvent): void {
+  if (event.key !== 'F2') return
+  event.preventDefault()
+  openJsonLong()
+}
+
+/** 弹窗保存：写回打开那一刻记下的那一段/那一格（先取上下文再关，`closeLongText()` 会清空 `editing`） */
+function onLongSave(value: string): void {
+  const seg = longSeg.value
+  const field = longField.value
+  closeLongText()
+  if (!seg) return
+  if (field === null) setJsonText(value, seg)
+  else setField(field, value, seg)
+}
+
+/**
+ * 放大编辑弹窗开着时的按键归属（写法与 `AdminLinksView` 的 `dialogPad` 同源）。
+ *
+ * `cancel` 在**这里**关框，而不是只靠弹窗自己的 DOM 监听：点过遮罩之后外壳会把原生焦点
+ * 收回根节点，那时弹窗内的监听器根本收不到按键，只剩这一条路。
+ * 其余按键一律吞掉 —— 下面的方向键分支会把原生焦点收回外壳，焦点一离开弹窗，
+ * 框里的键盘当场就死了（§21 记的那条链条）。
+ * Tab 例外：焦点还在编辑区里时内核本来就让浏览器自己走，这里放行不会多一次触发。
+ */
+function longTextPad(a: PadAction): boolean {
+  if (a === 'cancel') {
+    closeLongText()
+    return true
+  }
+  if (a === 'tabNext' || a === 'tabPrev') return false
+  return true
 }
 
 /**
@@ -675,6 +776,11 @@ function step(dir: -1 | 1): boolean {
 }
 
 const off = onPad((action) => {
+  // 放大编辑弹窗开着时，页面层把按键交给它先处理。
+  // 守卫必须写在**自己**这个监听器里：外壳的 `runPass` 会遍历全部同作用域监听器、不提前退出，
+  // 少这一句，弹窗里按方向键会被下面的分支把焦点收回外壳，框里的键盘当场失灵。
+  if (editing.value) return longTextPad(action)
+
   // Q：全站的历史后退键。页面显式接管，只为了补上「深链接没有上一页」的兜底
   if (action === 'back') {
     back()
@@ -886,7 +992,8 @@ watch(
               {{ activeError }}
             </p>
 
-            <!-- 段内顶层字符串字段：带中文标签的原生输入框（Tab 在字段间走） -->
+            <!-- 段内顶层字符串字段：带中文标签的原生输入框（Tab 在字段间走）
+                 每格右边一个「放大」按钮、格子里按 F2 也能开（这一栏本来就窄，长文本在那儿改字别扭） -->
             <div class="fields">
               <div
                 v-for="row in activeFields"
@@ -904,6 +1011,7 @@ watch(
                   :disabled="!activeOk"
                   spellcheck="false"
                   @input="onField(row.key, $event)"
+                  @keydown="onFieldKey($event, row)"
                 />
                 <textarea
                   v-else-if="row.kind === 'area'"
@@ -914,8 +1022,21 @@ watch(
                   :disabled="!activeOk"
                   spellcheck="false"
                   @input="onField(row.key, $event)"
+                  @keydown="onFieldKey($event, row)"
                 ></textarea>
                 <span v-else class="struct px">{{ row.text }}</span>
+                <button
+                  v-if="row.kind !== 'struct'"
+                  class="expand"
+                  data-testid="admin-site-expand"
+                  type="button"
+                  :data-key="row.key"
+                  :aria-label="`放大编辑：${row.label}`"
+                  title="放大编辑（F2）"
+                  @click="openFieldLong(row)"
+                >
+                  放大
+                </button>
               </div>
             </div>
             <p class="tip hint">
@@ -924,17 +1045,33 @@ watch(
             </p>
 
             <!-- 整段 JSON：自由结构段的兜底编辑面，也是「未知键原样保留」的保证 -->
-            <label class="json-box">
-              <span class="json-cap px">这一段 JSON（整段写回）</span>
+            <div class="json-box">
+              <div class="json-head">
+                <label class="json-cap px" for="admin-site-json">
+                  这一段 JSON（整段写回）
+                </label>
+                <button
+                  class="expand"
+                  data-testid="admin-site-json-expand"
+                  type="button"
+                  aria-label="放大编辑：这一段的 JSON"
+                  title="放大编辑（F2）"
+                  @click="openJsonLong"
+                >
+                  放大
+                </button>
+              </div>
               <textarea
+                id="admin-site-json"
                 class="json"
                 data-testid="admin-site-json"
                 spellcheck="false"
                 :aria-label="`${activeKey} 这一段的 JSON`"
                 :value="textOf(activeKey)"
                 @input="onJson"
+                @keydown="onJsonKey"
               ></textarea>
-            </label>
+            </div>
 
             <!-- 改动对照：叶子路径级的 - 旧 / + 新，改了什么一眼看得见 -->
             <section class="diff">
@@ -1005,8 +1142,24 @@ watch(
     </div>
 
     <div class="foot sticky-foot px hint">
-      ↑↓ 选段 / 按钮 · ENTER 打开这一段 · TAB 走字段与按钮 · Q 返回 · P / ESC 菜单
+      ↑↓ 选段 / 按钮 · ENTER 打开这一段 · TAB 走字段与按钮 · F2 放大编辑这一格 · Q 返回 · P / ESC
+      菜单
     </div>
+
+    <!-- 放大编辑：页内模态，一次只开一个（`editing` 非空就是开着）。
+         遮罩点击不关闭是有意的 —— 框里可能是整段 JSON，一次误点不该丢 -->
+    <TextEditorDialog
+      v-if="editing"
+      :label="editing.label"
+      :value="editing.value"
+      :multiline="editing.multiline"
+      :maxlength="editing.maxlength"
+      :placeholder="editing.placeholder"
+      :mono="editing.mono"
+      :hint="editing.hint"
+      @save="onLongSave"
+      @close="closeLongText"
+    />
   </div>
 </template>
 
@@ -1331,8 +1484,43 @@ watch(
   gap: 6px;
 }
 
+.json-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
 .json-cap {
   color: var(--blue-600);
+}
+
+/*
+ * 「放大」触发器：不加 `.focusable`（那是外壳自绘光标那一套），走**浏览器原生 Tab 顺序** ——
+ * 本页字段本来就用原生焦点，硬塞进 `.focusable` 会连方向键的焦点链一起改掉。
+ */
+.expand {
+  flex: 0 0 auto;
+  margin-left: auto;
+  margin-top: 6px;
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  background: var(--paper);
+  border: 2px solid var(--blue-400);
+  color: var(--blue-700);
+  padding: 2px 7px;
+  cursor: pointer;
+}
+
+.json-head .expand {
+  margin-top: 0;
+}
+
+.expand:hover,
+.expand:focus-visible {
+  background: var(--blue-100);
+  outline: none;
+  border-color: var(--blue-500);
 }
 
 .json {
