@@ -142,12 +142,14 @@ icespark/
 |---|---|---|
 | **P0 骨架** ✅ | — | 独立性门 / 契约漂移门 / lint / vue-tsc / e2e 跑通（**已落地**，见 §13） |
 | **P1 设计系统** ✅ | — | tokens 构建期生成、pixel.css、CRT、字体、M/F/S 分层规则（**已落地**，见 §14；字体子集化挪到 P7，理由见 §14.5） |
-| **P2 交互内核** | — | 手柄层 + 共享焦点 + 作用域、场景转场、对话框、菜单 |
-| **P3 公开阅读** | HomeView 559 · PostListView 1373 · PostDetailView 1499 · About 286 · Links 288 · 404 460 | 路由化 + markdown-it 渲染正文 |
-| **P4 搜索与档案** | SearchResultsView 1167 · UserProfileView 554 | 含 `/api/search/suggest` |
-| **P5 账号与管理** | LoginView 526 · ProfileView 2256 | 登录/注册、个人设置、站点设置、外链管理、审计日志 |
-| **P6 写作** | PostEditView 2769 · MilkdownEditor 796 | **最大风险项** |
-| **P7 收尾** | — | meta / JSON-LD / sitemap / axe 审计 / 预渲染 / 性能预算门 |
+| **P2 交互内核** ✅ | — | 手柄层 + 共享焦点 + 作用域、场景转场、对话框、菜单（**已落地**，见 §15） |
+| **P3 公开阅读** ✅ | HomeView 559 · PostListView 1373 · PostDetailView 1499 · About 286 · Links 288 · 404 460 | 路由化 + markdown-it 渲染正文（**已落地**，见 §17；404 尾巴见 §19） |
+| **P4 搜索与档案** ✅ | SearchResultsView 1167 · UserProfileView 554 | 含 `/api/search/suggest`（**已落地**，见 §20 + §21）。搜索按用户裁定不建独立页，能力留在菜单弹窗内，故无 `/search` 路由 |
+| **P5 账号与管理** ✅ | LoginView 526 · ProfileView 2256 | 登录/注册、个人设置、站点设置、外链管理、审计日志（**已落地**，见 §23 + §24）。登录按用户裁定用外壳弹窗，不建 `/login`；ProfileView 的四个 tab 拆成 `/profile` · `/admin/site` · `/admin/links` · `/admin/audit` 四张独立页 |
+| **P6 写作** ⬜ | PostEditView 2769 · MilkdownEditor 796 | **未开工**，**最大风险项**。样机 `design/icespark-prototype/` 没有写作页，按硬要求 4 须先与用户确认交互与设计再动手 |
+| **P7 收尾** ⬜ | — | **未开工**：字体子集化（§14.5）、highlight.js + DOMPurify `span` 白名单、meta / JSON-LD / sitemap、axe 审计、预渲染、性能预算门 |
+
+覆盖率口径：旧前端 11 个视图（`frontend/src/views/`）中 10 个已迁移或按用户裁定换形态落地（SearchResultsView → 菜单弹窗、LoginView → 外壳弹窗），唯一未迁移的是 `PostEditView` + `MilkdownEditor`。icespark 现有 11 个视图共 9,295 行。
 
 ---
 
