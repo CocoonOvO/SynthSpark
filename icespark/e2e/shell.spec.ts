@@ -13,7 +13,8 @@ import { booted } from './helpers'
  *   .app                     padding 10px 12px 8px · gap 6px · 纵向 flex
  *   ├── .screen              3px 像素外框 + crt 质感（不外挂第二层机身）
  *   └── .deck                与 .screen 同级（**不在框内**）
- *        ├── .deck-scene     场景指示：6 个场景，当前项显示 label，其余 `·`
+ *        ├── .deck-scene     场景指示：一格一个场景（条数跟着 `scene/scenes.ts` 走），
+ *        │                   当前项显示 label，其余 `·`
  *        ├── .deck-keys      软键（margin-left:auto 推到右侧）
  *        ├── .deck-src       ● LIVE / ○ DEMO
  *        └── .deck-footer    站点小字（版权 · 口号 · 备案），与外框绑定 → 404 也在
@@ -100,13 +101,13 @@ test('底栏三段顺序：场景指示 / 软键 / 数据源 / 站点小字', as
 
 /**
  * 场景指示的格子数 = `scene/scenes.ts` 的场景表条数（样机口径：一格一个场景）。
- * 场景表随页面增加而变长：P3 时 6 格，P4 加用户档案页后 7 格 —— 数字要跟着表走。
+ * 场景表随页面增加而变长：P3 时 6 格，P4 加用户档案页后 7 格，P6 加写作页后 8 格 —— 数字要跟着表走。
  */
-test('场景指示：7 个场景，当前场景显示 label，其余是点', async ({ page }) => {
+test('场景指示：8 个场景，当前场景显示 label，其余是点', async ({ page }) => {
   await page.goto('/')
   await booted(page)
 
-  await expect(page.locator('.deck-scene b')).toHaveCount(7)
+  await expect(page.locator('.deck-scene b')).toHaveCount(8)
   await expect(page.locator('.app')).toHaveAttribute('data-scene', 'home')
 
   const strip = await page.evaluate(() =>
@@ -242,14 +243,18 @@ test('底条常驻：屏幕不高、正文又长时，键位/翻页条仍在下�
   await page.addInitScript(() => localStorage.setItem('synthspark-icespark-sound-prompt', '1'))
   await page.setViewportSize({ width: 1100, height: 520 })
 
-  for (const [path, sel] of [
-    ['/', '.home-foot'],
-    ['/posts', '.foot'],
+  for (const [path, sel, ready] of [
+    ['/', '.home-foot', '[data-testid^="home-post-"]'],
+    ['/posts', '.foot', '[data-testid="post-card"]'],
   ] as const) {
     await page.goto(path)
     await booted(page)
     const scroller = page.locator('.screen-inner')
     await expect(page.locator(sel)).toBeAttached()
+    // 列表是异步拉的：先等第一批卡片真的渲染出来再量高度。
+    // 不等的话并行跑（默认 8 个 worker）时页面还是空的，这条用例会假失败 ——
+    // 它要证明的是「长页面也贴住下沿」，不是「接口有多快」。
+    await expect(page.locator(ready).first()).toBeAttached()
     // 先确认这一页真的比视口高（否则这条用例证明不了什么）
     const tall = await scroller.evaluate((el) => el.scrollHeight > el.clientHeight + 40)
     expect(tall, `${path} 的正文应当比视口高`).toBe(true)

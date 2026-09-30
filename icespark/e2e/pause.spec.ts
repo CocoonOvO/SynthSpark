@@ -222,37 +222,29 @@ test('搜索态：菜单内直接检索真接口，ESC 逐层退回菜单', asyn
 })
 
 test('提示行不闪：红字提示是常亮的（样机挂过 blink，用户反馈太晃眼睛）', async ({ page }) => {
-  // 「写作页还没做（P6）」这类提示会一直留在菜单里，样机给它挂了 `.blink`
+  // 菜单里的红字提示会一直留在那儿，样机给它挂了 `.blink`
   // —— 一整句红字反复明灭，用户明确要求停掉（架构 §26.2）。
   // 这里断言的是**计算值**：肉眼在静止截图里看不出一行字闪不闪，量出来才算数。
   //
-  // 触发用的是「编辑文章」行（登录后才出现，点了给一句 P6 提示）：它不依赖搜索接口
-  // 有没有命中的数据，比在搜索态里逼出那条分页提示更稳。
+  // 触发改用 `E`（前进一页）：刚进来时 `history.state.forward` 是空的，
+  // 于是必然走 `goHistory` 的假动作防护、给一句「还没有下一页」。
+  // 早先这里点的是「编辑文章」行（那时它只弹一句 P6 占位提示）——
+  // P6 落地后那一行改成真跳转了，提示源随之换成这条不依赖后端数据的路径。
+  // 顺带的好处：它**不改动任何状态**（行数、焦点、登录态都原地不动），
+  // 下面的光标断言因此还能在同一个菜单上量。
   await page.addInitScript(() => {
     localStorage.setItem('synthspark-icespark-sound-prompt', '1')
-    localStorage.setItem('synthspark-token', 'e2e-token')
-    localStorage.setItem(
-      'synthspark-icespark-user',
-      JSON.stringify({ username: 'e2e_user', display_name: '测试用户', is_superuser: false }),
-    )
   })
-  await page.route('**/api/auth/me', (route) =>
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify({ id: 'e2e-id', username: 'e2e_user', display_name: '测试用户' }),
-    }),
-  )
 
   await page.goto('/')
   await booted(page)
   await page.keyboard.press('p')
-  await expect(page.locator('[data-testid="pause-edit"]')).toBeVisible()
-  await page.click('[data-testid="pause-edit"]')
+  await expect(page.locator('[data-testid="pause"]')).toBeVisible()
+  await page.keyboard.press('e')
 
   const hint = page.locator('[data-testid="pause-hint"]')
   await expect(hint).toBeVisible()
-  await expect(hint).toContainText('P6')
+  await expect(hint).toContainText('还没有下一页')
   expect(
     await hint.evaluate((el) => getComputedStyle(el).animationName),
     '提示行不该有动画（样机那条 blink 已按用户反馈去掉）',

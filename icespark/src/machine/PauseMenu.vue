@@ -62,7 +62,7 @@ interface Row {
  *
  * 用户裁定「账号和管理每项**分别做成独立页面**」之后，这里不再往 `/profile?tab=…` 里塞 tab，
  * 每行各自一条路由 —— 旧前端那种「一个设置页五个 tab」的口径到此为止：
- *   /write         写作 / 编辑文章（**P6**，还没落地，点了给一句提示）
+ *   /write         写作 / 编辑文章（P6 起是真页面）
  *   /profile       个人信息编辑（登录即可）
  *   /admin/site    站点设置（超管）
  *   /admin/links   外链管理（超管）
@@ -175,18 +175,16 @@ function activate(): boolean {
       requestTransition('shake')
       void router.push('/')
       break
+    case 'edit':
     case 'profile':
     case 'site':
     case 'links':
     case 'audit':
-      // 真页面（P5 起）：关菜单再跳 —— 不关就会变成「菜单压在目标页面上」，
-      // 用户看不到自己点到了哪儿
+      // 真页面（P5 起 profile/site/links/audit，P6 起 edit：写作页落地，
+      // 那一句「写作页还没做」的占位提示随之作废）：关菜单再跳 ——
+      // 不关就会变成「菜单压在目标页面上」，用户看不到自己点到了哪儿
       emit('close')
       void router.push(row.href ?? '/')
-      break
-    case 'edit':
-      // `/write` 是 P6 的活：行照样机留着（登录后就有），点了先说清楚它还不在
-      hint.value = `写作页还没做（P6），目标路径 ${row.href}`
       break
     case 'settings':
       hint.value = ''

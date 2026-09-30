@@ -105,13 +105,30 @@ const shell = useShellStore()
 const sceneId = computed(() => (booting.value ? 'boot' : currentScene.value))
 
 /**
+ * 「页面自己按路由参数装载」的场景：这些场景**不参与 `viewKey` 的参数部分**。
+ *
+ * P6 起只有写作页一个。它内部有一份 `watch(routeKey)`——换稿子时自己取详情填表单，
+ * 还会在保存后把 URL 换成新 slug。若外壳再按 `:key` 重建它，就会：
+ * 把分组 / 文稿列表 / 标签全部重拉一遍，并且刚写完的「已保存 12:34:56」
+ * 在重建里被抹掉（`savedAt` 是组件内的状态）。换稿子仍然换 URL、仍然可分享，
+ * 只是不再重建组件 —— 这正是它自己那份 watcher 存在的意义。
+ *
+ * 文章页（`/post/a` → `/post/b`）**必须**留在重建那一档：它只按参数加载一次正文。
+ */
+const SELF_LOADING_SCENES = ['write']
+
+/**
  * 场景实例 key（与样机 `sceneKey = id:param` 同一口径）。
  *
  * 只有「换了一篇文章」才需要重建组件：列表换页 / 换筛选不重建（保住焦点与滚动位置），
  * 而 `/post/a` → `/post/b` 必须重建（页面按路由参数只加载一次正文）。
  * 用 route 的参数而不是 `sceneSeq`（那个每次导航都变，会把列表也一起重建）。
  */
-const viewKey = computed(() => `${sceneId.value}:${route.params.key ?? ''}`)
+const viewKey = computed(() =>
+  SELF_LOADING_SCENES.includes(sceneId.value)
+    ? sceneId.value
+    : `${sceneId.value}:${route.params.key ?? ''}`,
+)
 
 /**
  * 屏幕阅读器用的一级标题（**视觉隐藏**，屏幕上不出现，不是视觉改动）。
@@ -134,6 +151,8 @@ const SELF_TITLED_SCENES = [
   'admin-site',
   'admin-links',
   'admin-audit',
+  // P6 写作页：页面自带可见的一级标题（「写作台」），外壳不再发隐藏 h1（否则同页两个 h1）
+  'write',
 ]
 
 const shellHeading = computed(() => {

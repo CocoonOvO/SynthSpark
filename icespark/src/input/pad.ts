@@ -44,6 +44,21 @@ export type PadAction =
   | 'focusLike'
   /** 回到顶部：U */
   | 'toTop'
+  /**
+   * 写作页的三个面板（P6 新增，只在 `/write` 上有人监听）。
+   *
+   * 为什么不是「页面自己再挂一个 DOM 监听」：这个内核是唯一的键盘入口，
+   * 页面绕过它就等于把「同一个键在不同页面走不同链路」引进来。
+   * 三个键选得都不与既有的撞：N（文稿）/ M（资料）/ V（预览）在 KEYMAP 里原本空着。
+   * 注意**它们在正文里按不出来** —— 可编辑目标只放 ESC 过去（`input/index.ts`），
+   * 所以正确用法是先 TAB 出正文再按（写作页的键位提示就是这么写的）。
+   */
+  /** 文稿面板（分组 · 已发布/草稿 · 篇目列表）：N */
+  | 'panelDocs'
+  /** 资料面板（标签 · 封面 · 分组归属 · 文章操作）：M */
+  | 'panelMeta'
+  /** 预览面板（窄屏用；宽屏本来就有常驻预览栏）：V */
+  | 'panelPreview'
 
 /**
  * 监听器签名。第二个参数 `consumed` 只对作用域 `any` 有意义：
@@ -157,6 +172,10 @@ const KEYMAP: Record<string, PadAction> = {
   t: 'focusTag',
   l: 'focusLike',
   u: 'toTop',
+  // 写作页专用（P6）：N 文稿 / M 资料 / V 预览。三个字母此前都空着，不动既有键位
+  n: 'panelDocs',
+  m: 'panelMeta',
+  v: 'panelPreview',
 }
 
 /** 事件目标是不是「正在输入的表单域」——输入框里不劫持按键 */

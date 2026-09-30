@@ -86,6 +86,17 @@ export const routes: RouteRecordRaw[] = [
     meta: { scene: 'admin-audit', title: '审计日志', requiresAuth: true, requiresSuperuser: true },
   },
   {
+    // 写作（P6）。一条路由带可选参数：`/write` 新建、`/write/:key` 编辑既有。
+    // `key` 与 `/post/:key` 同一口径（slug 优先、落回 id，见 `api/format.ts` 的 `postKey`）。
+    // 目标分组走**查询参数**（`?group=<slug>`）—— 与列表页「列表状态走查询参数」一致。
+    // `requiresAuth`：未登录深链接会被守卫送回主页并弹登录框（与 `/profile`、`/admin/*` 同一条路）。
+    // 这一页也**不进标签栏**（`scene/tabs.ts` 的 `TABS` 没有它），所以 Tab 归浏览器原生遍历。
+    path: '/write/:key?',
+    name: 'write',
+    component: () => import('@/views/WriteView.vue'),
+    meta: { scene: 'write', title: '写作', requiresAuth: true },
+  },
+  {
     // 兜底：must be last —— 404 必须是路由表最后一条
     path: '/:pathMatch(.*)*',
     name: 'not-found',

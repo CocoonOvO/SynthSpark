@@ -47,14 +47,15 @@ async function loggedIn(page: Page, isSuperuser: boolean): Promise<void> {
   )
 }
 
-test('未登录深链接进需鉴权页：回主页 + 弹出登录框 + 一句提示（四个路径各来一次）', async ({
+test('未登录深链接进需鉴权页：回主页 + 弹出登录框 + 一句提示（五个路径各来一次）', async ({
   page,
 }) => {
   const errors: string[] = []
   page.on('pageerror', (error) => errors.push(String(error)))
   await anonymous(page)
 
-  for (const path of ['/profile', '/admin/site', '/admin/links', '/admin/audit']) {
+  // `/write` 是 P6 的写作页：`requiresAuth` 与四张账号 / 管理页同一条路
+  for (const path of ['/write', '/profile', '/admin/site', '/admin/links', '/admin/audit']) {
     await page.goto(path)
     await booted(page)
 

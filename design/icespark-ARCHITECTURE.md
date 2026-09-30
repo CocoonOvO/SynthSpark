@@ -146,10 +146,10 @@ icespark/
 | **P3 公开阅读** ✅ | HomeView 559 · PostListView 1373 · PostDetailView 1499 · About 286 · Links 288 · 404 460 | 路由化 + markdown-it 渲染正文（**已落地**，见 §17；404 尾巴见 §19） |
 | **P4 搜索与档案** ✅ | SearchResultsView 1167 · UserProfileView 554 | 含 `/api/search/suggest`（**已落地**，见 §20 + §21）。搜索按用户裁定不建独立页，能力留在菜单弹窗内，故无 `/search` 路由 |
 | **P5 账号与管理** ✅ | LoginView 526 · ProfileView 2256 | 登录/注册、个人设置、站点设置、外链管理、审计日志（**已落地**，见 §23 + §24）。登录按用户裁定用外壳弹窗，不建 `/login`；ProfileView 的四个 tab 拆成 `/profile` · `/admin/site` · `/admin/links` · `/admin/audit` 四张独立页 |
-| **P6 写作** ⬜ | PostEditView 2769 · MilkdownEditor 796 | **未开工**，**最大风险项**。样机 `design/icespark-prototype/` 没有写作页，按硬要求 4 须先与用户确认交互与设计再动手 |
+| **P6 写作** ✅ | PostEditView 2769 · MilkdownEditor 796 | **已落地**，见 §28（提案 + 裁决）与 **§28.9（交付记录）**。样机没有写作页，按硬要求 4 先出提案、用户逐条裁决（D1～D10）再动手；编辑器按 D2/D3 选 **E2 源码 + 实时预览**，没有装 `@milkdown/*` |
 | **P7 收尾** ⬜ | — | **未开工**：字体子集化（§14.5）、highlight.js + DOMPurify `span` 白名单、meta / JSON-LD / sitemap、axe 审计、预渲染、性能预算门 |
 
-覆盖率口径：旧前端 11 个视图（`frontend/src/views/`）中 10 个已迁移或按用户裁定换形态落地（SearchResultsView → 菜单弹窗、LoginView → 外壳弹窗），唯一未迁移的是 `PostEditView` + `MilkdownEditor`。icespark 现有 11 个视图共 9,295 行。
+覆盖率口径：旧前端 11 个视图（`frontend/src/views/`）**全部有着落** —— 10 个已迁移或按用户裁定换形态落地（SearchResultsView → 菜单弹窗、LoginView → 外壳弹窗），最后一个是 `PostEditView`，P6 以 E2 形态（源码 + 实时预览）落地到 `WriteView.vue`，旧 `MilkdownEditor.vue` 按裁决不迁（编辑器形态由用户选 E2）。icespark 现有 12 个视图共 11,015 行。
 
 ---
 
@@ -158,6 +158,8 @@ icespark/
 1. **总量**：11 个视图、约 14,000 行 UI，不是几轮能完的。按阶段交付，每阶段都能跑起来。
 2. **编辑器是最大风险项**：旧 `PostEditView` 2769 行 + `MilkdownEditor` 796 行，还叠着上传、草稿、图片插入。
    milkdown 的样式很硬（旧代码靠 `background: transparent !important` 压它），在像素皮里会更难缠。
+   → **已化解**：P6 由用户裁决走 E2（Markdown 源码 + 实时预览），`@milkdown/*` 一个没装，
+   风险从「样式对抗 + 新依赖」变成「自己写一个 496 行的编辑器容器」（见 §28.9）。
 3. **管理面也要披 8bit 皮**：站点设置 / 外链管理 / 审计日志那些表单和表格。
    压住工作量的办法是执行"F 层只换皮、不改 IA"——结构照搬语义，只重写 CSS。
 
@@ -1127,7 +1129,7 @@ store 形状、组件 props、改写规则）都以本节为准；与本节冲�
      菜单里每项按权限分别显隐；鉴权口径：未登录访问需鉴权页 → **重定向回主页并由外壳弹出登录框**
      （带一句提示）；非超管进超管页 → 页内「仅超管可见」提示。
      「我的文章 / 草稿」不在 P5，**推迟到 P6**。
-   - **P6 写作**（`/write` + Milkdown + 「我的文章/草稿」）单列一轮。
+   - **P6 写作**（`/write` + 编辑器 + 「我的文章/草稿」）单列一轮。（已落地：编辑器形态经用户裁决为 E2，见 §28.9。）
 2. **站点配置接线口径已定**：先把 `config/defaults.ts` 里的首页 / 关于 / 导航文案改成**样机文案**，
    再把这些位置改成读三级配置 —— 默认渲染与样机逐字一致，同时管理员可覆盖。
    字段映射（哪些中文算"站点文案"、哪些算"机器字样/皮肤"）**已确认并落地，见 §18**。
@@ -1660,8 +1662,8 @@ P0–P3 期间的 `NotFoundView` 是占位皮肤（约 19 行），本轮按**�
    「整份写回不丢段」「保存成功」这类路径缺一次真实后端的旁证（§23.5 的取舍）。
 4. **`/admin/site` 没做 `defaultTheme` 下拉**：icespark 的配色走 `styles/tokens.ts`，
    与旧前端 11 套主题不是一回事，它作为普通字段 / 整段 JSON 可编辑。
-5. 「我的文章 / 草稿」与 `/write`（Milkdown）仍是 **P6**；字体子集化与 highlight.js 的
-   DOMPurify `span` 白名单仍在 **P7**。
+5. 「我的文章 / 草稿」与 `/write` 已在 **P6 落地**（编辑器形态改为 E2，不迁 Milkdown，见 §28.9）；
+   字体子集化与 highlight.js 的 DOMPurify `span` 白名单仍在 **P7**。
 
 ## 25. 用户反馈三条（2026-09-29 晚）
 
@@ -1990,7 +1992,7 @@ U 回顶部 · Q 返回 · P / ESC 菜单`。顺带把关于页底条里那句�
 
 ---
 
-## 28. P6 写作页设计提案（待用户裁定 · 未开工）
+## 28. P6 写作页设计提案（已裁定 · 已落地，交付记录见 §28.9）
 
 ### 28.0 为什么这一轮只有提案、没有代码
 
@@ -2126,3 +2128,124 @@ SceneHead   写作 · WRITE                                 ● 未保存
   ⑦ 面板开着时按 P 不叠二层菜单（`pageModalOpen`）；⑧ axe 无新增违规。
 - 真机验证：起 5175 + 真后端 8002，登录 `icespark_admin` 造一篇草稿再发布，截图存档；
   探针脚本与截图用完即删。
+
+### 28.9 交付记录（已实现 · 2026-09-30）
+
+提交：`feat: P6 写作页 —— 正文独屏 + 文稿/资料覆盖面板（E2 源码 + 实时预览）`
+（本节与实现同一次提交；哈希不写在这里 —— 写进去就得为它再改一次，改完哈希又变）。
+
+§28.7 的十条裁决逐条落地：**D1 方案 B**、**D2/D3 形态 E2**（Markdown 源码 + 实时预览，
+零新依赖，没有装 `@milkdown/*`）、**D4～D10 全部按推荐**。下面记的是**改动清单 + 验收结果 +
+与提案不一样的地方** —— 后面那几处是动手才暴露的，提案当时的文字已经不准确了，以本节为准。
+
+#### 28.9.1 动过的文件
+
+| 文件 | 性质 | 规模 | 说明 |
+|---|---|---|---|
+| `icespark/src/views/WriteView.vue` | 新增 | 1720 行 | 路由页面：动作条 / 标题 / 正文分屏 / 三个覆盖面板 / 二次确认 / 自动存草稿 |
+| `icespark/src/signal/MarkdownSourceEditor.vue` | 新增 | 496 行 | `signal/` 层的编辑器容器：插入条 + 语言下拉（35 项）+ 正文 textarea + 记法插入 |
+| `icespark/src/api/upload.ts` | 新增 | 94 行 | `POST /api/upload` 的 multipart 封装 + 10MB 上限 + `UploadError` |
+| `icespark/e2e/write.spec.ts` | 新增 | 493 行 / 9 用例 | 写作页专属门（§28.8 的计划是 8 条，实际拆成 9 条） |
+| `icespark/src/api/posts.ts` | 改 | — | 追加 `fetchMyPosts` / `createPost` / `updatePost` / `deletePost` 与三个载荷类型 |
+| `icespark/src/api/groups.ts` | 改 | — | 追加 `createGroup`（面板里的「＋ 新建分组」） |
+| `icespark/src/router/routes.ts` | 改 | — | 404 前插入 `/write/:key?`（`meta.scene='write'`、`requiresAuth`） |
+| `icespark/src/scene/scenes.ts` | 改 | — | 场景表加 `{ id: 'write', label: 'WRITE' }`（底栏场景指示 7 格 → 8 格） |
+| `icespark/src/input/pad.ts` | 改 | — | `PadAction` 加 `panelDocs / panelMeta / panelPreview`，`KEYMAP` 加 `n / m / v` |
+| `icespark/src/App.vue` | 改 | — | `SELF_TITLED_SCENES` 加 `write`；新增 `SELF_LOADING_SCENES`（见 28.9.2 第 4 条） |
+| `icespark/src/machine/PauseMenu.vue` | 改 | — | 「编辑文章」从占位提示改成真跳转（`profile/site/links/audit` 同一组） |
+| `icespark/e2e/admin-guard.spec.ts` | 改 | — | 「未登录深链接」那一圈从四个路径扩到五个（加 `/write`） |
+| `icespark/e2e/pause.spec.ts` | 改 | — | 提示行不闪那条改用 `e`（前进）触发，不再依赖写作页占位 |
+| `icespark/e2e/shell.spec.ts` | 改 | — | 场景格数 7 → 8；底条常驻那条加「等列表渲染」 |
+
+**没有动的东西**（有意为之）：`signal/` 不 import `machine/`（独立性门照过）；
+没有新依赖（E2 形态的全部成本是 496 行的编辑器容器）；样机六页一行未改。
+
+#### 28.9.2 与提案不一样的地方（六处）
+
+1. **面板里的 ESC 不是「不消费」，而是「关面板」**。§28.4 当时写的是「ESC 不消费，见 28.2.3」。
+   真做起来才发现：面板是**页内模态**（`pageModalOpen` 为真、外壳 ESC 已经让位），
+   如果页面自己不吃这一下，ESC 就成了死键。落地口径改成
+   「页内模态开着时，ESC 关的是那一层」—— 与外壳既有的一句话完全一致，也比原提案好。
+2. **`PostListItem` 没有 `group_id`，分组过滤只能按 `group_name`**。文稿面板要「按分组筛稿」，
+   可 `GET /api/posts/my` 回的是 `PostListItem`，契约里只有 `group_name`（旧前端也是按名字筛的）。
+   代价：分组改名后老文章会掉出该分组的列表。**这是契约的字段缺口，不是本页能修的**；
+   要修得先给 `PostListItem` 加 `group_id`（留给下一步）。
+3. **面板一开，动作条就被遮罩盖住：鼠标换面板要先关，键盘不用**。面板页内模态与全站同款
+   （管理页的 `.del-mask` 就是这么写的），遮罩自带点击即关，面板头另有「✕ 关闭」。
+   键盘在面板里按 `N`/`M`/`V` 是**直接切**（`switchPanel()` 那条：同一个键再按一下才关），
+   鼠标点不到动作条 —— 键盘路径比鼠标路径短一步。**这条不对称已经报给用户裁决**（要么接受，
+   要么在面板头加三颗切换 chip）。
+4. **写作页不进 `:key` 重建**。外壳原来的 `viewKey` 是 `${scene}:${route.params.key}`，
+   对写作页是错的：`/write` → `/write/<slug>`（第一次保存时地址栏换名）会**整页重建**，
+   重建又会重新拉分组与文稿列表、把刚写好的「已保存 12:34:56」抹掉，并且和 `fill()` 抢状态。
+   新增 `SELF_LOADING_SCENES = ['write']`：这些场景**自己管装载**，外壳不重建。
+5. **插入条是文字按钮，不是「图标按钮」**。§28.4 的草图写的是「一行图标按钮」。
+   实际做成文字标签（粗体 / 斜体 / 行内码 / 标题 / 引用 / 无序 / 有序 / 链接 / 代码块 / 图片）：
+   像素皮里没有图标字库，画图标要么引 SVG 要么写一堆 CSS；文字版一眼能认，也不加依赖。
+   D9「保留一行插入条」的精神没变。
+6. **删除线按钮没做**。`MarkdownBody` 没有开 GFM 的 `strikethrough`，做一颗插入 `~~x~~`
+   的按钮就会出现「插得进、渲染不出」的假功能 —— 宁可少一颗。要补得先改进样机渲染器（待裁决）。
+
+#### 28.9.3 键位：新增的都是「全局名字、局部消费」
+
+- `pad.ts` 的 `KEYMAP` 新增 `n → panelDocs`、`m → panelMeta`、`v → panelPreview`。三个动作目前
+  **只有写作页消费**；其它页面没有监听器，`runPass` 走完没人吃就什么也不发生，也不会 `preventDefault`
+  （内核只在可编辑目标里对 Escape 这么做）。所以这三个键名是**全局保留**的。
+  宽屏下 `V` 有意**不消费**（预览列常驻，开一个「预览面板」是多余的），只有窄屏才开面板。
+- **正文里 Tab 出正文到插入条**：插入条在 DOM 里排在 textarea 之前，原生 Tab 够不到它，
+  会一路落到页面末尾那两个隐藏文件框。现在 textarea 自己接住不带 Shift 的 Tab，把焦点交给插入条第一颗按钮；
+  插入记法后焦点交回 textarea。小环闭在编辑区里。
+- **N/M/V 在正文里收不到**（内核事实：`isEditableTarget()` 的可编辑目标只处理 Escape），
+  这也正是「Tab 出正文」存在的理由。选完一篇稿子焦点会落回正文（`fill()` 的既定行为：接着写），
+  想再开面板要再 Tab 一次 —— 与上面同一条规矩。
+- `Ctrl+S` / `Ctrl+Enter` 在 textarea 内由编辑器自己处理（内核把 Enter 让给真实按钮，
+  `s` 又是 `down`，所以这两条捷径只在编辑器里成立，与 §28.2 的推演一致）。
+
+#### 28.9.4 验收结果
+
+- `npm run check` **EXIT=0**（独立性门 → tokens:check → vitest 64 → oxlint 101 files → eslint → api:check
+  63 paths / 89 operations / sha256 `c0a6332757d33c87` → `vue-tsc`）。
+- `npx playwright test` **109 passed / 0 failed**（动手前基线 100；新增 9 条全在 `write.spec.ts`）。
+- §28.8 那 8 条计划的落点：① → `admin-guard.spec.ts`（五路径那一圈）；②③④⑤⑥⑦⑧ → `write.spec.ts`
+  的九条（多出来的一条是「已发布再改走 PUT 而不是又建一篇」，这是**发布后留页 + 查看入口**
+  （D7）的必然第二条路径，不测它就等于没测 D7）。
+
+#### 28.9.5 真机验证（5175 前端 + 8002 真后端，账号 `icespark_admin`）
+
+一条龙跑完，全部真接口、零打桩：
+
+1. `POST /api/auth/token` 拿真令牌 → `/api/auth/me` 取用户；写进 `localStorage`（与外壳启动读的两把键同款）。
+2. `/write` 拿场景 `write`，填标题与正文 → **存草稿**：`POST /api/posts/` 真落库，
+   公开接口 `GET /api/posts/slug/<slug>` 取得回来（`status=draft`，地址栏换成这一篇）。
+3. **插入图片** → `POST /api/upload` 真 multipart：返回
+   `![live-check.png](/api/download/<user_id>/images/<uuid>.png)`，该 URL 200 / `image/png` /
+   89 字节 / 8×8（图确实存下来了，正文与文章页都按原尺寸显示）。
+4. 资料面板加标签「真机」→ 发布：`PUT /api/posts/{id}`，`status` 转 `published`，
+   **后端自补 `published_at`**（核对过），按钮文案转「更新」，「查看」入口出现。
+5. 点「查看」→ `/post/<slug>`，标题与正文渲染正常（真机截图里那张小方块就是 8×8 的测试图本身）。
+6. 回到 `/write`，文稿面板里「文章」分节数 +1，自检稿在列。
+7. **清理**：`DELETE /api/posts/{id}` → 按 slug 再取 404，站点上不留痕迹（`/api/posts/my` 复查残留为空）。
+
+截图五张（新建态 / 资料面板 / 发布后 / 文章页 / 文稿面板）在 `/tmp/icespark-live/`；临时用例
+（`tmp-live-write.spec.ts`、`tmp-measure.spec.ts`）与截图都是**用完即删**，没有留在仓库里。
+
+#### 28.9.6 顺手修掉的三处
+
+1. **`shell.spec.ts` 底条常驻那条会假失败**：它在 `/posts` 上量 `scrollHeight`，
+   但列表是异步拉的 —— 默认 8 个 worker 并行时页面还是空的，量出来「不比视口高」。
+   现在先等第一批卡片渲染再量（这条用例要证明的是「长页面也贴住下沿」，不是「接口有多快」）。
+2. **插入条在 1280 下会被切掉半个字**：宽屏左右分屏时源码列只有约 587px，
+   而插入条要 613px（溢出 26px），最后一颗「图片」只剩半个「图」字，还带出一条 12px 的横向滚动条。
+   收紧一档间距（gap 4→3、`.md-tool` 内边距 8→7、`.tool-btn` 内边距 7→5）后 1280 下 **587/587，零溢出**；
+   1100 及以下才需要横滚（`overflow-x: auto` 保留）。实测：1440→0、1280→0、1100→61、900→161。
+3. **五处缺 label 的控件补 `aria-label`**：两个隐藏 `input[type=file]`（`opacity:0` 仍在无障碍树里）、
+   新分组名、加标签输入、分组归属下拉。axe 从 `label: 2` + `select-name: 1` 归零。
+   底栏那几行小字的对比度是**全站已知取舍**（`a11y.spec.ts` 的清单），本页照 `admin-links.spec.ts`
+   的口径排除，不重复判。
+
+#### 28.9.7 留给下一步
+
+- **删除线按钮**：要先给 `MarkdownBody` 开 GFM `strikethrough`（动样机渲染器，待裁决）。
+- **`PostListItem` 加 `group_id`**：加完文稿面板的分组过滤就能按 id 走，改名不再掉稿。
+- **窄屏预览**：现在窄屏是 `V` 打开预览面板；更窄（<640）分屏与面板的排布还没在真机小屏上过一遍。
+- 其余仍挂在 P7 收尾清单上（字体子集化、JSON-LD/sitemap、预渲染、性能预算门），与本页无关。

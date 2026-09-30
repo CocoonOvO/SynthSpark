@@ -27,6 +27,10 @@ export const SCENES: SceneDef[] = [
   // P4 用户档案页（`/user/:username`）。标签 USER 是 8bit 机器字样（皮肤），
   // 底栏场景指示点亮的那一格显示的就是它；hint 顺带是外壳隐藏 h1 的兜底文案。
   { id: 'user', label: 'USER', hint: '用户主页' },
+  // P6 写作页（`/write` · `/write/:key`）。标签同样是 8bit 机器字样（皮肤），不进站点配置；
+  // 底栏场景指示会在写作页点亮这一格。写作页**不在标签栏里**（`TABS` 没有它），
+  // 与 `article` / `user` / `profile` 同族：外壳因此把 Tab 还给浏览器（原生焦点遍历）。
+  { id: 'write', label: 'WRITE', hint: '写作' },
 ]
 
 /** 取场景定义；不在表里（例如 404 的 `error`）返回 null —— 底栏不显示高亮，不编一个新场景 */

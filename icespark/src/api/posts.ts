@@ -1,4 +1,4 @@
-import { getJson } from './client'
+import { getJson, postJson, request } from './client'
 import type { components } from './schema'
 import type { Post } from './types'
 
@@ -61,3 +61,56 @@ export async function fetchPost(key: string): Promise<Post> {
     return await getJson<Post>(looksLikeId ? slugPath : idPath)
   }
 }
+
+/* ══════════════════════════════════════════════════════════════
+   P6 写作页的写接口（新增，**不改动上面三个既有读函数**）
+   ══════════════════════════════════════════════════════════════ */
+
+/** 创建请求体：直接用契约模型，不手抄一遍字段（理由见 api/client.ts 顶部规矩 2） */
+export type PostCreatePayload = components['schemas']['PostCreate']
+/** 更新请求体：全字段可选，页面按「改了哪些」填即可 */
+export type PostUpdatePayload = components['schemas']['PostUpdate']
+/** 列表响应（`{items, total}`） */
+export type PostListResponse = components['schemas']['PostListResponse']
+
+/**
+ * 我自己的文章，**含草稿**（`GET /api/posts/my`，需要登录）。
+ *
+ * 为什么写作页的文稿列表用它、而不是 `fetchPosts()`：后者的固定口径是
+ * `status=published`（公开列表不能出现草稿），而写作页要同时看到自己的已发布与草稿。
+ * 旧前端也是走这个端点（`postsApi.getMyPosts`）。
+ *
+ * 注意旧前端的一个坑，这里不再重演：它拿到这批数据后按 **`group_name`** 过滤当前分组
+ * （源码注释自己写着「API返回的是group_name而不是group_id」），而 `Post.group_id`
+ * 是有的 —— 同一分组改名就会漏文章。这里按 `group_id` 过滤（调用方做）。
+ */
+export async function fetchMyPosts(limit = 100, status?: string): Promise<PostListResponse> {
+  return getJson<PostListResponse>('/posts/my', { query: { limit, status }, auth: true })
+}
+
+/** 新建文章（`POST /api/posts/`，需要登录）。`status` 传 `draft` 或 `published` */
+export async function createPost(body: PostCreatePayload): Promise<Post> {
+  return postJson<Post>('/posts/', body, { auth: true })
+}
+
+/**
+ * 更新文章（`PUT /api/posts/{post_id}`，需要登录）。
+ *
+ * **发布 = 一次更新**：契约另有 `POST /api/posts/{id}/publish`，但后端在
+ * `PUT` 里已经处理了「draft → published 时补 `published_at`」（`routers/posts.py:553`），
+ * 所以正文改动与状态切换能合成一次请求 —— 旧前端就是这么做的，不为了用新端点
+ * 把一次保存拆成两次往返。
+ */
+export async function updatePost(id: string, body: PostUpdatePayload): Promise<Post> {
+  return request<Post>(`/posts/${encodeURIComponent(id)}`, {
+    method: 'PUT',
+    body,
+    auth: true,
+  })
+}
+
+/** 删除文章（`DELETE /api/posts/{post_id}`，需要登录；后端 204 无响应体） */
+export async function deletePost(id: string): Promise<void> {
+  await request<void>(`/posts/${encodeURIComponent(id)}`, { method: 'DELETE', auth: true })
+}
+
