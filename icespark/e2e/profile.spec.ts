@@ -405,7 +405,7 @@ test('登出：在需要权限的页面上登出后自动回主页（普通页�
   await expect(page.locator('.app')).toHaveAttribute('data-scene', 'posts')
 })
 
-test('放大编辑（多行）：F2 / 按钮两个入口，保存写回那一格、ESC 丢弃，打开期间 P 不叠菜单', async ({
+test('长文本编辑：图标 / F2 两个入口，保存写回那一格、ESC 丢弃，打开期间 P 不叠菜单', async ({
   page,
 }) => {
   const errors = collectErrors(page)
@@ -426,8 +426,10 @@ test('放大编辑（多行）：F2 / 按钮两个入口，保存写回那一格
   await expect(dialog).toHaveAttribute('aria-modal', 'true')
   await expect(dialog).toHaveAttribute('aria-labelledby', 'long-text-title')
   await expect(area).toHaveValue('旧简介')
-  // 上限跟那一格同一个（多行是 500）
+  // 上限跟那一格同一个
   await expect(page.locator('[data-testid="long-text-count"]')).toContainText('/ 500')
+  // 弹窗里只留必要的东西：没有说明文字，也没有快捷键说明（键位在页脚那一行）
+  await expect(dialog.locator('p')).toHaveCount(0)
 
   // 焦点不在编辑区里时（这里落在「取消」按钮上）P 也不该再叠一层暂停菜单
   await page.locator('[data-testid="long-text-cancel"]').focus()
@@ -454,13 +456,18 @@ test('放大编辑（多行）：F2 / 按钮两个入口，保存写回那一格
   await page.keyboard.press('Escape')
   await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
 
-  // 入口二：那一格边上的按钮
+  // 入口二：框内右上角那个图标
   await page.locator('[data-testid="profile-bio-expand"]').click()
   await expect(dialog).toBeVisible()
+  // 多行：单独一个 ENTER 是换行，不许被当成保存
   await area.fill('一段很长的简介')
-  await page.locator('[data-testid="long-text-save"]').click()
+  await page.keyboard.press('Enter')
+  await expect(dialog).toBeVisible()
+  await expect(area).toHaveValue('一段很长的简介\n')
+  // CTRL + ENTER 才是保存
+  await page.keyboard.press('Control+Enter')
   await expect(dialog).toHaveCount(0)
-  await expect(bio).toHaveValue('一段很长的简介')
+  await expect(bio).toHaveValue('一段很长的简介\n')
   // 焦点还给原来那一格（弹窗卸载时焦点先落回外壳，这一句排在它之后）
   await expect(bio).toBeFocused()
   // 弹窗只换画布：写回的是这一格的表单字段，不会自己发请求
@@ -476,40 +483,36 @@ test('放大编辑（多行）：F2 / 按钮两个入口，保存写回那一格
   expect(errors).toEqual([])
 })
 
-test('放大编辑（单行）：按钮打开、ENTER 保存，取消不动原值；密码格与文件框不接这个功能', async ({
+test('长文本编辑只给文档型文本框：图标在框里，昵称 / 邮箱 / 密码 / 文件框都没有这个入口', async ({
   page,
 }) => {
   await loggedIn(page)
   await page.goto('/profile')
   await booted(page)
 
-  const name = page.locator('[data-testid="profile-display-name"]')
-  const dialog = page.locator('[data-testid="long-text-dialog"]')
-  const area = page.locator('[data-testid="long-text-area"]')
+  const bio = page.locator('[data-testid="profile-bio"]')
+  const icon = page.locator('[data-testid="profile-bio-expand"]')
+  await expect(icon).toBeVisible()
 
-  await page.locator('[data-testid="profile-display-name-expand"]').click()
-  await expect(dialog).toBeVisible()
-  await expect(area).toHaveValue('旧昵称')
-  await expect(page.locator('[data-testid="long-text-count"]')).toContainText('/ 100')
+  // 「在框里」不是形容词：图标的盒子真的落在简介文本框的盒子内部（右上角）
+  const box = (await bio.boundingBox())!
+  const spot = (await icon.boundingBox())!
+  expect(spot.x).toBeGreaterThan(box.x)
+  expect(spot.y).toBeGreaterThan(box.y)
+  expect(spot.x + spot.width).toBeLessThanOrEqual(box.x + box.width)
+  expect(spot.y + spot.height).toBeLessThanOrEqual(box.y + box.height)
+  // 图标是给眼睛看的几何形状，不进无障碍树；按钮本身有名字
+  await expect(icon.locator('svg')).toHaveAttribute('aria-hidden', 'true')
+  await expect(icon).toHaveAttribute('aria-label', '编辑全文：简介')
 
-  // 单行：ENTER 就是「写完了」（多行模式里 ENTER 是换行，那条在上一支用例里验过）
-  await area.fill('放大编辑写的新昵称')
-  await page.keyboard.press('Enter')
-  await expect(dialog).toHaveCount(0)
-  await expect(name).toHaveValue('放大编辑写的新昵称')
-  await expect(name).toBeFocused()
-
-  // 「取消」按钮：值回滚到打开那一刻，不是实时写回
-  await name.fill('手输的昵称')
-  await page.locator('[data-testid="profile-display-name-expand"]').click()
-  await area.fill('这一份不算数')
-  await page.locator('[data-testid="long-text-cancel"]').click()
-  await expect(dialog).toHaveCount(0)
-  await expect(name).toHaveValue('手输的昵称')
-
-  // 密码三格与文件框有意不接：密码不该平铺在大框里，头像走文件选择器
-  await expect(page.locator('[data-testid="profile-pw-old-expand"]')).toHaveCount(0)
-  await expect(page.locator('[data-testid="profile-pw-new-expand"]')).toHaveCount(0)
-  await expect(page.locator('[data-testid="profile-pw-confirm-expand"]')).toHaveCount(0)
-  await expect(page.locator('[data-testid="profile-avatar-file-expand"]')).toHaveCount(0)
+  // 单行框一个都不加（用户口径：只有文档形式的文本框需要）
+  for (const id of ['profile-display-name', 'profile-email']) {
+    await expect(page.locator(`[data-testid="${id}-expand"]`)).toHaveCount(0)
+  }
+  // 密码三格与文件框同理
+  for (const id of ['profile-pw-old', 'profile-pw-new', 'profile-pw-confirm', 'profile-avatar-file']) {
+    await expect(page.locator(`[data-testid="${id}-expand"]`)).toHaveCount(0)
+  }
+  // 页脚那一行键位提示里说明了这个功能（发现路径不能只靠图标）
+  await expect(page.locator('.foot')).toContainText('F2 编辑全文')
 })

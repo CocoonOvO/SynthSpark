@@ -1,9 +1,9 @@
 /**
- * 「放大编辑」的页面侧接线（`machine/TextEditorDialog.vue` 的控制器）。
+ * 「长文本编辑」的页面侧接线（`machine/TextEditorDialog.vue` 的控制器）。
  *
- * 为什么抽这一层：同一个弹窗要接三张设置页（`/profile`、`/admin/site`、`/admin/links`）
- * 上十几格输入框，每页都手写一遍「谁在编辑 / 原文是什么 / 关掉后焦点还给谁」
- * 既啰嗦又容易漏掉焦点那一句（漏了就是键盘当场失灵，见下面的注释）。
+ * 为什么抽这一层：同一个弹窗要接两张设置页上好几格「文档型」文本框，
+ * 每页都手写一遍「谁在编辑 / 原文是什么 / 关掉后焦点还给谁」既啰嗦又容易漏掉焦点那一句
+ * （漏了就是键盘当场失灵，见下面的注释）。
  *
  * 三条约定：
  * 1. **一次只开一个**：`editing` 非空就是「弹窗开着」，页面拿它当 `onPad` 的首行守卫。
@@ -15,7 +15,7 @@
  */
 import { nextTick, ref } from 'vue'
 
-/** 一格可以放大编辑的输入框的自我介绍 */
+/** 一格「文档型」文本框的自我介绍（单行的名称 / 邮箱之类不配这个弹窗） */
 export interface LongTextField {
   /** 字段标识：页面在自己的 `@save` 里靠它决定写回哪儿 */
   key: string
@@ -23,15 +23,11 @@ export interface LongTextField {
   label: string
   /** 打开那一刻的原文（快照，不实时同步） */
   value: string
-  /** 多行：ENTER 换行、CTRL/⌘+ENTER 保存；单行：ENTER 即保存 */
-  multiline?: boolean
   /** 与那一格同一个上限（计数与 `maxlength` 都用它） */
   maxlength?: number
   placeholder?: string
   /** 等宽字体（整段 JSON 用） */
   mono?: boolean
-  /** 标题下面的一句说明 */
-  hint?: string
   /** 关掉弹窗后焦点还给谁 —— 那一格输入框的 DOM id */
   focusId?: string
 }
@@ -39,7 +35,7 @@ export interface LongTextField {
 export function useLongText() {
   const editing = ref<LongTextField | null>(null)
 
-  /** 打开弹窗（`F2` 与那一格边上的按钮都走这里） */
+  /** 打开弹窗（`F2` 与框内右上角那个图标都走这里） */
   function openLongText(field: LongTextField): void {
     editing.value = field
   }

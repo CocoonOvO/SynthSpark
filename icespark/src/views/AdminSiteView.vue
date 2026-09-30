@@ -46,9 +46,10 @@
  * 8. **`h1` 自己出**（`admin-site` 已在 `App.vue` 的 `SELF_TITLED_SCENES` 里）：
  *    页头「站点设置」是全页唯一的一级标题，各分节是 `h2`，不跳级。
  *
- * 9. **放大编辑**（用户反馈：窄格子里写长文本不方便）。右列这一栏本来就不宽，
- *    「站点描述」「关于页正文」这类字段摆在一格里改字很别扭，所以每一格（含整段 JSON）
- *    都给一个 `F2` / 「放大」按钮打开的弹窗（`machine/TextEditorDialog.vue`）。
+ * 9. **长文本编辑**（用户反馈：窄格子里写长文本不方便）。这一页的框宽度按版面定，
+ *    「站点描述」「关于页正文」这类**文档型**字段（`kind === 'area'`，即带换行或超过 80 字）
+ *    在框内右上角有个展开图标，按 F2 也一样 —— 打开 `machine/TextEditorDialog.vue`。
+ *    单行的字段（名称 / 标题 / 版权这种一行字）**不接**：用户口径是「只有文档形式的文本框需要」。
  *    弹窗**只换画布**：保存仍旧写回同一份 `texts`，数据流一个字没变 ——
  *    字段走 `setField`、JSON 走 `setJsonText`，都是下面原来那两个 @input 处理器现用的路径。
  *    打开期间按 `pageModalOpen` + 本页 `onPad` 的守卫把按键留在框里（见 `longTextPad`）。
@@ -61,6 +62,7 @@ import { focusShellRoot } from '@/input'
 import { useFocusGroup } from '@/input/focus'
 import { onPad, type PadAction } from '@/input/pad'
 import { playSfx } from '@/input/sfx'
+import ExpandGlyph from '@/machine/ExpandGlyph.vue'
 import SceneHead from '@/machine/SceneHead.vue'
 import TextEditorDialog from '@/machine/TextEditorDialog.vue'
 import { useStatusBar } from '@/scene/clock'
@@ -467,8 +469,8 @@ function toggleTo(index: number): void {
 
 /**
  * 把某一格的字符串写回**这一段的 JSON 文本**，整段重新序列化。
- * 没有第二份草稿 —— 输入框、放大编辑弹窗与下面的 JSON 永远是同一份数据的三种看法。
- * `seg` 默认是当前段；放大编辑传的是**打开弹窗那一刻**记下的那一段（见 `onLongSave`）。
+ * 没有第二份草稿 —— 输入框、长文本弹窗与下面的 JSON 永远是同一份数据的三种看法。
+ * `seg` 默认是当前段；长文本弹窗传的是**打开弹窗那一刻**记下的那一段（见 `onLongSave`）。
  */
 function setField(key: string, value: string, seg: string = activeKey.value): void {
   const current = parsed.value[seg]
@@ -492,7 +494,7 @@ function onJson(event: Event): void {
   setJsonText((event.target as HTMLTextAreaElement).value)
 }
 
-/* ══════════════ 放大编辑（用户反馈：窄格子里写长文本不方便） ══════════════ */
+/* ══════════════ 长文本编辑（文档型文本框才配） ══════════════ */
 
 /**
  * 打开弹窗那一刻「正在改哪儿」。
@@ -505,8 +507,9 @@ const longField = ref<string | null>(null)
 
 const { editing, openLongText, closeLongText } = useLongText()
 
+/** 只有 `area` 这一种（文档型）才开弹窗；单行字段连图标都不加 */
 function openFieldLong(row: FieldRow): void {
-  if (row.kind === 'struct') return
+  if (row.kind !== 'area') return
   longSeg.value = activeKey.value
   longField.value = row.key
   playSfx('confirm')
@@ -514,9 +517,7 @@ function openFieldLong(row: FieldRow): void {
     key: row.key,
     label: row.label,
     value: row.text,
-    multiline: row.kind === 'area',
     focusId: fieldId(row.key),
-    hint: `这一段（${activeKey.value}）里的一个字段，改动与在上面那一格里改是同一份数据。`,
   })
 }
 
@@ -526,16 +527,14 @@ function openJsonLong(): void {
   playSfx('confirm')
   openLongText({
     key: activeKey.value,
-    label: `${activeKey.value} 这一段的 JSON`,
+    label: `${activeKey.value} · JSON`,
     value: textOf(activeKey.value),
-    multiline: true,
     mono: true,
     focusId: 'admin-site-json',
-    hint: '整段写回：数组与嵌套对象都在这里改，未知键原样保留。',
   })
 }
 
-/** F2 = 放大编辑这一格（内核 `KEYMAP` 里没有 F2，不会被外壳吃掉） */
+/** F2 = 编辑这一格的全文（内核 `KEYMAP` 里没有 F2，不会被外壳吃掉） */
 function onFieldKey(event: KeyboardEvent, row: FieldRow): void {
   if (event.key !== 'F2') return
   event.preventDefault()
@@ -559,7 +558,7 @@ function onLongSave(value: string): void {
 }
 
 /**
- * 放大编辑弹窗开着时的按键归属（写法与 `AdminLinksView` 的 `dialogPad` 同源）。
+ * 长文本弹窗开着时的按键归属（写法与 `AdminLinksView` 的 `dialogPad` 同源）。
  *
  * `cancel` 在**这里**关框，而不是只靠弹窗自己的 DOM 监听：点过遮罩之后外壳会把原生焦点
  * 收回根节点，那时弹窗内的监听器根本收不到按键，只剩这一条路。
@@ -776,7 +775,7 @@ function step(dir: -1 | 1): boolean {
 }
 
 const off = onPad((action) => {
-  // 放大编辑弹窗开着时，页面层把按键交给它先处理。
+  // 长文本弹窗开着时，页面层把按键交给它先处理。
   // 守卫必须写在**自己**这个监听器里：外壳的 `runPass` 会遍历全部同作用域监听器、不提前退出，
   // 少这一句，弹窗里按方向键会被下面的分支把焦点收回外壳，框里的键盘当场失灵。
   if (editing.value) return longTextPad(action)
@@ -992,8 +991,9 @@ watch(
               {{ activeError }}
             </p>
 
-            <!-- 段内顶层字符串字段：带中文标签的原生输入框（Tab 在字段间走）
-                 每格右边一个「放大」按钮、格子里按 F2 也能开（这一栏本来就窄，长文本在那儿改字别扭） -->
+            <!-- 段内顶层字符串字段：带中文标签的原生输入框（Tab 在字段间走）。
+                 文档型的那一种（`area`）框内右上角带展开图标，按 F2 也能开；
+                 单行字段不加 —— 这一栏本来就窄，只有写长文才需要换画布 -->
             <div class="fields">
               <div
                 v-for="row in activeFields"
@@ -1011,32 +1011,32 @@ watch(
                   :disabled="!activeOk"
                   spellcheck="false"
                   @input="onField(row.key, $event)"
-                  @keydown="onFieldKey($event, row)"
                 />
-                <textarea
-                  v-else-if="row.kind === 'area'"
-                  :id="fieldId(row.key)"
-                  class="input area"
-                  rows="3"
-                  :value="row.text"
-                  :disabled="!activeOk"
-                  spellcheck="false"
-                  @input="onField(row.key, $event)"
-                  @keydown="onFieldKey($event, row)"
-                ></textarea>
+                <!-- 文档型的那一格：图标摆在这一格的框里（右上角），F2 同效 -->
+                <div v-else-if="row.kind === 'area'" class="area-wrap">
+                  <textarea
+                    :id="fieldId(row.key)"
+                    class="input area"
+                    rows="3"
+                    :value="row.text"
+                    :disabled="!activeOk"
+                    spellcheck="false"
+                    @input="onField(row.key, $event)"
+                    @keydown="onFieldKey($event, row)"
+                  ></textarea>
+                  <button
+                    class="expand"
+                    data-testid="admin-site-expand"
+                    type="button"
+                    :data-key="row.key"
+                    :aria-label="`编辑全文：${row.label}`"
+                    title="编辑全文（F2）"
+                    @click="openFieldLong(row)"
+                  >
+                    <ExpandGlyph />
+                  </button>
+                </div>
                 <span v-else class="struct px">{{ row.text }}</span>
-                <button
-                  v-if="row.kind !== 'struct'"
-                  class="expand"
-                  data-testid="admin-site-expand"
-                  type="button"
-                  :data-key="row.key"
-                  :aria-label="`放大编辑：${row.label}`"
-                  title="放大编辑（F2）"
-                  @click="openFieldLong(row)"
-                >
-                  放大
-                </button>
               </div>
             </div>
             <p class="tip hint">
@@ -1044,33 +1044,32 @@ watch(
               里改；上面每个格子改的都是同一份数据。
             </p>
 
-            <!-- 整段 JSON：自由结构段的兜底编辑面，也是「未知键原样保留」的保证 -->
+            <!-- 整段 JSON：自由结构段的兜底编辑面，也是「未知键原样保留」的保证。
+                 它本身就是文档型，所以也配框内那个展开图标 -->
             <div class="json-box">
-              <div class="json-head">
-                <label class="json-cap px" for="admin-site-json">
-                  这一段 JSON（整段写回）
-                </label>
+              <label class="json-cap px" for="admin-site-json">这一段 JSON（整段写回）</label>
+              <div class="json-wrap">
+                <textarea
+                  id="admin-site-json"
+                  class="json"
+                  data-testid="admin-site-json"
+                  spellcheck="false"
+                  :aria-label="`${activeKey} 这一段的 JSON`"
+                  :value="textOf(activeKey)"
+                  @input="onJson"
+                  @keydown="onJsonKey"
+                ></textarea>
                 <button
                   class="expand"
                   data-testid="admin-site-json-expand"
                   type="button"
-                  aria-label="放大编辑：这一段的 JSON"
-                  title="放大编辑（F2）"
+                  aria-label="编辑全文：这一段的 JSON"
+                  title="编辑全文（F2）"
                   @click="openJsonLong"
                 >
-                  放大
+                  <ExpandGlyph />
                 </button>
               </div>
-              <textarea
-                id="admin-site-json"
-                class="json"
-                data-testid="admin-site-json"
-                spellcheck="false"
-                :aria-label="`${activeKey} 这一段的 JSON`"
-                :value="textOf(activeKey)"
-                @input="onJson"
-                @keydown="onJsonKey"
-              ></textarea>
             </div>
 
             <!-- 改动对照：叶子路径级的 - 旧 / + 新，改了什么一眼看得见 -->
@@ -1142,21 +1141,19 @@ watch(
     </div>
 
     <div class="foot sticky-foot px hint">
-      ↑↓ 选段 / 按钮 · ENTER 打开这一段 · TAB 走字段与按钮 · F2 放大编辑这一格 · Q 返回 · P / ESC
+      ↑↓ 选段 / 按钮 · ENTER 打开这一段 · TAB 走字段与按钮 · F2 编辑全文 · Q 返回 · P / ESC
       菜单
     </div>
 
-    <!-- 放大编辑：页内模态，一次只开一个（`editing` 非空就是开着）。
+    <!-- 长文本编辑：页内模态，一次只开一个（`editing` 非空就是开着）。
          遮罩点击不关闭是有意的 —— 框里可能是整段 JSON，一次误点不该丢 -->
     <TextEditorDialog
       v-if="editing"
       :label="editing.label"
       :value="editing.value"
-      :multiline="editing.multiline"
       :maxlength="editing.maxlength"
       :placeholder="editing.placeholder"
       :mono="editing.mono"
-      :hint="editing.hint"
       @save="onLongSave"
       @close="closeLongText"
     />
@@ -1484,43 +1481,51 @@ watch(
   gap: 6px;
 }
 
-.json-head {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-}
-
 .json-cap {
   color: var(--blue-600);
 }
 
 /*
- * 「放大」触发器：不加 `.focusable`（那是外壳自绘光标那一套），走**浏览器原生 Tab 顺序** ——
- * 本页字段本来就用原生焦点，硬塞进 `.focusable` 会连方向键的焦点链一起改掉。
+ * 文档型文本框的包装：图标要**贴在这一格的框里**（右上角），所以需要一层定位上下文。
+ * 图标不加 `.focusable`（那是外壳自绘光标那一套），走浏览器原生 Tab 顺序。
  */
-.expand {
-  flex: 0 0 auto;
-  margin-left: auto;
-  margin-top: 6px;
-  font: inherit;
-  font-size: 12px;
-  line-height: 1.2;
-  background: var(--paper);
-  border: 2px solid var(--blue-400);
-  color: var(--blue-700);
-  padding: 2px 7px;
-  cursor: pointer;
+.area-wrap,
+.json-wrap {
+  position: relative;
+  display: flex;
+  flex: 1 1 auto;
+  min-width: 0;
 }
 
-.json-head .expand {
-  margin-top: 0;
+/* 给图标让出右上角，免得第一行文字压到它下面 */
+.area-wrap .input,
+.json-wrap .json {
+  width: 100%;
+  padding-right: 30px;
+}
+
+.expand {
+  position: absolute;
+  top: 5px;
+  right: 5px;
+  width: 20px;
+  height: 20px;
+  display: grid;
+  place-items: center;
+  font-size: 12px;
+  padding: 0;
+  background: var(--paper);
+  border: 2px solid var(--blue-300);
+  color: var(--blue-600);
+  cursor: pointer;
 }
 
 .expand:hover,
 .expand:focus-visible {
   background: var(--blue-100);
-  outline: none;
   border-color: var(--blue-500);
+  color: var(--blue-700);
+  outline: none;
 }
 
 .json {

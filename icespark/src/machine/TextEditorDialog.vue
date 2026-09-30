@@ -1,24 +1,28 @@
 <script setup lang="ts">
 /**
- * 放大编辑（M 层对话框）：把一格窄输入框里的文本拿到弹窗里写。
+ * 长文本编辑弹窗（M 层）：把「文档型」文本框里的内容拿到一块大画布上写。
  *
- * 为什么需要它（用户反馈）：设置类页面上的文本框宽度都按版面定，
- * 窄列里那一格（`/admin/site` 左列只有 260 来像素）写「站点描述」「关于页正文」
- * 这类长文本，等于在一道缝里改字。这一层给同一份数据换一块大画布，
+ * 为什么需要它（用户反馈）：设置页的文本框宽度按版面定，站点描述 / 关于页正文 / 整段 JSON
+ * 这类要写几百字的框，在一道缝里改字很别扭。这一层给同一份数据换一块大画布，
  * **不新增字段、不改契约、不改数据流** —— 保存时仍旧走那一格原来的写回路径。
+ *
+ * 界面口径（用户第二轮反馈后收敛成这样）：
+ * · 只有**文档型**文本框才配这个弹窗（单行的名称 / 邮箱不需要），入口是框内右上角一个小图标；
+ * · 弹窗本身**只留必要的东西**：一行字段名 + 字数、一块尽可能大的编辑区、两个按钮。
+ *   没有说明文字、没有快捷键说明、没有装饰条 —— 键位说明在页脚那一行里已经有了。
+ * · 面板固定高度（78vh，上限 680px），编辑区吃掉除标题与按钮外的全部高度。
  *
  * 三条自己定的规矩（都能从别处找到出处）：
  * 1. **打开期间置 `pageModalOpen`**：页内模态必须拦住外壳的导航键，
- *    否则按 P 会在编辑框上再压一层暂停菜单（§17.8 的单模态口径，来源见 §21 的教训）。
+ *    否则按 P 会在编辑框上再压一层暂停菜单（§17.8 的单模态口径）。
  * 2. **点遮罩不关**：这里可能写着几百字，一次误点就没了 —— 与二次确认框（点了也没损失）
  *    有意不同，只认 ESC / 取消 / 保存三个出口。
  * 3. **卸载时 `focusShellRoot()`**：对话框一卸载，原生焦点会掉回 `body`，
  *    键盘整块失灵（§21 记的那个真 bug）。父页面若要把焦点还给原来那一格，
  *    在 `close` 之后 `nextTick` 里 `.focus()` 即可 —— 它跑在这句之后，是最后一句。
  *
- * 保存语义：**不实时写回**。`draft` 是本地副本，点保存才 emit，
- * ESC 取消即丢弃 —— 这样「改了又后悔」不会污染表单，计数与校验的时机也照旧
- * （页面在 `@save` 里写回时该清的「已保存」反馈照清）。
+ * 保存语义：**不实时写回**。`draft` 是本地副本，点保存才 emit，ESC 取消即丢弃 ——
+ * 这样「改了又后悔」不会污染表单，计数与校验的时机也照旧。
  */
 import { computed, nextTick, onMounted, onUnmounted, ref } from 'vue'
 
@@ -32,17 +36,13 @@ const props = withDefaults(
     label: string
     /** 打开时的原文 */
     value: string
-    /** 多行：ENTER 换行、靠 CTRL/⌘+ENTER 保存；单行：ENTER 即保存 */
-    multiline?: boolean
     /** 与那一格同一个上限（`maxlength` 原样搬过来，计数也用它） */
     maxlength?: number
     placeholder?: string
     /** 等宽字体（整段 JSON 用），默认走表单字体 */
     mono?: boolean
-    /** 标题下面的一句说明，例如「原本只有 260px 宽」 */
-    hint?: string
   }>(),
-  { multiline: false, mono: false, maxlength: undefined, placeholder: undefined, hint: '' },
+  { mono: false, maxlength: undefined, placeholder: undefined },
 )
 
 const emit = defineEmits<{ save: [value: string]; close: [] }>()
@@ -63,7 +63,11 @@ function cancel(): void {
   emit('close')
 }
 
-/** ESC 这层由自己收：焦点在文本框里时内核按 `isEditableTarget` 跳过按键，不会有人替我处理 */
+/**
+ * 面板里只有两个键归自己：`ESC` 取消、`CTRL/⌘ + ENTER` 保存。
+ * 焦点在文本框里时内核按 `isEditableTarget` 跳过按键，不会有人替我处理。
+ * **单独一个 ENTER 有意不抢**：这一层只服务文档型文本框，换行是它的头号用途。
+ */
 function onKeydown(event: KeyboardEvent): void {
   if (event.key === 'Escape') {
     event.preventDefault()
@@ -75,18 +79,11 @@ function onKeydown(event: KeyboardEvent): void {
     event.preventDefault()
     event.stopPropagation()
     save()
-    return
-  }
-  // 单行模式：ENTER 就是「写完了」（多行模式里 ENTER 是换行，不能抢）
-  if (event.key === 'Enter' && !props.multiline) {
-    event.preventDefault()
-    event.stopPropagation()
-    save()
   }
 }
 
 /**
- * 兜底：焦点万一飘到遮罩上（点空白处、或从按钮 Tab 出去）也要能收到这两个键。
+ * 兜底：焦点万一飘到遮罩上（点空白处、或从按钮 Tab 出去）也要能收到 ESC。
  *
  * 遮罩上这份监听走**内核之外的普通 DOM 事件** —— 它们在 `pad.ts` 里没有对应动作，
  * 用 `onPad` 反而要多改内核，不划算。
@@ -120,7 +117,7 @@ onUnmounted(() => {
  * 打开期间「背景不响应导航键」这件事**不在这里做**：`dispatchPadAction` 的 `runPass`
  * 会遍历全部同作用域监听器、不提前退出，对话框后注册就挡不住页面上先注册的那个
  * （实测：ESC 会让页面的 `cancel` 分支顺手把焦点推到标签栏）。
- * 所以各页面在自己的 `onPad` 首行写守卫 `if (editing.value) return true` ——
+ * 所以各页面在自己的 `onPad` 首行写守卫 `if (editing.value) return longTextPad(a)` ——
  * 与 `AdminLinksView` 的删除确认框同一写法（`if (delTarget.value) return dialogPad(a)`）。
  */
 </script>
@@ -132,16 +129,15 @@ onUnmounted(() => {
       role="dialog"
       aria-modal="true"
       :aria-labelledby="titleId"
+      :class="{ wide: mono }"
       data-testid="long-text-dialog"
     >
       <div class="lt-head">
-        <h2 :id="titleId" class="lt-title">
-          放大编辑 · {{ label }}
-        </h2>
-        <span class="lt-dither dither-25" aria-hidden="true"></span>
+        <h2 :id="titleId" class="lt-title">{{ label }}</h2>
+        <span class="lt-count px" :class="{ over }" data-testid="long-text-count">
+          {{ draft.length }}<template v-if="maxlength !== undefined"> / {{ maxlength }}</template>
+        </span>
       </div>
-
-      <p v-if="hint" class="lt-hint hint">{{ hint }}</p>
 
       <textarea
         ref="control"
@@ -152,23 +148,12 @@ onUnmounted(() => {
         spellcheck="false"
         :maxlength="maxlength"
         :placeholder="placeholder"
-        :aria-label="`${label}（放大编辑）`"
+        :aria-label="`${label}（编辑全文）`"
         @keydown="onKeydown"
       ></textarea>
 
       <div class="lt-foot">
-        <span class="lt-count px" :class="{ over }" data-testid="long-text-count">
-          {{ draft.length }}<template v-if="maxlength !== undefined"> / {{ maxlength }}</template> 字
-        </span>
-        <span class="lt-keys hint">
-          {{ multiline ? 'CTRL/⌘ + ENTER 保存 · ENTER 换行 · ESC 取消' : 'ENTER 保存 · ESC 取消' }}
-        </span>
-      </div>
-
-      <div class="actions">
-        <button class="btn" data-testid="long-text-save" type="button" @click="save">
-          保存并关闭
-        </button>
+        <button class="btn" data-testid="long-text-save" type="button" @click="save">保存</button>
         <button class="btn ghost" data-testid="long-text-cancel" type="button" @click="cancel">
           取消
         </button>
@@ -186,53 +171,65 @@ onUnmounted(() => {
   background: var(--veil-deep);
   display: grid;
   place-items: center;
-  padding: 24px;
+  padding: 16px;
 }
 
+/*
+ * 面板固定高度、编辑区吃掉除标题与按钮外的全部高度（「UI 做小、文本框大」）。
+ * 高度按视口给但留一圈边，免得整屏被盖住；宽度给两档：整段 JSON 行更长，给它宽一档。
+ */
 .lt-panel {
   width: min(760px, 100%);
-  max-height: calc(100vh - 48px);
+  height: min(70vh, 620px);
   display: flex;
   flex-direction: column;
-  gap: 10px;
+  gap: 8px;
   background: var(--paper);
   border: var(--border-frame) solid var(--edge);
   box-shadow:
     inset 1px 1px 0 0 var(--paper),
     inset -2px -2px 0 0 var(--blue-300);
-  padding: 14px 16px 16px;
+  padding: 10px 12px 12px;
 }
 
+.lt-panel.wide {
+  width: min(1000px, 100%);
+}
+
+/* 标题行：字段名 + 字数，一行了事（说明文字全删了，键位在页脚那一行） */
 .lt-head {
   display: flex;
-  align-items: center;
+  align-items: baseline;
   gap: 10px;
+  padding-bottom: 6px;
+  border-bottom: 2px solid var(--blue-200);
 }
 
 .lt-title {
   margin: 0;
-  font-size: 15px;
+  font-family: 'Source Han Sans CN', 'Noto Sans CJK SC', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
   color: var(--blue-700);
 }
 
-.lt-dither {
-  flex: 1;
-  height: 8px;
-  border: 2px solid var(--blue-300);
+.lt-count {
+  margin-left: auto;
+  color: var(--ink-faint);
 }
 
-.lt-hint {
-  margin: 0;
+.lt-count.over {
+  color: var(--spark);
 }
 
-/* 主场：这一块就是「大画布」，横向铺满面板、纵向吃掉剩余高度 */
+/* 主场：横向铺满、纵向吃掉剩余高度 */
 .lt-area {
   flex: 1 1 auto;
-  height: 38vh;
-  min-height: 180px;
-  resize: vertical;
+  min-height: 0;
+  resize: none;
   font: inherit;
-  line-height: 1.9;
+  font-size: 14px;
+  line-height: 1.8;
   color: var(--ink);
   background: var(--paper);
   border: 3px solid var(--blue-400);
@@ -254,45 +251,35 @@ onUnmounted(() => {
   overflow: auto;
 }
 
+/* 按钮靠右、小一号：它们是配角，主角是上面那块画布 */
 .lt-foot {
   display: flex;
-  align-items: center;
-  gap: 12px;
-  flex-wrap: wrap;
-}
-
-.lt-count {
-  color: var(--ink-soft);
-}
-
-.lt-count.over {
-  color: var(--spark);
-}
-
-.lt-keys {
-  margin-left: auto;
-}
-
-.actions {
-  display: flex;
-  gap: 10px;
+  justify-content: flex-end;
+  gap: 8px;
 }
 
 /*
  * 按钮样式自己带一份：`.btn` 在本仓是**每个组件各写一遍**的局部类（`PauseMenu` / `LoginDialog`
- * 都这么干），父页面的 scoped 样式够不到子组件内部的元素 —— 少这一份，
- * 「保存并关闭」就是个裸按钮。
+ * 都这么干），父页面的 scoped 样式够不到子组件内部的元素 —— 少这一份，「保存」就是个裸按钮。
  */
 .btn {
   font: inherit;
+  font-size: 13px;
   background: var(--paper);
-  border: var(--border-frame) solid var(--blue-400);
+  border: 2px solid var(--blue-400);
   color: var(--blue-700);
-  padding: 6px 12px;
+  padding: 4px 16px;
   cursor: pointer;
 }
 
 .btn.ghost {
   color: var(--ink-soft);
+}
+
+.btn:hover,
+.btn:focus-visible {
+  background: var(--blue-100);
+  border-color: var(--blue-500);
+  outline: none;
 }
 </style>

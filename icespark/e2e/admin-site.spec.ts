@@ -515,7 +515,7 @@ test('底栏顺序：快捷键指引在保存栏**下面**，滚到底两者不�
   expect(hit, '保存按钮不该被底条挡住').toBe(true)
 })
 
-test('放大编辑：窄格里按 F2 / 点「放大」都能开弹窗，写回与那一格、整段 JSON 是同一份数据', async ({
+test('长文本编辑：文档型字段（带换行的那一格）与整段 JSON 能开弹窗，单行字段不接', async ({
   page,
 }) => {
   await loggedIn(page, true)
@@ -529,50 +529,68 @@ test('放大编辑：窄格里按 F2 / 点「放大」都能开弹窗，写回�
   const area = page.locator('[data-testid="long-text-area"]')
   const json = page.locator('[data-testid="admin-site-json"]')
 
-  // ── 入口一：格子里的 F2（这一栏本来就窄，长文本在一格里改字别扭）──
-  const desc = page.locator('[data-field="site.description"] input')
-  await expect(desc).toHaveValue('E2E 站点描述')
-  await desc.focus()
+  // ── 单行字段一个都不加：`site.description` 只有几个字，是 `kind === 'text'` ──
+  await expect(page.locator('[data-field="site.description"] input')).toBeVisible()
+  await expect(page.locator('[data-testid="admin-site-expand"]')).toHaveCount(0)
+
+  // ── 切到 about 段：`about.body` 带换行（`kind === 'area'`），框里有图标 ──
+  await page.locator('[data-testid="admin-site-segment"][data-segment="about"]').click()
+  const body = page.locator('[data-field="about.body"] textarea')
+  await expect(body).toBeVisible()
+  const icon = page.locator('[data-testid="admin-site-expand"][data-key="body"]')
+  await expect(icon).toHaveCount(1)
+  // 「在框里」不是形容词：图标落在那一格文本框的盒子内部（右上角）
+  const box = (await body.boundingBox())!
+  const spot = (await icon.boundingBox())!
+  expect(spot.x).toBeGreaterThan(box.x)
+  expect(spot.y).toBeGreaterThan(box.y)
+  expect(spot.x + spot.width).toBeLessThanOrEqual(box.x + box.width)
+  expect(spot.y + spot.height).toBeLessThanOrEqual(box.y + box.height)
+  // 同一段里的单行字段（标题）没有图标
+  await expect(page.locator('[data-key="title"]')).toHaveCount(0)
+
+  // 入口一：F2
+  await body.focus()
   await page.keyboard.press('F2')
   await expect(dialog).toBeVisible()
-  await expect(area).toHaveValue('E2E 站点描述')
+  await expect(area).toHaveValue(/这是一段用于用例的正文/)
 
-  // 打开期间 P 不叠暂停菜单（页内模态让外壳的全局键让位）—— 焦点落在按钮上时也照样拦住
+  // 打开期间 P 不叠暂停菜单（焦点落在按钮上时也照样拦住）
   await page.locator('[data-testid="long-text-save"]').focus()
   await page.keyboard.press('p')
   await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
   await expect(dialog).toBeVisible()
 
-  await area.fill('改过的站点描述')
+  // 写够 80 字以上：这一页按内容判「是不是文档型」（带换行或超长），
+  // 写太短它自己会变回单行输入框 —— 那是既有口径，不是这个功能的毛病
+  const longBody = `改过的关于页正文。${'这是用来撑长度的正文。'.repeat(12)}`
+  await area.fill(longBody)
   await page.locator('[data-testid="long-text-save"]').click()
   await expect(dialog).toHaveCount(0)
-  await expect(desc).toHaveValue('改过的站点描述')
+  await expect(body).toHaveValue(longBody)
   // 焦点还给原来那一格
-  await expect(desc).toBeFocused()
+  await expect(body).toBeFocused()
   // 同一份数据：整段 JSON 立刻跟着变（页面没有第二份草稿）
-  await expect(json).toHaveValue(/改过的站点描述/)
+  await expect(json).toHaveValue(/改过的关于页正文。这是用来撑长度的正文/)
 
-  // ── 入口二：整段 JSON 的「放大」（等宽 / 多行）──
+  // ── 整段 JSON 也有图标，且是等宽 / 多行 ──
   await page.locator('[data-testid="admin-site-json-expand"]').click()
   await expect(dialog).toBeVisible()
   await expect(page.locator('[data-testid="long-text-area"].mono')).toHaveCount(1)
-  await expect(area).toHaveValue(/改过的站点描述/)
-
-  // 多行模式：ENTER 是换行，不许被当成保存（CTRL/⌘ + ENTER 才是保存）
-  await area.fill('{\n  "name": "整段改过的名字"\n}')
+  await area.fill('{\n  "badge": "ABOUT2",\n  "body": "整段改过的正文"\n}')
   await page.keyboard.press('Control+Enter')
   await expect(dialog).toHaveCount(0)
-  await expect(json).toHaveValue(/整段改过的名字/)
-  // 整段写回是真的：字段列表按新的 JSON 重算，description 这一格没有了
-  await expect(page.locator('[data-field="site.name"] input')).toHaveValue('整段改过的名字')
-  await expect(page.locator('[data-field="site.description"]')).toHaveCount(0)
+  await expect(json).toHaveValue(/整段改过的正文/)
+  // 整段写回是真的：字段列表按新的 JSON 重算
+  await expect(page.locator('[data-field="about.badge"] input')).toHaveValue('ABOUT2')
+  await expect(page.locator('[data-field="about.title"]')).toHaveCount(0)
 
   // ── ESC 丢弃：整段 JSON 一个字符都没改 ──
   await page.locator('[data-testid="admin-site-json-expand"]').click()
-  await area.fill('{ "name": "这一份不算数" }')
+  await area.fill('{ "body": "这一份不算数" }')
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
-  await expect(json).toHaveValue(/整段改过的名字/)
+  await expect(json).toHaveValue(/整段改过的正文/)
   await expect(json).not.toHaveValue(/这一份不算数/)
 
   expect(errors).toEqual([])

@@ -195,10 +195,7 @@ test('外链管理：新建一条 —— 请求体正确，列表就地多一条
   await page.keyboard.press('Enter')
   await expect(page.locator('[data-testid="link-name"]')).toBeFocused()
 
-  // 表单里 Tab 走原生焦点（本页没有标签栏，外壳把 Tab 还给浏览器，见 App.vue 全局监听器）。
-  // 每一格右边多了一个「放大」按钮（F2 的鼠标替身），所以 TAB 链路是「输入框 → 放大 → 下一格」
-  await page.keyboard.press('Tab')
-  await expect(page.locator('[data-testid="link-name-expand"]')).toBeFocused()
+  // 表单里 Tab 走原生焦点（本页没有标签栏，外壳把 Tab 还给浏览器，见 App.vue 全局监听器）
   await page.keyboard.press('Tab')
   await expect(page.locator('[data-testid="link-url"]')).toBeFocused()
 
@@ -474,86 +471,4 @@ test('外链管理：h1 层级正确，axe 无新增违规', async ({ page }) =>
       ),
   )
   expect(violations).toEqual([])
-})
-
-test('放大编辑：F2 / 「放大」按钮打开弹窗，保存写回表单字段并进请求体，ESC 丢弃；排序不接', async ({
-  page,
-}) => {
-  const recorder = await stubApi(page)
-  await page.goto('/admin/links')
-  await booted(page)
-
-  const dialog = page.locator('[data-testid="long-text-dialog"]')
-  const area = page.locator('[data-testid="long-text-area"]')
-  const name = page.locator('[data-testid="link-name"]')
-
-  // 入口一：F2（焦点在那一格里）
-  await name.focus()
-  await page.keyboard.press('F2')
-  await expect(dialog).toBeVisible()
-  await expect(area).toHaveValue('')
-  await expect(page.locator('[data-testid="long-text-count"]')).toContainText('/ 100')
-
-  // 打开期间 P 不叠暂停菜单（焦点落在按钮上时也照样拦住）
-  await page.locator('[data-testid="long-text-save"]').focus()
-  await page.keyboard.press('p')
-  await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
-  await expect(dialog).toBeVisible()
-
-  await area.fill('放大编辑写的外链名')
-  await page.locator('[data-testid="long-text-save"]').click()
-  await expect(dialog).toHaveCount(0)
-  await expect(name).toHaveValue('放大编辑写的外链名')
-  await expect(name).toBeFocused()
-
-  // 弹窗只换画布：写回的是表单字段，值照样跟着请求体走
-  await page.fill('[data-testid="link-url"]', 'https://example.org/long')
-  await page.click('[data-testid="link-save"]')
-  await expect.poll(() => recorder.writes.length, { message: 'POST 应当已经发出去' }).toBe(1)
-  expect(recorder.writes[0]!.body).toMatchObject({
-    name: '放大编辑写的外链名',
-    url: 'https://example.org/long',
-  })
-
-  // 入口二：按钮打开整份 URL，ESC 丢弃（表单里还是提交前那个值）
-  await page.locator('[data-testid="link-url-expand"]').click()
-  await expect(dialog).toBeVisible()
-  await expect(area).toHaveValue('https://example.org/long')
-  await area.fill('javascript:alert(1)')
-  await page.keyboard.press('Escape')
-  await expect(dialog).toHaveCount(0)
-  await expect(page.locator('[data-testid="link-url"]')).toHaveValue('https://example.org/long')
-
-  // 「排序」是数字框，不急这一套
-  await expect(page.locator('[data-testid="link-sort-expand"]')).toHaveCount(0)
-
-  // 打开状态下的无障碍：模态语义齐备，且除了全站已知取舍外没有新增违规
-  await page.locator('[data-testid="link-cover-expand"]').click()
-  await expect(dialog).toBeVisible()
-  await expect(dialog).toHaveAttribute('role', 'dialog')
-  await expect(dialog).toHaveAttribute('aria-modal', 'true')
-  const report = await new AxeBuilder({ page }).analyze()
-  const known = [
-    '.deck-src',
-    '.is-copyright',
-    '.is-slogan',
-    '.is-icp',
-    '.post-title',
-    '.card-title',
-  ]
-  const fresh = report.violations.flatMap((violation) =>
-    violation.nodes
-      .filter(
-        (node) =>
-          !known.some(
-            (selector) =>
-              node.target.join(' ').includes(selector) ||
-              (node.html ?? '').includes(selector.slice(1)),
-          ),
-      )
-      .map((node) => `[${violation.impact ?? 'unknown'}] ${violation.id} → ${node.target.join(' ')}`),
-  )
-  expect(fresh).toEqual([])
-  await page.keyboard.press('Escape')
-  await expect(dialog).toHaveCount(0)
 })
