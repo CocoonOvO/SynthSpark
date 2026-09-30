@@ -2785,3 +2785,37 @@ P7 六项里的「axe 审计」原话只有四个字，落地前先把现状量�
 - 七处放行清单合并成一份，且**判得更严**：`admin-site` 从「只判 critical」升到节点级清单，
   `user-profile` 从「放过整类对比度」升到节点级 —— 两个都没红出来新问题。
 - `npm run check` **EXIT=0**（八段）。
+
+## 34. 补上「真实登录链路」这道门（2026-10-01）
+
+§31.4 的覆盖审计里有一条很扎眼：**`POST /api/auth/token` 这条真链路一次都没有机器守过**。
+全站 24 个 spec 走的都是 §23.4 那套自我约束 —— 伪造 `synthspark-token` + 打桩 `/api/auth/me`
+（好处：不依赖真账号密码；代价：表单体形状、令牌落盘、`/api/auth/me` 校验、菜单随权限变化
+这四件事全靠人工看）。§D-cluster 里被标成「未覆盖」的几条（真实登录成功、普通用户 / 超管
+两种菜单、刷新后仍登录态）根子都在这。
+
+### 34.1 做法：凭据从环境变量来，没有就跳过
+
+新增 `icespark/e2e/real-login.spec.ts`，手法照后端 `tests/test_smoke.py`：
+
+```bash
+cd icespark
+ICESPARK_E2E_USER=xxx ICESPARK_E2E_PW=yyy npx playwright test e2e/real-login.spec.ts
+```
+
+- **文件里不写任何账号密码**（只读环境变量）；没设就 `test.skip`，是**跳过**而不是假绿 ——
+  默认套件因此是 `163 passed / 3 skipped`，CI 想跑真链路就带上环境变量。
+- 断言刻意**与角色无关**（普通用户 / 超管都能跑）：登录框关闭、账号行显示「退出登录（昵称）」、
+  昵称与 `/api/auth/me` 一致、菜单行数 ≥ 8、`edit` / `profile` 两行出现；
+  只有「有没有四张管理页入口」这一条按 `/api/auth/me` 的 `is_superuser` **分支**判。
+- 三条用例：① 表单编码 + 令牌真的能用（抓真请求断言 `application/x-www-form-urlencoded`
+  且 body 不是 JSON；再用页面里那把令牌换一次 `/api/auth/me`，必须 200 且昵称对得上）
+  ② 刷新后登录态还在（**后端校验出来的**，不是本地瞎认）③ 登出后菜单回 6 行、
+  本地两把键都被清空、键盘还活着（`ESC` 能关菜单）。
+
+### 34.2 真机验收（5175 + 8002，真账号 `icespark_admin`，`is_superuser = true`）
+
+`3 passed (5.8s)`：请求体是表单编码、不是 JSON；登录后账号行 = 「退出登录（演示管理员11111）」
+且与 `/api/auth/me` 一致；四张管理页入口按超管身份出现；刷新后仍是登录态；
+登出后 `synthspark-token` 与 `synthspark-icespark-user` 都为 `null`、菜单回到未登录形态、
+`ESC` 照常关菜单。不带环境变量时 `3 skipped`，套件仍全绿。
