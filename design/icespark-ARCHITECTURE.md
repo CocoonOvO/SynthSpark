@@ -2819,3 +2819,21 @@ ICESPARK_E2E_USER=xxx ICESPARK_E2E_PW=yyy npx playwright test e2e/real-login.spe
 且与 `/api/auth/me` 一致；四张管理页入口按超管身份出现；刷新后仍是登录态；
 登出后 `synthspark-token` 与 `synthspark-icespark-user` 都为 `null`、菜单回到未登录形态、
 `ESC` 照常关菜单。不带环境变量时 `3 skipped`，套件仍全绿。
+
+## 35. 硬要求 3 的逐场景门（2026-10-01）
+
+硬要求 3 的原话里有三个「所有」：站点小字放在外壳底栏 `.deck`、**位于软键左侧**、
+**所有场景常驻（含开机自检与 404）**。`shell.spec.ts` 守的是底栏的**结构**（`.deck` 与
+`.screen` 同级、不在框里、子元素顺序、贴底几何）与「404 也有小字」，但「十二条路由 + 自检
+逐格都在」这件事一直只有抽查。新增 `icespark/e2e/deck-always.spec.ts`（2 条）补齐：
+
+1. **开机自检那一格**（自检不是路由，最容易漏）：`goto('/')` **不等 `booted`**，
+   先断言 `.app[data-scene="boot"]`，此刻 `.deck` / `.deck-footer` 已在、小字非空、
+   位于软键左侧；等自检播完落到主页后**再读一次，两次逐字相同**。
+2. **十二条路由逐格走**（`/` `/posts` `/links` `/about` `/nope-404` `/profile` `/admin/site`
+   `/admin/links` `/admin/audit` `/write` + 探测到的文章详情；登录态页面用打桩超管），每格断言：
+   ① `.deck` 与 `.deck-footer` 可见、小字非空；② `.deck-footer` 的右边缘不越过 `.deck-keys`
+   的左边缘（**在软键左侧**这条用户口径的机器口径）；③ 十几种页面上小字**逐字一致**
+   （它是外壳级内容，不该随页面变）；④ 全站 `footer` 元素计数为 0 —— 不做传统页脚区块。
+
+验收：`2 passed`；全量 **165 passed / 3 skipped**（168 条），`npm run check` 八段 **EXIT=0**。
