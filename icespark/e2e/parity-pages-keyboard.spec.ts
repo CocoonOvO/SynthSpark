@@ -177,6 +177,56 @@ test('纯键盘：文章页 L/→/ENTER 走到「返回」并回列表', async (
   await expectNoPointer(page)
 })
 
+test('纯键盘：关联页方向键选卡 + 回车进站内页（零指针事件）', async ({ page }) => {
+  await installPointerRecorder(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('synthspark-icespark-sound-prompt', '1')
+  })
+  // 两张站内卡，指向不同标签页 —— 这样「→ 移动」与「回车激活的是哪一张」都能验出来
+  await page.route(/\/api\/links\//, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: 'l-1',
+          name: '去文章页',
+          url: '/posts',
+          cover_image: null,
+          sort_order: 1,
+          created_at: '2026-09-20T10:00:00',
+          updated_at: '2026-09-20T10:00:00',
+        },
+        {
+          id: 'l-2',
+          name: '去关于页',
+          url: '/about',
+          cover_image: null,
+          sort_order: 2,
+          created_at: '2026-09-20T10:00:00',
+          updated_at: '2026-09-20T10:00:00',
+        },
+      ]),
+    }),
+  )
+
+  await page.goto('/links')
+  await booted(page)
+  const cards = page.locator('[data-testid="link-card"]')
+  await expect(cards).toHaveCount(2)
+  await expect(cards.nth(0)).toHaveClass(/is-focused/)
+
+  // → 走到第二张（共享光标），回车激活它
+  await page.keyboard.press('ArrowRight')
+  await expect(cards.nth(1)).toHaveClass(/is-focused/)
+  await page.keyboard.press('Enter')
+
+  await expect(page).toHaveURL(/\/about$/)
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'about')
+
+  await expectNoPointer(page)
+})
+
 test('纯键盘：个人页改昵称并保存（Tab 进表单、打字、Tab 到保存、回车）', async ({ page }) => {
   await installPointerRecorder(page)
   await page.addInitScript(() => {

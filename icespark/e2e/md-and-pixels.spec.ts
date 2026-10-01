@@ -470,3 +470,69 @@ test.describe('② 设计系统：像素 / 版式事实', () => {
     await expect(page.locator('.side')).toHaveCount(0)
   })
 })
+
+test('版式：长标题在任何宽度下都不被裁（缩的是摘要，不是标题）', async ({ page }) => {
+  await stubIcesparkApi(page)
+
+  // 长到必然折行的标题：中文长句 + 一段**没有空格**的长 token（URL 那种）
+  const longTitle =
+    '这是一条很长的标题，用来验证它在窄屏下也不会被吃掉：像素风博客列表的标题允许长到四五' +
+    '行以上，宁可把卡片顶高，也不能像摘要那样补个省略号了事https://example.com/very/long/unbreakable/token/aaaa'
+  // 摘要必须长到「任何宽度下都超过它的 clamp 行数」—— 文字卡是 5 行，
+  // 所以这里要灌得足够多，否则反向对照会因为「其实没超」而假红（本门踩过一次）
+  const longIntro =
+    '摘要可以缩：这条摘要有意写得很长，长到 clamp 装不下，好证明「缩的是摘要」这件事本身没坏。'.repeat(6)
+
+  await page.route(/\/api\/posts\//, (route) => {
+    const pathname = new URL(route.request().url()).pathname
+    const body = pathname.startsWith('/api/comments/')
+      ? { total: 0, comments: [] }
+      : {
+          items: [listItem({ title: longTitle, introduction: longIntro, cover_image: null })],
+          total: 1,
+        }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(body),
+    })
+  })
+
+  for (const width of [1280, 900, 640]) {
+    await page.setViewportSize({ width, height: 800 })
+    await page.goto('/posts')
+    await booted(page)
+
+    const title = page.locator('[data-testid="post-card"] .card-title').first()
+    await expect(title).toBeVisible()
+    // 文字一个字都没少（被裁的典型症状是 textContent 还在、渲染上却看不见）
+    await expect(title).toHaveText(longTitle)
+
+    const metrics = await title.evaluate((el) => {
+      const node = el as HTMLElement
+      const style = getComputedStyle(node)
+      return {
+        scrollW: node.scrollWidth,
+        clientW: node.clientWidth,
+        scrollH: node.scrollHeight,
+        clientH: node.clientHeight,
+        lines: Math.round(node.getBoundingClientRect().height / parseFloat(style.lineHeight)),
+        whiteSpace: style.whiteSpace,
+      }
+    })
+
+    // 横向不许溢出（长 token 要在框内换行，而不是把卡片撑破）
+    expect(metrics.scrollW, `${width}px 下标题横向溢出了`).toBeLessThanOrEqual(metrics.clientW + 1)
+    // 纵向不许被切（旧行为是 clamp 到 3 行 —— 用户第七轮明确否掉了）
+    expect(metrics.scrollH, `${width}px 下标题纵向被切了`).toBeLessThanOrEqual(metrics.clientH + 1)
+    expect(metrics.lines, `${width}px 下长标题应当超过 3 行（说明没被 clamp）`).toBeGreaterThan(3)
+  }
+
+  // 反向对照：**摘要**是故意截断的（`line-clamp` 补省略号）—— 证明上面那条不是「谁都不裁」的空转
+  await page.setViewportSize({ width: 640, height: 800 })
+  const introClamped = await page
+    .locator('[data-testid="post-card"] .card-intro')
+    .first()
+    .evaluate((el) => (el as HTMLElement).scrollHeight > (el as HTMLElement).clientHeight + 1)
+  expect(introClamped, '摘要按设计是要截断的（这条是标题那条断言的反向对照）').toBe(true)
+})

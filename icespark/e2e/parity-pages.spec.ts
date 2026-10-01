@@ -162,6 +162,44 @@ test('纯鼠标：列表页点芯片筛选、点「清除」回无筛选、点�
   await expectNoKeys(page)
 })
 
+test('纯鼠标：关联页点卡片进站内页（零键盘）', async ({ page }) => {
+  await installRecorder(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('synthspark-icespark-sound-prompt', '1')
+  })
+  // 关联页是唯一一处「卡片 = 链接」的页面：站内路径走前端路由，绝对链接开新标签页。
+  // 这里只放站内路径（`/posts` 是标签页之一的路径 → `switchTab`），好在同一页里验完。
+  await page.route(/\/api\/links\//, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify([
+        {
+          id: 'l-1',
+          name: '去文章页',
+          url: '/posts',
+          cover_image: null,
+          sort_order: 1,
+          created_at: '2026-09-20T10:00:00',
+          updated_at: '2026-09-20T10:00:00',
+        },
+      ]),
+    }),
+  )
+
+  await page.goto('/links')
+  await booted(page)
+  await expect(page.locator('[data-testid="link-card"]')).toHaveCount(1)
+
+  await page.hover('[data-testid="link-card"]')
+  await expect(page.locator('[data-testid="link-card"]')).toHaveClass(/is-focused/)
+  await page.click('[data-testid="link-card"]')
+  await expect(page).toHaveURL(/\/posts$/)
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'posts')
+
+  await expectNoKeys(page)
+})
+
 test('纯鼠标：管理页读一条、改一条（编辑 → 保存）全程零键盘', async ({ page }) => {
   await installRecorder(page)
   await page.addInitScript(() => {
