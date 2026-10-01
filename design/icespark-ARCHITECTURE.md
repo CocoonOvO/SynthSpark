@@ -3503,3 +3503,44 @@ Exit code: 2`：产物 webServer 是 `npm run build && vite preview --port 4175 
 
 - `npx playwright test`：**207 passed / 3 skipped**（210 条 / 32 个 spec），连跑两次一致。
 - `npm run check` 八段 **EXIT=0**。
+
+## 53. 模态焦点圈闭：第一次有门 + 一处「Tab 卡死」的实录（2026-10-01，收尾轮）
+
+模态的焦点口径一直散在 `App.vue` / `PixelDialog.vue` 的注释里（「模态开着时导航类全局键
+一律不生效」「补对话语义：`role="dialog"` + `aria-modal`」），没有任何门。新增
+`e2e/modal-focus.spec.ts` 两条：
+
+| 用例 | 钉住什么 |
+|---|---|
+| 暂停菜单开着时 Tab 被吞 | 连按 3 下 `Tab`，原生焦点**不动**、也不落到背景页面；**对照**：同一状态按 `↓` 光标照样走（被吞的是 Tab，不是整块键盘） |
+| 登录框里 Tab / Shift+Tab 只在框内走 | 从用户名框往前：`login-username → login-password → login-submit`；倒着走：`login-username → Shift+Tab → login-close`；每一步都断言「在模态里、不在背景」 |
+
+顺带把实现口径写清楚：**可编辑目标例外**——焦点在输入框里时内核让开
+（`isEditableTarget` 那一支），所以框内换字段走的是浏览器原生遍历；焦点在**按钮**上时
+才轮到外壳吞 Tab。
+
+### 53.1 实录：登录框里走到「提交」之后 Tab 会卡住（**没有写成用例**）
+
+探针实录：
+
+```
+用户名框 → Tab → login-password → Tab → login-submit
+login-submit → Tab       → 还是 login-submit（不动）
+login-submit → Shift+Tab → 还是 login-submit（不动）
+```
+
+原因：焦点在按钮上时那两下 Tab 走到外壳的 `offGlobal`，`inModal` 为真 → 被吞，
+浏览器原生遍历永远不跑；而**从输入框按 Tab 能动**是因为可编辑目标让开了内核。
+于是模态里「非可编辑 → 可编辑」能前进，反过来退不回去，走到最后一个按钮就停了 ——
+键盘用户只剩 ESC（关掉对话框）能脱身。
+
+**为什么没写成 `test.fail`**：第一次就是这么写的，**整套并行跑时它会翻**
+（单独跑红、并行跑绿 → 报 `Expected to fail, but passed`）。会翻的用例比没有更糟，
+所以改成文字实录 + 等口径。建议二选一：
+① 模态内把 Tab 做成循环（最后一个可聚焦项 → 第一个）；
+② 焦点已在模态容器内部时不再吞 Tab（代价：焦点能走出模态，得配 `inert` 才安全）。
+
+### 53.2 验收
+
+- `npx playwright test`：**209 passed / 3 skipped**（212 条 / 33 个 spec），连跑两次一致。
+- `npm run check` 八段 **EXIT=0**。
