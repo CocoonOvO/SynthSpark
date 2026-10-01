@@ -536,3 +536,59 @@ test('版式：长标题在任何宽度下都不被裁（缩的是摘要，不�
     .evaluate((el) => (el as HTMLElement).scrollHeight > (el as HTMLElement).clientHeight + 1)
   expect(introClamped, '摘要按设计是要截断的（这条是标题那条断言的反向对照）').toBe(true)
 })
+
+test('版式几何：卡片不切自己的内容、栅格装得下卡片、翻页条不被卡片压住（三档宽度）', async ({
+  page,
+}) => {
+  // 夹具就是「一张无封面 + 一张有封面」（LIST_ITEMS）—— 两套版式必须能直接对照
+  await stubIcesparkApi(page)
+
+  for (const width of [1280, 900, 640]) {
+    await page.setViewportSize({ width, height: 800 })
+    await page.goto('/posts')
+    await booted(page)
+    await expect(page.locator('[data-testid="post-card"]')).toHaveCount(2)
+
+    const geo = await page.evaluate(() => {
+      const cards = [...document.querySelectorAll('[data-testid="post-card"]')] as HTMLElement[]
+      const grid = document.querySelector('.grid') as HTMLElement
+      const foot = document.querySelector('.foot') as HTMLElement
+      return {
+        cards: cards.map((card) => {
+          const rect = card.getBoundingClientRect()
+          return {
+            isText: card.classList.contains('is-text'),
+            hasImg: !!card.querySelector('.img-frame'),
+            width: Math.round(rect.width),
+            height: Math.round(rect.height),
+            // 卡片自己 `overflow: hidden` —— 内容比它高就说明字被切了
+            clipped: card.scrollHeight > card.clientHeight + 1,
+            bottom: Math.round(rect.bottom),
+          }
+        }),
+        gridBottom: Math.round(grid.getBoundingClientRect().bottom),
+        footTop: Math.round(foot.getBoundingClientRect().top),
+      }
+    })
+
+    // 夹具自证：确实是一张无封面（文字卡、没有图片位）一张有封面
+    expect(geo.cards.filter((c) => c.isText && !c.hasImg)).toHaveLength(1)
+    expect(geo.cards.filter((c) => !c.isText && c.hasImg)).toHaveLength(1)
+
+    // 两列同宽（无封面卡不会因为少了图片位就窄一截）
+    expect(new Set(geo.cards.map((c) => c.width)).size, '两张卡的外宽应当一致').toBe(1)
+
+    // 没有一张卡把自己的内容切掉（第七轮的 bug：窄屏 + 长标题被 overflow 切掉）
+    expect(
+      geo.cards.filter((c) => c.clipped).map((c) => c.height),
+      `${width}px 下有卡片切掉了自己的内容`,
+    ).toEqual([])
+
+    // 栅格装得下最后一张卡：卡片不许画到栅格外面（会盖住翻页条）
+    const lastBottom = Math.max(...geo.cards.map((c) => c.bottom))
+    expect(geo.gridBottom, `${width}px 下栅格比它的卡片还矮`).toBeGreaterThanOrEqual(lastBottom - 1)
+
+    // 翻页条在栅格**下方**（同一流程里），没被卡片压住
+    expect(geo.footTop, `${width}px 下翻页条被卡片压住了`).toBeGreaterThanOrEqual(geo.gridBottom - 1)
+  }
+})
