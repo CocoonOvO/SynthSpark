@@ -102,6 +102,8 @@ watch(
 )
 </script>
 
+<!-- 带表单的模态：`data-focus-trap="cycle"` 让 Tab 在框内循环（最后一个 → 第一个），
+     免得走到最后一个按钮之后焦点卡死、只剩 ESC 能脱身。判定见 `src/input/focusTrap.ts`。 -->
 <template>
   <!--
     aria-labelledby 指向哪个 id：有说话者名就用名字条（对话的自然标题），
@@ -111,6 +113,7 @@ watch(
     class="dialog-wrap px"
     role="dialog"
     aria-modal="true"
+    data-focus-trap="cycle"
     :aria-labelledby="speaker ? 'pixel-dialog-title' : 'pixel-dialog-text'"
     @click="advance"
   >

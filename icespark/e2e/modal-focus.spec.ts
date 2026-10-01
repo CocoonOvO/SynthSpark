@@ -80,21 +80,45 @@ test('模态圈闭：登录框里 Tab / Shift+Tab 只在框内走，焦点落不
 })
 
 /*
- * ── 一处**没有写成用例**的口径问题：登录框里走到「提交」之后 Tab 会卡住 ──
+ * ── 曾经的「Tab 卡死」：已修，这里守死 ──
  *
- * 探针实录（`pnpm` 之外的临时 spec，已删）：
- *   用户名框 → Tab → `login-password` → Tab → `login-submit`
- *   `login-submit` → Tab → **还是 `login-submit`**（不动）
- *   `login-submit` → Shift+Tab → **还是 `login-submit`**（不动）
+ * 原先：登录框里走到「登录」按钮之后，Tab 与 Shift+Tab 都被外壳吞掉（模态期间导航类全局键
+ * 一律不生效），焦点卡在按钮上动不了，只剩 ESC 能脱身（探针实录见 §53.1）。
  *
- * 原因清楚：焦点在按钮上时那两下 Tab 走到外壳的 `offGlobal`，`inModal` 为真 → 被吞掉，
- * 浏览器的原生遍历永远不跑；而**从输入框按 Tab 能动**，是因为可编辑目标那一支让开了内核。
- * 于是模态里只有「非可编辑 → 可编辑」能前进，反过来退不回去，走到最后一个按钮就停了 ——
- * 键盘用户只能按 ESC（关掉对话框）才能脱身。
- *
- * 为什么没写成 `test.fail` 用例：第一次贴了 `test.fail(true, …)`，**整套并行跑时它会翻**
- * （单独跑红、并行跑绿，于是报 "Expected to fail, but passed"）—— 会翻的用例比没有更糟。
- * 这里改成文字实录，等用户口径；建议二选一：
- *   ① 模态内把 Tab 做成循环（最后一个可聚焦项 → 第一个）；
- *   ② 焦点已经在模态容器内部时不再吞 Tab（代价：焦点能走出模态，得配合 `inert` 才安全）。
+ * 修法（§57）：带表单的模态在容器上挂 `data-focus-trap="cycle"`，内核在 Tab 时先问
+ * `cycleFocusInTrap()`（`src/input/focusTrap.ts`）—— 焦点已在圈闭容器里就**回绕**一格并
+ * `preventDefault`，不等外壳吞。暂停菜单**不挂**这个标记：它是自绘光标的菜单，
+ * 循环原生焦点会出现两个光标，**原口径（Tab 被吞、方向键走光标）保持不变**。
  */
+test('模态圈闭：登录框里 Tab / Shift+Tab 都回绕，一条都别想卡死', async ({ page }) => {
+  await page.addInitScript(() => localStorage.setItem('synthspark-icespark-sound-prompt', '1'))
+  await page.goto('/')
+  await booted(page)
+
+  await page.keyboard.press('p')
+  await page.click('[data-testid="pause-account"]')
+  await expect(page.locator('[data-testid="login-dialog"]')).toBeVisible()
+
+  // 框内顺序（DOM 序）：✕ 关闭 → 用户名 → 密码 → 确认登录 → 取消
+  const cancel = page.locator('[data-testid="login-dialog"] button', { hasText: '取消' })
+
+  await page.locator('[data-testid="login-username"]').click()
+  await page.keyboard.press('Tab')
+  expect((await focusSpot(page)).id).toBe('login-password')
+  await page.keyboard.press('Tab')
+  expect((await focusSpot(page)).id).toBe('login-submit')
+  await page.keyboard.press('Tab')
+  await expect(cancel, '提交之后还能往前走（不再卡死在按钮上）').toBeFocused()
+
+  // 到最后一项再按 Tab：**回绕到框内第一个可聚焦项**（✕ 关闭），而不是原地不动
+  await page.keyboard.press('Tab')
+  const wrapped = await focusSpot(page)
+  expect(wrapped.id, 'Tab 到最后一个之后应当回绕，不许原地卡住').toBe('login-close')
+  expect(wrapped.inModal, '回绕也只在框内').toBe(true)
+  expect(wrapped.inBackground, '焦点绝不许落到背景页面上').toBe(false)
+
+  // 反方向同样回绕：从第一个倒着走回最后一项
+  await page.keyboard.press('Shift+Tab')
+  await expect(cancel, 'Shift+Tab 从第一个应当回绕到最后一项').toBeFocused()
+  await expect(page.locator('.app')).toHaveAttribute('data-scope', 'pause')
+})

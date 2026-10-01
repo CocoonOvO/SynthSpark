@@ -1,4 +1,5 @@
 import { dispatchPadAction, isEditableTarget, resolveComboAction, resolvePadAction } from './pad'
+import { cycleFocusInTrap } from './focusTrap'
 import { inputLocked } from './scopes'
 
 /**
@@ -33,6 +34,17 @@ export function mountInput(root: HTMLElement): () => void {
   const FOCUSABLE_SELECTOR = 'a, button, input, textarea, select, [tabindex]'
 
   function onKeydown(event: KeyboardEvent): void {
+    // ⓿ **带表单的模态内 Tab 循环**（`data-focus-trap="cycle"`，用户裁决 §57）。
+    //    必须排在「可编辑目标让开」之前：登录框里从输入框按 Tab 走的是浏览器原生遍历，
+    //    排在后面就管不到它，从最后一个输入框按 Tab 会直接跑到模态外面去。
+    //    锁输入期间（转场）不掺和 —— 那一段的口径是「Tab 必须吞掉」（见下面那一支）。
+    if (event.key === 'Tab' && !event.isComposing && !inputLocked.value) {
+      if (cycleFocusInTrap(document, event.shiftKey ? -1 : 1)) {
+        event.preventDefault()
+        return
+      }
+    }
+
     // 焦点在输入框 / 可编辑区里时按键归输入本身（登录框 / 设置框里的 Tab、字母、
     // 回车都交给浏览器与表单），只有两条例外：
     //   ① `ESC`  = 从编辑框里出来（失焦），把焦点交回外壳；

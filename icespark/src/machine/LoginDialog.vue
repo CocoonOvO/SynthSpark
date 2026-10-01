@@ -92,12 +92,15 @@ onUnmounted(() => {
 })
 </script>
 
+<!-- 带表单的模态：`data-focus-trap="cycle"` 让 Tab 在框内循环（最后一个 → 第一个），
+     免得走到最后一个按钮之后焦点卡死、只剩 ESC 能脱身。判定见 `src/input/focusTrap.ts`。 -->
 <template>
   <div
     class="mask"
     data-testid="login-dialog"
     role="dialog"
     aria-modal="true"
+    data-focus-trap="cycle"
     aria-labelledby="login-dialog-title"
     @click.self="emit('close')"
   >
