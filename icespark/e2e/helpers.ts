@@ -77,5 +77,22 @@ export async function probeJson<T>(
  */
 export async function press(page: Page, key: string): Promise<void> {
   await expect(page.locator('.app')).toHaveAttribute('data-locked', 'false')
+  /**
+   * 还要等**焦点回到外壳内**（§61 的第二个真凶）。
+   *
+   * 内核的键盘监听挂在 `.app` 上，而键盘事件只沿**当前焦点的祖先链**冒泡 ——
+   * 焦点掉到 `body` 时按键谁也收不到。触发时机很具体：某个持有焦点的节点被卸载
+   * （跳页框提交后关闭、点「清除」把焦点所在的芯片换掉…），浏览器那一刻把焦点交给
+   * `body`，而输入层的 `focusout` 兜底要**下一个 tick** 才把焦点收回外壳。
+   * 测试在这两个 tick 之间按键，就会「按了毫无反应」——实测就是这么红的：
+   * `list-paging` 的「跳页回车之后键盘还活着」「点清除之后键盘还活着」两条，
+   * 加锁等待也压不住，因为它的根因不是锁而是焦点。
+   */
+  await expect
+    .poll(
+      () => page.evaluate(() => document.activeElement?.closest('.app') !== null),
+      { message: '按键前焦点必须落在外壳内（否则内核根本收不到这个键）' },
+    )
+    .toBe(true)
   await page.keyboard.press(key)
 }

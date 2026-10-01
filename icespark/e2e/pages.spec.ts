@@ -154,7 +154,7 @@ test('文章详情：深链接能直接进来，正文与操作条都在，键�
   // 键盘：L 进操作条 → 右移两格到「返回列表」→ 回车回到列表
   await page.keyboard.press('l')
   await expect(page.locator('[data-testid="action-like"]')).toHaveClass(/is-focused/)
-  await page.keyboard.press('ArrowRight')
+  await press(page, 'ArrowRight')
   await expect(page.locator('[data-testid="action-comment"]')).toHaveClass(/is-focused/)
   await page.keyboard.press('ArrowRight')
   await expect(page.locator('[data-testid="action-back"]')).toHaveClass(/is-focused/)

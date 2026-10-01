@@ -251,7 +251,7 @@ test('文章列表：分页写 URL —— PgDn 到第 2 页带 page=2，PgUp 回
   expect(await titles(page)).not.toContain(PAGE1_ONLY)
 
   // PgUp → 回第 1 页：参数是被**去掉**（不是写成 page=1），内容也回来
-  await page.keyboard.press('PageUp')
+  await press(page, 'PageUp')
   await expect(page).toHaveURL((url) => !url.searchParams.has('page'))
   await expect(pager(page)).toHaveText('PAGE 1 / 2')
   expect(await titles(page)).toContain(PAGE1_ONLY)
@@ -281,7 +281,7 @@ test('文章列表：J 跳页 —— 输页码回车即达，越界收敛到最�
   // 顺手证明「URL 是唯一真相」：不带任何操作，地址栏里的 page=2 就该落在第 2 页
   await openList(page, '/posts?page=2')
   await expect(pager(page)).toHaveText('PAGE 2 / 2')
-  await page.keyboard.press('j')
+  await press(page, 'j')
   await page.locator('[data-testid="jump-input"]').fill('1')
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL((url) => !url.searchParams.has('page'))
@@ -402,7 +402,7 @@ test('文章列表：G / → / ENTER 按分组筛选写进 URL，清除后回到
   await openList(page)
 
   // G 直达分组行首项「全部分组」（用户第 3 条：分组要用快捷键一键够到，不必拿方向键蹭上去）
-  await page.keyboard.press('g')
+  await press(page, 'g')
   await expect(page.locator('[data-testid="group-row"] .is-focused')).toHaveAttribute(
     'data-testid',
     'group-all',
@@ -445,7 +445,7 @@ test('文章列表：T / → / ENTER 按标签筛选，卡片确实同属该标�
   await openList(page)
 
   // T 直达标签行首项，→ 到「草图」（夹具按篇数倒序，第一枚是它）
-  await page.keyboard.press('t')
+  await press(page, 't')
   await expect(page.locator('[data-testid="tag-row"] .is-focused')).toHaveAttribute(
     'data-testid',
     'tag-all',

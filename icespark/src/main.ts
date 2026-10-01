@@ -11,6 +11,8 @@ import { ACTIVE_PALETTE } from '@/styles/tokens'
 import '@/styles/tokens.generated.css'
 import '@/styles/pixel.css'
 import '@/styles/crt.css'
+// 滚动条：与像素皮肤同一套语言（方角两段色、走 token），见文件头
+import '@/styles/scrollbar.css'
 
 /**
  * 应用入口。

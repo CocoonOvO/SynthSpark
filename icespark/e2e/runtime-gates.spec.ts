@@ -1,6 +1,6 @@
 import { expect, test, type Page, type Route } from '@playwright/test'
 
-import { booted } from './helpers'
+import { booted, press } from './helpers'
 
 /**
  * P2 运行期门：样机 `design/icespark-prototype/e2e/gates.mjs` 里冻结的两条断言，
@@ -320,7 +320,7 @@ test('C · 动效开关真的生效：data-motion=off 时 blink 元素的计算�
   expect(await animName()).not.toBe('none')
 
   // 打开设置，把动效切到「关」
-  await page.keyboard.press('p')
+  await press(page, 'p')
   await expect(page.locator('[data-testid="pause"]')).toBeVisible()
   for (let i = 0; i < 4; i += 1) await page.keyboard.press('ArrowDown')
   await expect(page.locator('[data-testid="pause-settings"]')).toHaveClass(/is-focused/)

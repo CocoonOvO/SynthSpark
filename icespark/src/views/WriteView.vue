@@ -1090,12 +1090,25 @@ onUnmounted(() => {
         @image="pickImage()"
       />
 
-      <!-- 预览是只读的：inert 让它整片退出 Tab 焦点链，
-           否则预览里的链接会接走焦点，用户在编辑区按 Tab 会「跳丢」在右半边 -->
-      <aside v-if="!narrow" class="split-preview" data-testid="write-preview" inert>
+      <!-- 预览是只读的：`inert` 让它退出 Tab 焦点链，否则预览里的链接会接走焦点，
+           用户在编辑区按 Tab 会「跳丢」在右半边。
+           **`inert` 只挂里面那层包装，绝不挂滚动容器自己** —— inert 元素不参与命中测试，
+           挂在容器上滚轮就再也落不到它身上，宽屏预览会彻底滚不动（用户实测反馈；
+           窄屏那份当初踩过同一个坑，见 §28.12 与下面那张面板里的注释）。
+           容器自己 `tabindex="0"`：与窄屏面板、审计页那个可滚动原文框同一写法，
+           焦点在它身上时方向键 / PgUp / PgDn / 空格走浏览器原生滚动。 -->
+      <aside v-if="!narrow" class="split-preview" data-testid="write-preview">
         <div class="preview-head px">预览</div>
-        <div class="preview-body">
-          <MarkdownBody :source="content" />
+        <div
+          class="preview-body"
+          tabindex="0"
+          role="group"
+          aria-label="预览正文（只读，可滚动）"
+          data-testid="write-preview-body"
+        >
+          <div inert>
+            <MarkdownBody :source="content" />
+          </div>
         </div>
       </aside>
     </div>
@@ -1453,19 +1466,19 @@ onUnmounted(() => {
 
 /* ── 动作条 ── */
 /*
- * 动作条**抬在面板遮罩之上**（用户裁决：鼠标换面板不该比键盘多点一下）。
+ * 动作条的层级**分两种形态**（用户两轮反馈都要满足）：
  *
- * 原先它与页面其余部分一样被 `.sheet-mask`（`fixed` + `z-index: 200`）盖住，
- * 于是「已经有面板开着时点另一颗面板按钮」第一下点到的是遮罩——那一层只负责关，
- * 要点第二下才真的打开；而键盘按 M 是**直接切**（`panelPad`：换面板不要求先关）。
- * 两边行为不一致，也不好解释。抬到 201 之后鼠标也一下切到，`pickPanel` 再让
- * 「点同一个」等价于键盘的「再按一下就是关」。
+ * · **大屏**：面板是屏幕中央的对话框（实测 1280 下动作条 113~165、面板 220~580，**两者不重叠**），
+ *   所以把动作条抬到遮罩（`z-index: 200`）之上：鼠标点另一颗面板按钮**一下就切**，
+ *   与键盘「换面板直接切」一致（`pickPanel` 负责「点同一个 = 关」）。
+ *   原先它与页面其余部分一样被遮罩盖住，第一下点到的是遮罩（只负责关），要点第二下。
+ * · **窄屏**：面板铺满屏幕，若动作条还浮在遮罩之上，就会**盖在面板上方**（用户实测反馈）。
+ *   所以窄屏回到普通文档层，乖乖被遮罩盖住 —— 要换面板先关掉当前的，符合"面板即整屏"的形态。
  *
- * 代价：面板开着时动作条不再被遮罩压暗（它本来就是那颗开关，留着更合理）。
+ * 断点必须与 `onMounted` 里那个 `matchMedia('(max-width: 1100px)')` **保持一致**，
+ * 否则 JS 的 `narrow` 与 CSS 的形态会打架。
  */
 .write-bar {
-  position: relative;
-  z-index: 201;
   display: flex;
   align-items: center;
   gap: 8px;
@@ -1473,6 +1486,14 @@ onUnmounted(() => {
   border: 3px solid var(--blue-300);
   background: var(--blue-100);
   padding: 7px 9px;
+}
+
+/* 大屏：抬到遮罩之上（窄屏保持普通文档层，见上面那段说明） */
+@media (min-width: 1101px) {
+  .write-bar {
+    position: relative;
+    z-index: 201;
+  }
 }
 
 .bar-btn {

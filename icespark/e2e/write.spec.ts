@@ -807,3 +807,139 @@ test('写作页：插入条有「删除线」，插进去的是 ~~…~~（旧版
     .poll(() => content.evaluate((el) => (el as HTMLTextAreaElement).selectionStart))
     .toBe(2)
 })
+
+/* ────────────── 用户反馈三连（§60） ────────────── */
+
+test('写作页：宽屏预览滚得动（滚轮 + 键盘），且 Tab 不会跳进预览里的链接', async ({ page }) => {
+  /**
+   * 用户反馈：窄屏预览修好了滚动，**宽屏那份还是滚不动**。
+   * 根因是 `inert` 挂错了层 —— 它挂在**滚动容器自己**身上，而 inert 元素不参与命中测试，
+   * 滚轮落不到容器上（窄屏那份当初踩过同一个坑，见 §28.12）。
+   * 现在 inert 只挂里面的包装层，容器自己 `tabindex="0"` 走原生滚动。
+   */
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await openWrite(page)
+
+  const body = page.locator('[data-testid="write-preview-body"]')
+  await expect(body).toBeVisible()
+
+  // 灌一段长正文（用 fill 走 modelValue，不牵动焦点）
+  await page.fill('[data-testid="write-content"]', Array.from({ length: 90 }, (_, i) => `第 ${i + 1} 行正文，用来把预览撑高。`).join('\n\n'))
+  await expect.poll(() => body.evaluate((el) => el.scrollHeight - el.clientHeight)).toBeGreaterThan(200)
+
+  const scrollTop = () => body.evaluate((el) => el.scrollTop)
+  expect(await scrollTop()).toBe(0)
+
+  // ① 滚轮：把指针放到预览上再滚
+  const box = (await body.boundingBox())!
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.wheel(0, 240)
+  await expect.poll(scrollTop, { message: '宽屏预览应当能被滚轮滚动' }).toBeGreaterThan(0)
+
+  // ② 键盘：原生焦点交给容器之后方向键 / PgDn 走浏览器滚动
+  await body.evaluate((el) => { (el as HTMLElement).scrollTop = 0; (el as HTMLElement).focus() })
+  await expect(body).toBeFocused()
+  await page.keyboard.press('PageDown')
+  await expect.poll(scrollTop, { message: '窄屏那份能键盘滚动，宽屏这份也要能' }).toBeGreaterThan(0)
+
+  // ③ inert 仍在：预览里的链接不该接走 Tab（只读预览的初衷没丢）
+  await page.fill('[data-testid="write-content"]', '正文里放一个链接：[站内](/posts) 与 [站外](https://example.com/)')
+  const link = page.locator('[data-testid="write-preview-body"] a').first()
+  await expect(link).toHaveCount(1)
+  expect(await link.evaluate((el) => (el as HTMLAnchorElement).closest('[inert]') !== null)).toBe(true)
+})
+
+test('写作页：窄屏开面板时动作条被遮罩盖住，不许浮在面板上方', async ({ page }) => {
+  /**
+   * 用户反馈：窄屏打开预览框时，动作条居然浮在面板**上方**。
+   * 那是我为了"鼠标一下换面板"把动作条抬到遮罩之上引入的 —— 大屏两种情况不重叠没问题，
+   * 窄屏面板铺满屏幕，动作条再浮上去就越界了。现在按断点分开：窄屏回到普通文档层。
+   */
+  await page.setViewportSize({ width: 640, height: 800 })
+  await openWrite(page)
+  // 先写点东西：空稿时预览高度为 0（flex 项没有内容），元素会被判成"不可见"
+  await page.fill('[data-testid="write-content"]', '第一段正文，用来让预览有高度。')
+  await page.click('[data-testid="write-open-preview"]')
+  await expect(page.locator('[data-testid="write-preview-body"]')).toBeVisible()
+
+  // 遮罩铺满视口；动作条中心点**不该**再命中动作条本身（它已经被盖住）
+  const hit = await page.evaluate(() => {
+    const bar = document.querySelector('.write-bar') as HTMLElement
+    const rect = bar.getBoundingClientRect()
+    const el = document.elementFromPoint(rect.left + 30, rect.top + rect.height / 2)
+    return {
+      inBar: !!el?.closest('.write-bar'),
+      inMask: !!el?.closest('.sheet-mask'),
+      barZ: getComputedStyle(bar).zIndex,
+      maskZ: getComputedStyle(document.querySelector('.sheet-mask') as HTMLElement).zIndex,
+    }
+  })
+  expect(hit.inBar, '窄屏下面板开着时，动作条不该还压在最上面').toBe(false)
+  expect(hit.inMask, '命中点应当落在遮罩/面板这一层').toBe(true)
+  expect(Number(hit.maskZ)).toBeGreaterThanOrEqual(Number(hit.barZ === 'auto' ? 0 : hit.barZ))
+})
+
+test('滚动条：走 token 画成像素风（不是隐藏），且文本框更窄一档', async ({ page }) => {
+  await openWrite(page)
+
+  const patch = await page.evaluate(async () => {
+    // 样式表里的规则（`::-webkit-scrollbar` 是伪元素，getComputedStyle 查不到，只能读规则）
+    const rules: string[] = []
+    for (const sheet of document.styleSheets) {
+      try {
+        for (const rule of sheet.cssRules) rules.push(rule.cssText)
+      } catch {
+        // 跨域样式表读不到，跳过
+      }
+    }
+    const scrollbarRules = rules.filter((r) => r.includes('scrollbar'))
+    const source = scrollbarRules.join('\n')
+
+    // 标准属性可以直接在计算样式上读到（Chromium 121+ 支持 scrollbar-color）
+    const area = document.querySelector('[data-testid="write-content"]') as HTMLElement
+    return {
+      hasTrack: /::-webkit-scrollbar-track/.test(source),
+      hasThumb: /::-webkit-scrollbar-thumb/.test(source),
+      hasStandard: /scrollbar-color/.test(source),
+      // 逐条判：只要"选择器提到 textarea 的那条 webkit 滚动条规则"里写着 10px 就算过
+      textareaNarrower: scrollbarRules.some(
+        (r) => r.includes('textarea::-webkit-scrollbar') && r.includes('10px'),
+      ),
+      usesToken: /var\(--blue-400\)/.test(source) && /var\(--blue-100\)/.test(source),
+      // 写死的色值会被配色门拦住；这里再确认一遍滚动条那段确实没有
+      rawHex: /#[0-9a-fA-F]{3,8}\b/.test(source),
+      computed: getComputedStyle(area).scrollbarColor || '',
+      // token 的解析值：滚动条那两色必须**就是**这两个 token
+      thumb: (() => {
+        const probe = document.createElement('div')
+        probe.style.backgroundColor = 'var(--blue-400)'
+        document.body.appendChild(probe)
+        const color = getComputedStyle(probe).backgroundColor
+        probe.remove()
+        return color
+      })(),
+      track: (() => {
+        const probe = document.createElement('div')
+        probe.style.backgroundColor = 'var(--blue-100)'
+        document.body.appendChild(probe)
+        const color = getComputedStyle(probe).backgroundColor
+        probe.remove()
+        return color
+      })(),
+      overflowY: getComputedStyle(area).overflowY,
+    }
+  })
+
+  expect(patch.hasTrack, '要有 webkit 轨道规则').toBe(true)
+  expect(patch.hasThumb, '要有 webkit 滑块规则').toBe(true)
+  expect(patch.hasStandard, '标准属性 scrollbar-color 也要给（Firefox）').toBe(true)
+  expect(patch.textareaNarrower, '文本框那一档更窄（10px）').toBe(true)
+  expect(patch.usesToken, '颜色来自 token').toBe(true)
+  expect(patch.rawHex, '滚动条那段不许出现写死色值').toBe(false)
+  // 计算样式上确实生效了，而且两色**就是** token 的解析值（滑块 --blue-400、轨道 --blue-100）
+  expect(patch.computed, 'scrollbar-color 应当是「滑块色 轨道色」这两个 token').toBe(
+    `${patch.thumb} ${patch.track}`,
+  )
+  // 结论：是"画成像素风"而不是"隐藏"—— 可滚区域照旧有原生滚动条
+  expect(patch.overflowY).toBe('auto')
+})

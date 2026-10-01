@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { booted } from './helpers'
+import { booted, press } from './helpers'
 
 /**
  * 纯键盘旅程：**文章详情页**与**文章列表页**（样机已冻结、生产已实现、此前 e2e 零覆盖）。
@@ -311,7 +311,7 @@ test('文章页：分组芯片回车 → 列表页且该分组选中，只加一
   expect((await page.evaluate(() => history.length)) - before).toBe(1)
 
   // 键盘回退一次就回到文章页 —— 证明不是两条历史
-  await page.keyboard.press('q')
+  await press(page, 'q')
   await expect(page).toHaveURL(new RegExp(`/post/${ARTICLE_KEY}$`))
   await expect(page.locator('[data-testid="chips"]')).toBeVisible()
 })
@@ -322,7 +322,7 @@ test('文章页：标签芯片回车 → 列表页且该标签选中（tag-* 带
   await openArticle(page)
 
   // G 进芯片行后 →（第二枚就是第一枚标签芯片）
-  await page.keyboard.press('g')
+  await press(page, 'g')
   await page.keyboard.press('ArrowRight')
   await expect(page.locator('[data-testid="chip-tag-1"]')).toHaveClass(/is-focused/)
 

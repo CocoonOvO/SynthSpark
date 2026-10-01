@@ -1,0 +1,69 @@
+/*
+ * 滚动条：**与站点风格一致**，而不是藏起来（用户反馈：文本框的滚动条样式与整体不符）。
+ *
+ * 为什么选"画成像素风"而不是"隐藏"：滚动条是**可滚动**这件事唯一的视觉提示 ——
+ * 隐藏之后长正文、长列表、日志页都看不出还能往下滚（键盘与滚轮虽然还能用，
+ * 但用户得先知道有东西可滚）。既然皮肤是 8bit 方块，那就把它画成方块：
+ * **方角、两段色、走 token**，与卡片边框、软键是同一套语言。
+ *
+ * 两套写法都要给，浏览器支持的不是同一个：
+ *   · `scrollbar-width` / `scrollbar-color`：标准属性（Firefox 全支持，Chromium 121+ 也认）
+ *   · `::-webkit-scrollbar*`：Chromium / Safari 的老写法（也是国内用户主力浏览器）
+ * 两套都写之后，Firefox 与 Chromium 的观感基本一致（前者不能指定圆角/边框，只能给两色）。
+ *
+ * 颜色全部 `var(--…)`（硬要求 5：色值只许住在 `src/styles/tokens.ts`）。
+ * 挂在 `*` 上是**刻意**的：滚动条出现在文本框、预览、列表、日志、屏幕容器等各处，
+ * 一个个挑选择器迟早漏掉一处；统一口径比"精确打击"更符合"整站一致"这个诉求。
+ */
+
+* {
+  /* 标准属性：轨道色 + 滑块色（两个颜色） */
+  scrollbar-width: thin;
+  scrollbar-color: var(--blue-400) var(--blue-100);
+}
+
+/* Chromium / Safari：方角 + 两段色，宽度取 12px（与像素格子同量级） */
+*::-webkit-scrollbar {
+  width: 12px;
+  height: 12px;
+}
+
+*::-webkit-scrollbar-track {
+  background: var(--blue-100);
+  /* 轨道上沿一条线，和卡片边框一个语言（不是圆角，8bit 没有圆角） */
+  border-left: 2px solid var(--blue-200);
+}
+
+*::-webkit-scrollbar-thumb {
+  background: var(--blue-400);
+  border: 2px solid var(--blue-100);
+}
+
+*::-webkit-scrollbar-thumb:hover {
+  background: var(--blue-500);
+}
+
+/* 交汇处（横竖滚动条相接）不留白块 */
+*::-webkit-scrollbar-corner {
+  background: var(--blue-100);
+}
+
+/*
+ * 例外一处：**输入框自己是滚动条**的主要出现地，字号小、行高矮，
+ * 12px 的滑块会显得笨重；这里收窄到 10px 并去掉轨道左侧那条线。
+ */
+textarea::-webkit-scrollbar,
+input::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+textarea::-webkit-scrollbar-track,
+input::-webkit-scrollbar-track {
+  border-left: 0;
+}
+
+textarea::-webkit-scrollbar-thumb,
+input::-webkit-scrollbar-thumb {
+  border: 2px solid var(--blue-100);
+}
