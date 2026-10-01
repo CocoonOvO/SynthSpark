@@ -694,7 +694,20 @@ class ConfigDBManager:
                             pass
                 logs.append(log)
             return logs
-    
+
+    def count_site_config_audit_logs(self) -> int:
+        """
+        统计站点配置审计日志的总条数（不分页）
+
+        接口的 `total` 要的是「符合条件的总条数」，不是「本页取回来的条数」——
+        分页时两者只在最后一页相等，前面每页都会偏小。计数只区分表，不接过滤条件，
+        因为查询接口目前也只支持 limit / offset。
+        """
+        with self._get_conn() as conn:
+            cursor = conn.execute("SELECT COUNT(*) FROM site_config_audit_logs")
+            row = cursor.fetchone()
+            return int(row[0]) if row else 0
+
     def get_audit_logs(
         self, admin_id: Optional[int] = None, limit: int = 50, offset: int = 0
     ) -> List[ConfigAuditLog]:
