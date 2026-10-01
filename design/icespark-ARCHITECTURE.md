@@ -3758,3 +3758,60 @@ GFM 的 `~~x~~` 需要 markdown-it 打开 `strikethrough` 规则，而本项目�
 
 - `npx playwright test`：**220 passed / 0 skipped**（220 条 / 35 个 spec）。
 - `npm run check` 八段 **EXIT=0**。
+
+## 59. 代码高亮：装、主题、样张文章（用户裁决「装吧，做好主题，并且写一篇测试代码高亮的文章」）（2026-10-01）
+
+### 59.1 怎么接的（三个刻意选择）
+
+| 选择 | 理由 |
+|---|---|
+| **渲染之后再染色**（`MarkdownBody.vue` 里 `watch(rendered)` → `nextTick` → `highlightCodeBlocks(根节点)`） | 走 markdown-it 的 `highlight` 选项就得让高亮产物穿过 DOMPurify、把 `span` 加进白名单（那张表每一行都要能说清出处）。后处理用的是**已清洗的 `textContent`**，白名单一个字没动 |
+| **延迟加载 + 只拉用到的语言**（`src/signal/highlight.ts`） | 正文先照常显示（纯文本也可读），颜色随后补上；只把这一篇里真的出现的语言拉下来。没有代码块时**库根本不下载** |
+| **主题自己写**（`src/styles/highlight.css`） | highlight.js 自带主题全是写死色值，会撞配色门（硬要求 5）。这里每个颜色都是 `var(--…)` |
+
+配色思路（克制：全站只有一个强调色）：关键字 `--blue-700` 加粗 · 字符串 `--spark`（唯一强调色）·
+注释 `--ink-faint` 斜体 · 数字/字面量 `--blue-600` · 函数名 `--ink` 加粗 ·
+内置/类型/变量 `--blue-500` · 运算符/标点 `--ink-soft`。
+
+### 59.2 门与预算
+
+- `md-and-pixels.spec.ts` 新增一条：三个围栏（javascript / python / **清单外的语言**）——
+  等 `.hljs-keyword` 出现（延迟加载），逐项对照 **token 解析值**（关键字 = `--blue-700`、
+  字符串 = `--spark`、注释 = `--ink-faint`）；python 也染色；清单外语言**不染色但一个字符不少**。
+- 性能预算（`check:budget`）五项全过：入口 JS **55.31 / 72 kB**、最大懒块
+  `MarkdownBody` **55.80 / 72 kB**、dist 总量 1343 / 2048 kB —— 高亮库被切成
+  「核心 + 每种语言一个小 chunk」，所以只涨了约 1 kB。
+
+### 59.3 三次踩坑（都不是产品问题，是"写法"问题）
+
+1. **TDZ**：`watch(() => clean(rendered.value), …, { immediate: true })` —— `immediate` 在
+   setup 期间就跑到 `clean()`，而它引用的 `PURIFY_TAGS` 是文件后面才声明的 `const`，
+   当场 `ReferenceError`、**整个正文组件渲染不出来**（表现是页面上 `md-body` 一个都没有）。
+   改成 `watch(rendered, …)`（观察渲染结果本身，顺带省掉一次清洗）。
+2. **Vite 认不出模板串动态导入**：`import(\`highlight.js/lib/languages/${name}\`)` 会让浏览器
+   拿到裸模块名并报 `Failed to resolve module specifier`。改成**显式字面量映射表**。
+3. **独立性门把注释当依赖**：注释里写了一句「动态导入」的示例字面量，
+   扫描器把它当成真依赖 → `UNDECLARED_PACKAGE` + `UNAPPROVED_PACKAGE` 双报。
+   注释改成文字描述（并把这条写进注释，免得下一个人再踩）。
+
+### 59.4 术语门的口径修正（被样张文章绊出来的）
+
+样张文章里那句 SQL `SELECT …` 让 `terminology.spec.ts` 报「article 页还留着游戏术语 SELECT」——
+它扫的是可见文本，而**代码块里出现 `SELECT` / `STAGE` / `TITLE` 这类大写标识符再正常不过**。
+这道门管的是**应用自己的文案**，所以改成：读 `innerText` 前先把 `pre` / `code` 临时
+`display:none`（读实时 DOM 而不是克隆 —— `innerText` 依赖布局，脱离文档读不到文本）。
+改完 `SELECT` 不再命中，其余文案照旧全扫。
+
+### 59.5 样张文章（已建在业务库里）
+
+- 标题：**代码高亮样张（可直接删除）** · slug **`code-highlight-sample`** · 已发布 ·
+  `/post/code-highlight-sample`
+- 11 个代码块：javascript / typescript / python / sql / bash / json / yaml / css / html +
+  **一个刻意的未知语言**（不染色但内容完整）+ 一个超长行（横向滚动）。
+- 真机实测：11 个围栏里 **10 个染色**（`data-highlighted="yes"`）、152 个高亮 span、
+  未知语言那个保持纯文本；浏览器标题同时验证了 §56（「代码高亮样张（可直接删除） · SynthSpark」）。
+
+### 59.6 验收
+
+- `npx playwright test`：**221 passed / 0 skipped**（221 条 / 35 个 spec），连跑两次一致。
+- `npm run check` 八段 **EXIT=0**（含独立性门与性能预算）。

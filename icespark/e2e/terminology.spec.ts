@@ -55,9 +55,27 @@ async function firstPostKey(page: Page): Promise<string | null> {
   return item ? item.slug || item.id : null
 }
 
-/** 当前屏幕上的可见文本里命中的游戏术语（空数组 = 这一格干净） */
+/**
+ * 当前屏幕上的可见文本里命中的游戏术语（空数组 = 这一格干净）。
+ *
+ * **不判用户写的代码**：`pre` / `code` 里的文本先临时藏起来再读 `innerText`。
+ * 理由是这道门管的是**应用自己的文案**，而代码块里出现 `SELECT` / `STAGE` / `TITLE`
+ * 这类大写标识符再正常不过 —— 实测就是这么被自己的样张文章绊了一次（架构 §59.3）。
+ * 读的是**实时 DOM**（不是克隆）：`innerText` 依赖布局，脱离文档的节点读不到文本。
+ */
 async function hitsOnScreen(page: Page): Promise<string[]> {
-  const text = await page.locator('[data-testid="screen"]').innerText()
+  const text = await page.locator('[data-testid="screen"]').evaluate((el) => {
+    const hidden: HTMLElement[] = []
+    el.querySelectorAll<HTMLElement>('pre, code').forEach((node) => {
+      hidden.push(node)
+      node.style.display = 'none'
+    })
+    const visible = (el as HTMLElement).innerText
+    hidden.forEach((node) => {
+      node.style.display = ''
+    })
+    return visible
+  })
   return GAME_TERMS.filter((term) => text.includes(term))
 }
 

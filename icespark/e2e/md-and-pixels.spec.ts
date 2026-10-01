@@ -269,6 +269,65 @@ test.describe('① markdown 正文渲染（MarkdownBody.vue + DOMPurify 白名�
     await expect(body).toContainText('后面')
   })
 
+  test('代码高亮：围栏被染色、颜色全部来自 token、语言铭牌照旧', async ({ page }) => {
+    /**
+     * 用户裁决 §59。要点：
+     *  · 高亮是**渲染之后**对 DOM 后处理（不穿清洗白名单），所以正文先可读、颜色随后到；
+     *  · 颜色一律 `var(--…)`，逐项与 token 解析值对照（写死色值会被配色门拦住，这里再钉一次）；
+     *  · 语言铭牌（`data-lang`）与他人无关，照旧。
+     */
+    const source = [
+      '```javascript',
+      'const n = 1 // 注释',
+      'function f(x) { return `s${x}` }',
+      '```',
+      '',
+      '```python',
+      'def g(n):',
+      '    return n + 1',
+      '```',
+      '',
+      '```nosuchlang',
+      '原样显示，不染色',
+      '```',
+    ].join('\n')
+    await stubIcesparkApi(page, { content: source })
+    await page.goto(`/post/${FIXTURE_SLUG}`)
+    await booted(page)
+
+    const fences = page.locator('.md-fence')
+    await expect(fences).toHaveCount(3)
+    await expect(fences.first()).toHaveAttribute('data-lang', 'javascript')
+
+    // 高亮库是延迟加载的：等它把第一个块染上色
+    const js = fences.first().locator('pre > code')
+    await expect(js.locator('.hljs-keyword').first()).toBeVisible({ timeout: 15_000 })
+
+    const blue700 = await resolveToken(page, '--blue-700')
+    const spark = await resolveToken(page, '--spark')
+    const inkFaint = await resolveToken(page, '--ink-faint')
+
+    const colors = await js.evaluate((el) => {
+      const pick = (sel: string) => {
+        const node = el.querySelector(sel)
+        return node ? getComputedStyle(node).color : 'MISSING'
+      }
+      return { keyword: pick('.hljs-keyword'), string: pick('.hljs-string'), comment: pick('.hljs-comment') }
+    })
+    expect(colors.keyword, '关键字用 --blue-700').toBe(blue700)
+    expect(colors.string, '字符串用唯一的强调色 --spark').toBe(spark)
+    expect(colors.comment, '注释最轻，用 --ink-faint').toBe(inkFaint)
+
+    // 第二个块（python）也要染色 —— 证明不是只照顾了第一种语言
+    const py = fences.nth(1).locator('pre > code')
+    await expect(py.locator('.hljs-keyword').first()).toHaveText('def')
+
+    // 清单外的语言：不染色，但代码照旧可读（不许因为不认识就吞掉内容）
+    const unknown = fences.nth(2).locator('pre > code')
+    await expect(unknown).toHaveText('原样显示，不染色')
+    await expect(unknown.locator('span')).toHaveCount(0)
+  })
+
   test('站内链接：正文里的 /post/ 链接渲染成 a[href^="/post/"]，并接上全站焦点视觉', async ({ page }) => {
     await openArticle(page)
 

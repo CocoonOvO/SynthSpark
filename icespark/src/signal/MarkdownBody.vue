@@ -19,8 +19,11 @@
  */
 import DOMPurify from 'dompurify'
 import MarkdownIt from 'markdown-it'
-import { computed } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
+
+import '@/styles/highlight.css'
+import { highlightCodeBlocks } from '@/signal/highlight'
 
 const props = defineProps<{ source: string }>()
 
@@ -47,6 +50,32 @@ md.renderer.rules.fence = (tokens, idx, options, env, self) => {
 
 // markdown-it 的原始产出（未清洗）。清洗放在 v-html 调用处：clean(rendered)。
 const rendered = computed(() => md.render(props.source || ''))
+
+/**
+ * 代码高亮：**渲染之后再染色**（用户裁决 §59）。
+ *
+ * 为什么不接进 markdown-it 的 `highlight` 选项：那样高亮产物要穿过 DOMPurify，
+ * 就得把 `span` 加进白名单（每一行都要能说清出处的那个表）；这里改在清洗**之后**
+ * 对 DOM 后处理，白名单一个字都不用动。
+ *
+ * 为什么用 `watch + nextTick`：`v-html` 换内容之后才谈得上染色；高亮库是**延迟加载**的
+ * （`signal/highlight.ts` 里动态 import），所以正文先照常显示，颜色随后补上。
+ * 没有代码块时那一步会直接返回，库根本不会下载。
+ */
+const bodyEl = ref<HTMLElement | null>(null)
+
+watch(
+  // 观察**渲染结果**而不是 `clean(...)`：getter 里一旦调用 `clean()`，
+  // `immediate: true` 会在 setup 期间就跑到它，而它引用的 `PURIFY_TAGS` 是文件后面
+  // 才声明的 `const` —— 当场 TDZ 报错、整个组件渲染不出来（本门踩过一次）。
+  rendered,
+  async () => {
+    await nextTick()
+    const el = bodyEl.value
+    if (el) void highlightCodeBlocks(el)
+  },
+  { immediate: true },
+)
 
 /**
  * 安全：生产版在样机之上**唯一**的增强，就是这一层 DOMPurify。
@@ -163,7 +192,13 @@ function onBodyClick(e: MouseEvent) {
 </script>
 
 <template>
-  <div class="md-body" data-testid="md-body" v-html="clean(rendered)" @click="onBodyClick" />
+  <div
+    ref="bodyEl"
+    class="md-body"
+    data-testid="md-body"
+    v-html="clean(rendered)"
+    @click="onBodyClick"
+  />
 </template>
 
 <style scoped>

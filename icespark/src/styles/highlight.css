@@ -1,0 +1,109 @@
+/*
+ * 代码高亮的**配色**（用户裁决「做好主题」）。
+ *
+ * 为什么自己写主题、不用 highlight.js 自带的：自带主题全是**写死色值**，
+ * 会直接撞上配色门（硬要求 5：颜色只许住在 `src/styles/tokens.ts`）。
+ * 这里每一个颜色都是 `var(--…)`，也就是全站那一套 token（浅蓝 + 白 + 一个强调色）。
+ *
+ * 配色思路：**克制** —— 这个站只有一个强调色（`--spark`，粉），其余都是蓝的层次。
+ *   · 注释最轻（`--ink-faint`）—— 它本来就是"可以跳过"的部分；
+ *   · 关键字最重（`--blue-700`）—— 骨架要一眼看出来；
+ *   · **字符串用唯一的强调色** —— 粉色的字符串在浅蓝里最好认，也不至于花；
+ *   · 数字 / 字面量回到中间蓝（`--blue-600`），函数名用最深墨色加粗（`--ink`）；
+ *   · 运算符与标点最淡（`--ink-soft`），只做分隔，不抢视线。
+ *
+ * 选择器写成 `.md-body .hljs-*` 而不是 scoped：这些节点是 `v-html` 进来的，
+ * scoped 样式够不到它们（`MarkdownBody.vue` 里的 `:deep()` 是同一个道理的另一种写法）。
+ * 本文件在 `src/styles/` 下、由 `MarkdownBody.vue` 引入，所以它跟着正文那个懒加载 chunk 走。
+ */
+
+.md-body .hljs {
+  color: var(--ink);
+  background: none;
+}
+
+/* 注释 / 引用：最轻，斜体 */
+.md-body .hljs-comment,
+.md-body .hljs-quote {
+  color: var(--ink-faint);
+  font-style: italic;
+}
+
+/* 关键字 / 标签 / 元信息：骨架，最重 */
+.md-body .hljs-keyword,
+.md-body .hljs-selector-tag,
+.md-body .hljs-doctag,
+.md-body .hljs-meta .hljs-keyword,
+.md-body .hljs-template-tag {
+  color: var(--blue-700);
+  font-weight: 700;
+}
+
+/* 字符串 / 正则 / 属性值：唯一的强调色 */
+.md-body .hljs-string,
+.md-body .hljs-regexp,
+.md-body .hljs-attr,
+.md-body .hljs-attribute,
+.md-body .hljs-addition,
+.md-body .hljs-selector-attr,
+.md-body .hljs-selector-pseudo,
+.md-body .hljs-template-variable {
+  color: var(--spark);
+}
+
+/* 数字 / 字面量 / 布尔 / 符号：中间蓝 */
+.md-body .hljs-number,
+.md-body .hljs-literal,
+.md-body .hljs-symbol,
+.md-body .hljs-bullet,
+.md-body .hljs-meta,
+.md-body .hljs-selector-id,
+.md-body .hljs-selector-class {
+  color: var(--blue-600);
+}
+
+/* 函数 / 类 / 标题：墨色加粗，与关键字区分开 */
+.md-body .hljs-title,
+.md-body .hljs-title.function_,
+.md-body .hljs-title.class_,
+.md-body .hljs-section,
+.md-body .hljs-name {
+  color: var(--ink);
+  font-weight: 700;
+}
+
+/* 内置对象 / 类型 / 变量：浅一档的蓝 */
+.md-body .hljs-built_in,
+.md-body .hljs-type,
+.md-body .hljs-variable,
+.md-body .hljs-params,
+.md-body .hljs-property {
+  color: var(--blue-500);
+}
+
+/* 运算符 / 标点：只做分隔 */
+.md-body .hljs-operator,
+.md-body .hljs-punctuation,
+.md-body .hljs-subst {
+  color: var(--ink-soft);
+}
+
+/* 删除 / 强调（diff 代码块里出现）：与正文同一套语义 */
+.md-body .hljs-deletion {
+  color: var(--ink-faint);
+  text-decoration: line-through;
+}
+
+.md-body .hljs-emphasis {
+  font-style: italic;
+}
+
+.md-body .hljs-strong {
+  font-weight: 700;
+}
+
+/* 链接：与正文里的站内链接一个样子（下划线 + 蓝） */
+.md-body .hljs-link {
+  color: var(--blue-600);
+  text-decoration: underline;
+}
