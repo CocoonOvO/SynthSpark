@@ -20,6 +20,84 @@ import { booted } from './helpers'
 
 /** 装记录器：任何 keydown 都会被记下（捕获阶段，比组件监听早） */
 /** 打桩成已登录的超管（与 parity-pages-keyboard.spec.ts 同一写法） */
+/** 公开用户页的桩：按用户名给作者，按 author_id 给一篇已发布文章 */
+async function stubAuthorPage(page: Page): Promise<void> {
+  const post = {
+    id: 'p-1',
+    slug: 'user-post-1',
+    title: '作者的文章',
+    introduction: '摘要',
+    cover_image: null,
+    status: 'published',
+    author_id: 'u-1',
+    author_name: '测试作者',
+    author_username: 'e2e_writer',
+    author_avatar: null,
+    author_type: 'user',
+    tags: [],
+    group_id: 'g-1',
+    group_name: '技术',
+    view_count: 3,
+    like_count: 1,
+    content: '# 正文\n\n内容。',
+    created_at: '2026-09-20T10:00:00',
+    updated_at: '2026-09-20T10:00:00',
+    published_at: '2026-09-20T10:00:00',
+  }
+  await page.route(/\/api\/users\/by-username\//, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'u-1',
+        username: 'e2e_writer',
+        display_name: '测试作者',
+        avatar_url: null,
+        bio: null,
+        user_type: 'user',
+        created_at: '2026-09-01T00:00:00',
+      }),
+    }),
+  )
+  await page.route(/\/api\/(posts|comments)\//, (route) => {
+    const path = new URL(route.request().url()).pathname
+    const body = path.startsWith('/api/comments/')
+      ? { total: 0, comments: [] }
+      : { items: [post], total: 1 }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(body),
+    })
+  })
+}
+
+/** 审计接口桩：两页夹具（offset=0 两条、offset=10 一条，total=12 才算两页） */
+async function stubAuditLogs(page: Page): Promise<void> {
+  const base = {
+    admin_id: 'e2e-admin-id',
+    admin_username: 'e2e_boss',
+    action: 'update',
+    old_value: { site: { name: '旧名' } },
+    new_value: { site: { name: '新名' } },
+    ip_address: '203.0.113.7',
+    user_agent: 'Mozilla/5.0 (e2e-browser)',
+    created_at: '2026-09-29 14:11:48',
+  }
+  await page.route(/\/api\/admin\/site-config\/audit-logs/, (route) => {
+    const offset = new URL(route.request().url()).searchParams.get('offset') ?? '0'
+    const logs =
+      offset === '0'
+        ? [{ ...base, id: 7 }, { ...base, id: 6, created_at: '2026-09-28 10:00:00' }]
+        : [{ ...base, id: 1, created_at: '2026-09-27 09:00:00' }]
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ logs, total: 12 }),
+    })
+  })
+}
+
 /** 打桩成已登录的普通作者（能写作、不能进管理页） */
 async function author(page: Page): Promise<void> {
   const user = { id: 'e2e-id', username: 'e2e_writer', display_name: '测试作者', is_superuser: false }
@@ -422,6 +500,100 @@ test('纯鼠标：404 皮肤点「文章列表」离开这一页（零键盘）'
 
   await expect(page).toHaveURL(/\/posts$/)
   await expect(page.locator('.app')).toHaveAttribute('data-scene', 'posts')
+
+  await expectNoKeys(page)
+})
+
+test('纯鼠标：审计页点翻页按钮来去（零键盘）', async ({ page }) => {
+  await installRecorder(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('synthspark-icespark-sound-prompt', '1')
+  })
+  await superuser(page)
+  await stubAuditLogs(page)
+
+  await page.goto('/admin/audit')
+  await booted(page)
+  await expect(page.locator('[data-testid="audit-position"]')).toHaveText('第 1 / 2 页')
+
+  // 鼠标侧只有翻页这一件事可做（列表是只读的），点「下一页 / 上一页」来去
+  await page.click('[data-testid="audit-next"]')
+  await expect(page.locator('[data-testid="audit-position"]')).toHaveText('第 2 / 2 页')
+  await page.click('[data-testid="audit-prev"]')
+  await expect(page.locator('[data-testid="audit-position"]')).toHaveText('第 1 / 2 页')
+
+  await expectNoKeys(page)
+})
+
+test('纯鼠标：个人设置页点进昵称格改写、点「保存」（零键盘）', async ({ page }) => {
+  await installRecorder(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('synthspark-icespark-sound-prompt', '1')
+  })
+  const user = {
+    id: 'e2e-id',
+    username: 'e2e_boss',
+    display_name: '测试超管',
+    is_superuser: true,
+    email: 'boss@example.com',
+    bio: null,
+    avatar_url: null,
+  }
+  await page.addInitScript((u) => {
+    localStorage.setItem('synthspark-token', 'e2e-token')
+    localStorage.setItem('synthspark-icespark-user', JSON.stringify(u))
+  }, user)
+  await page.route('**/api/auth/me', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(user) }),
+  )
+  const writes: { method: string; body: Record<string, unknown> | null }[] = []
+  await page.route(/\/api\/(users|upload)\//, (route) => {
+    const method = route.request().method()
+    const path = new URL(route.request().url()).pathname
+    if (method === 'GET' && path === '/api/users/me') {
+      return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(user) })
+    }
+    const raw = route.request().postData()
+    writes.push({ method, body: raw ? (JSON.parse(raw) as Record<string, unknown>) : null })
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ...user, display_name: '鼠标改的昵称' }),
+    })
+  })
+
+  await page.goto('/profile')
+  await booted(page)
+
+  const name = page.locator('[data-testid="profile-display-name"]')
+  await expect(name).toHaveValue('测试超管')
+  await name.click()
+  await name.fill('鼠标改的昵称')
+  await page.click('[data-testid="profile-save"]')
+
+  await expect.poll(() => writes.length, { message: '保存应当真发一次写请求' }).toBeGreaterThan(0)
+  expect(writes[0]?.body, '请求体里应当是鼠标写进去的新昵称').toMatchObject({
+    display_name: '鼠标改的昵称',
+  })
+
+  await expectNoKeys(page)
+})
+
+test('纯鼠标：公开用户页点作者的文章卡进详情（零键盘）', async ({ page }) => {
+  await installRecorder(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('synthspark-icespark-sound-prompt', '1')
+  })
+  await stubAuthorPage(page)
+
+  await page.goto('/user/e2e_writer')
+  await booted(page)
+  await expect(page.locator('[data-testid="user-card"]')).toBeVisible()
+  await expect(page.locator('[data-testid="user-post-card"]')).toHaveCount(1)
+
+  await page.click('[data-testid="user-post-card"]')
+  await expect(page).toHaveURL(/\/post\/user-post-1$/)
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'article')
 
   await expectNoKeys(page)
 })

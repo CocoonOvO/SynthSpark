@@ -73,3 +73,16 @@ test('逐页 parity 清单：两种输入方式都没覆盖的页，原因里要
   }
   expect(vague).toEqual([])
 })
+
+test('清单里唯一一条「设计上没有可交互元素」的页，真的没有（否则那句话就过期了）', async ({
+  page,
+}) => {
+  // `/about` 在清单里是唯一两种输入方式都写 `null` 的一页，理由是「按设计没有可交互元素」。
+  // 这句理由必须**可被验证**：哪天有人往关于页加了一颗按钮，这里会红，
+  // 于是那句理由要么改成真缺口、要么补上键鼠两条旅程。
+  await page.goto('/about')
+  await expect(page.locator('.app')).not.toHaveAttribute('data-scene', 'boot')
+  // 只数屏幕内：标签栏在 `.screen-inner` 外面，是外壳的
+  await expect(page.locator('.screen-inner .focusable')).toHaveCount(0)
+  await expect(page.locator('.screen-inner button, .screen-inner a[href]')).toHaveCount(0)
+})

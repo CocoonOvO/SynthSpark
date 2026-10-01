@@ -40,20 +40,8 @@ export const PAGES: PageCoverage[] = [
   },
 
   // ── 用户侧补充页 ──
-  {
-    path: '/user/:username',
-    mouse: null,
-    keyboard: null,
-    reason:
-      '待补（§51）：公开用户页目前只有 user-profile.spec 的**混合**用例（点卡与回车到达同一落点），' +
-      '还没有「只鼠标 / 只键盘」各走一遍带记录器的旅程',
-  },
-  {
-    path: '/profile',
-    mouse: null,
-    keyboard: '个人页改昵称并保存',
-    reason: '待补（§51）：个人设置页只有纯键盘旅程，鼠标侧还是 profile.spec 的混合用例',
-  },
+  { path: '/user/:username', mouse: '公开用户页点作者的文章卡', keyboard: '公开用户页回车进作者的文章' },
+  { path: '/profile', mouse: '个人设置页点进昵称格改写', keyboard: '个人页改昵称并保存' },
   {
     path: '/write/:key?',
     mouse: '写作页点两格写字',
@@ -63,14 +51,7 @@ export const PAGES: PageCoverage[] = [
   // ── 超管三页 ──
   { path: '/admin/site', mouse: '站点设置页点段换页', keyboard: '站点设置页 ↓/ENTER 换段' },
   { path: '/admin/links', mouse: '管理页读一条、改一条', keyboard: '外链管理页 ↓ 到卡片' },
-  {
-    path: '/admin/audit',
-    mouse: null,
-    keyboard: null,
-    reason:
-      '待补（§51）：审计页是只读列表 + 翻页，目前只有 admin-audit.spec 的功能用例，' +
-      '缺「纯鼠标点翻页 / 纯键盘 PgUp·PgDn 翻页」两条带记录器的旅程',
-  },
+  { path: '/admin/audit', mouse: '审计页点翻页按钮来去', keyboard: '审计页 PgDn / PgUp 翻页' },
 
   // ── 兜底页 ──
   { path: '/:pathMatch(.*)*', mouse: '404 皮肤点「文章列表」', keyboard: '404 皮肤方向键选动作' },

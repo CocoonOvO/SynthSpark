@@ -89,6 +89,84 @@ async function stubContent(page: Page): Promise<void> {
 }
 
 /** 超管登录态（打桩 `/api/auth/me`，不碰真账号） */
+/** 公开用户页的桩：按用户名给作者，按 author_id 给一篇已发布文章 */
+async function stubAuthorPage(page: Page): Promise<void> {
+  const post = {
+    id: 'p-1',
+    slug: 'user-post-1',
+    title: '作者的文章',
+    introduction: '摘要',
+    cover_image: null,
+    status: 'published',
+    author_id: 'u-1',
+    author_name: '测试作者',
+    author_username: 'e2e_writer',
+    author_avatar: null,
+    author_type: 'user',
+    tags: [],
+    group_id: 'g-1',
+    group_name: '技术',
+    view_count: 3,
+    like_count: 1,
+    content: '# 正文\n\n内容。',
+    created_at: '2026-09-20T10:00:00',
+    updated_at: '2026-09-20T10:00:00',
+    published_at: '2026-09-20T10:00:00',
+  }
+  await page.route(/\/api\/users\/by-username\//, (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        id: 'u-1',
+        username: 'e2e_writer',
+        display_name: '测试作者',
+        avatar_url: null,
+        bio: null,
+        user_type: 'user',
+        created_at: '2026-09-01T00:00:00',
+      }),
+    }),
+  )
+  await page.route(/\/api\/(posts|comments)\//, (route) => {
+    const path = new URL(route.request().url()).pathname
+    const body = path.startsWith('/api/comments/')
+      ? { total: 0, comments: [] }
+      : { items: [post], total: 1 }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(body),
+    })
+  })
+}
+
+/** 审计接口桩：两页夹具（offset=0 两条、offset=10 一条，total=12 才算两页） */
+async function stubAuditLogs(page: Page): Promise<void> {
+  const base = {
+    admin_id: 'e2e-admin-id',
+    admin_username: 'e2e_boss',
+    action: 'update',
+    old_value: { site: { name: '旧名' } },
+    new_value: { site: { name: '新名' } },
+    ip_address: '203.0.113.7',
+    user_agent: 'Mozilla/5.0 (e2e-browser)',
+    created_at: '2026-09-29 14:11:48',
+  }
+  await page.route(/\/api\/admin\/site-config\/audit-logs/, (route) => {
+    const offset = new URL(route.request().url()).searchParams.get('offset') ?? '0'
+    const logs =
+      offset === '0'
+        ? [{ ...base, id: 7 }, { ...base, id: 6, created_at: '2026-09-28 10:00:00' }]
+        : [{ ...base, id: 1, created_at: '2026-09-27 09:00:00' }]
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ logs, total: 12 }),
+    })
+  })
+}
+
 /** 打桩成已登录的普通作者（能写作、不能进管理页） */
 async function author(page: Page): Promise<void> {
   const user = { id: 'e2e-id', username: 'e2e_writer', display_name: '测试作者', is_superuser: false }
@@ -513,6 +591,50 @@ test('纯键盘：404 皮肤方向键选动作 + 回车离开这一页（零指�
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL(/\/posts$/)
   await expect(page.locator('.app')).toHaveAttribute('data-scene', 'posts')
+
+  await expectNoPointer(page)
+})
+
+test('纯键盘：审计页 PgDn / PgUp 翻页，翻完行光标还在（零指针事件）', async ({ page }) => {
+  await installPointerRecorder(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('synthspark-icespark-sound-prompt', '1')
+  })
+  await superuser(page)
+  await stubAuditLogs(page)
+
+  await page.goto('/admin/audit')
+  await booted(page)
+  await expect(page.locator('[data-testid="audit-position"]')).toHaveText('第 1 / 2 页')
+
+  await press(page, 'PageDown')
+  await expect(page.locator('[data-testid="audit-position"]')).toHaveText('第 2 / 2 页')
+  await press(page, 'PageUp')
+  await expect(page.locator('[data-testid="audit-position"]')).toHaveText('第 1 / 2 页')
+
+  // 翻页会重画整个列表 —— 顺手钉住「重画之后键盘还活着」：行光标仍能被方向键推动
+  // （§32/§47 那类「重渲染把焦点搞丢」的坑，在这一页也要成立）
+  await press(page, 'ArrowDown')
+  await expect(page.locator('[data-testid="audit-log"].is-focused')).toHaveCount(1)
+
+  await expectNoPointer(page)
+})
+
+test('纯键盘：公开用户页回车进作者的文章（零指针事件）', async ({ page }) => {
+  await installPointerRecorder(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('synthspark-icespark-sound-prompt', '1')
+  })
+  await stubAuthorPage(page)
+
+  await page.goto('/user/e2e_writer')
+  await booted(page)
+
+  // 光标起点就是第一张文章卡（不用先走返回按钮），回车即进详情
+  await expect(page.locator('[data-testid="user-post-card"]')).toHaveClass(/is-focused/)
+  await press(page, 'Enter')
+  await expect(page).toHaveURL(/\/post\/user-post-1$/)
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'article')
 
   await expectNoPointer(page)
 })
