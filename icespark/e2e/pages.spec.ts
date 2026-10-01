@@ -229,3 +229,67 @@ test('鼠标与键盘到达同一页：两条路径的落点完全一致', async
 
   expect(byKeyboard).toBe(byMouse)
 })
+
+/* ────────────── 文章读不出来时的页内空态（§58） ────────────── */
+
+/**
+ * 曾经的缺陷（§31.5）：打开一篇不存在 / 已删除的文章，页面永远停在「读取正文 …」——
+ * 没有原因、也没有出路，只能靠地址栏或后退键逃。用户裁决后补了页内空态 + 两个动作。
+ */
+test('文章详情：这一篇不存在时给页内空态 + 两个动作，不再永远转圈', async ({ page }) => {
+  // 让接口真的回 404（不是网络失败）：这是"不存在"与"没读到"的分界
+  await page.route(/\/api\/posts\//, (route) =>
+    route.fulfill({
+      status: 404,
+      contentType: 'application/json',
+      body: JSON.stringify({ detail: '文章不存在' }),
+    }),
+  )
+
+  await page.goto('/post/__no_such_post__')
+  await booted(page)
+
+  const empty = page.locator('[data-testid="post-missing"]')
+  await expect(empty).toBeVisible()
+  await expect(empty).toContainText('这篇文章不存在或已删除')
+  // 回归断言：那条永远转不完的「读取正文 …」不许再出现
+  await expect(page.locator('.loading')).toHaveCount(0)
+  await expect(page.getByText('读取正文')).toHaveCount(0)
+
+  // 两个动作都是真按钮、都是真 URL
+  await expect(page.locator('[data-testid="post-fallback-posts"]')).toBeVisible()
+  await expect(page.locator('[data-testid="post-fallback-home"]')).toBeVisible()
+  await page.click('[data-testid="post-fallback-posts"]')
+  await expect(page).toHaveURL(/\/posts$/)
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'posts')
+})
+
+test('文章详情：读失败（非 404）给另一句文案，同样两个动作；键盘也能走掉', async ({ page }) => {
+  // 500 = "没读到"，与 404 的"不存在"分开口径
+  await page.route(/\/api\/posts\//, (route) =>
+    route.fulfill({
+      status: 500,
+      contentType: 'application/json',
+      body: JSON.stringify({ detail: '数据库开小差' }),
+    }),
+  )
+
+  await page.goto('/post/__boom__')
+  await booted(page)
+
+  const failed = page.locator('[data-testid="post-error"]')
+  await expect(failed).toBeVisible()
+  await expect(failed).toContainText('正文读取失败')
+
+  // 纯键盘：一路 Tab 直到落进这颗动作按钮，再回车（不许只有鼠标走得了）。
+  // 不写死步数 —— 空态前面还有场景头与页内其它可聚焦项，步数以后会变。
+  const fallback = page.locator('[data-testid="post-fallback-posts"]')
+  let reached = false
+  for (let i = 0; i < 15 && !reached; i += 1) {
+    await press(page, 'Tab')
+    reached = await fallback.evaluate((el) => el === document.activeElement)
+  }
+  expect(reached, 'Tab 应当能走到空态里的动作按钮').toBe(true)
+  await page.keyboard.press('Enter')
+  await expect(page).toHaveURL(/\/posts$/)
+})

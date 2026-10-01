@@ -37,7 +37,7 @@ import { onPad } from '@/input/pad'
 import { useStatusBar } from '@/scene/clock'
 import { scrollScreenBy, scrollScreenTo } from '@/scene/screen'
 import { useFocusGroup } from '@/input/focus'
-import { goPosts, goBackOrPosts } from '@/scene/nav'
+import { goPosts, goBackOrPosts, goTab } from '@/scene/nav'
 import { playSfx, type SfxKind } from '@/input/sfx'
 import { useContentStore } from '@/stores/content'
 import { shortDate } from '@/api/format'
@@ -336,7 +336,35 @@ function closeDialog() {
       <span v-if="post" class="head-date hint">{{ shortDate(post.created_at) }}</span>
     </SceneHead>
 
-    <div v-if="!post" class="loading px"><span class="blink">▌</span> 读取正文 …</div>
+    <!-- 这一篇读不出来时给**页内空态 + 两个动作**（用户裁决 §58）：
+         原先无论哪种失败都只剩「读取正文 …」，永远不会结束，用户既看不到原因也走不掉。 -->
+    <div
+      v-if="!post && content.postError"
+      class="state px"
+      :data-testid="content.postError === 'missing' ? 'post-missing' : 'post-error'"
+    >
+      <p class="state-title">
+        {{ content.postError === 'missing' ? '这篇文章不存在或已删除。' : '正文读取失败。' }}
+      </p>
+      <p class="state-hint hint">
+        {{
+          content.postError === 'missing'
+            ? '地址里的编号没有对应的文章，或者它还没有公开。'
+            : '后端不可达或接口出错，稍后再试。'
+        }}
+      </p>
+      <!-- 两个动作：与全站一致的 .btn.focusable（原生 Tab + 回车即可，不必用鼠标） -->
+      <div class="state-actions">
+        <button class="btn focusable mini" data-testid="post-fallback-posts" @click="goPosts({}, 'wipe')">
+          返回列表
+        </button>
+        <button class="btn focusable mini" data-testid="post-fallback-home" @click="goTab('home', 'wipe')">
+          回主页
+        </button>
+      </div>
+    </div>
+
+    <div v-else-if="!post" class="loading px"><span class="blink">▌</span> 读取正文 …</div>
 
     <div v-else class="doc-wrap">
       <h1 class="doc-title">{{ post.title }}</h1>
@@ -484,6 +512,35 @@ function closeDialog() {
 
 .head-date {
   color: var(--ink-faint);
+}
+
+/* 空态（§58）：标题 + 一句解释 + 两个动作，居中一块，别让用户面对一个空屏幕 */
+.state {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 10px;
+  padding: 40px 16px;
+  text-align: center;
+}
+
+.state-title {
+  font-family: 'Source Han Sans CN', 'Noto Sans CJK SC', sans-serif;
+  font-weight: 700;
+  font-size: 18px;
+  margin: 0;
+  color: var(--ink);
+}
+
+.state-hint {
+  margin: 0;
+  color: var(--ink-soft);
+}
+
+.state-actions {
+  display: flex;
+  gap: 10px;
+  margin-top: 6px;
 }
 
 .loading {

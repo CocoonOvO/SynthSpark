@@ -1,6 +1,7 @@
 import { computed, ref } from 'vue'
 import { defineStore } from 'pinia'
 
+import { ApiError } from '@/api/client'
 import { fetchComments } from '@/api/comments'
 import { fetchGroups } from '@/api/groups'
 import { fetchLinks } from '@/api/links'
@@ -35,6 +36,13 @@ export const useContentStore = defineStore('content', () => {
   /** 样机初始值是 DEMO_STATS(3/6/88)；正式版没有样张，退化为 0，接口回来再覆盖 */
   const stats = ref<Stats>({ agent_count: 0, post_count: 0, total_views: 0 })
   const post = ref<Post | null>(null)
+
+/**
+ * 正文为什么是空的（用户裁决 §58）：`null` = 正常 / 还没读完，
+ * `'missing'` = 这篇文章不存在（HTTP 404），`'error'` = 其它失败（后端不可达 / 接口出错）。
+ * 页面据此给**页内空态 + 两个动作**，而不是永远停在「读取正文 …」。
+ */
+const postError = ref<'missing' | 'error' | null>(null)
   const comments = ref<Comment[]>([])
   const groups = ref<Group[]>([])
   const tags = ref<Tag[]>([])
@@ -90,9 +98,14 @@ export const useContentStore = defineStore('content', () => {
    * 它本来就没打过接口，谈不上命中还是没命中。
    */
   async function loadPost(key?: string): Promise<void> {
+    // 每次进来先清掉上一次的结论，免得快速换地址时留着上一篇的空态理由
+    postError.value = null
+
     if (!key || key === 'all') {
       post.value = null
       comments.value = []
+      // 没给 key（或给了 `all`）等于"没有这一篇"：页面按「不存在」渲染，而不是一直转圈
+      postError.value = 'missing'
       return
     }
 
@@ -104,11 +117,14 @@ export const useContentStore = defineStore('content', () => {
         const c = await fetchComments(p.id)
         comments.value = c.comments || []
         dataSource.value = 'live'
-      } catch {
-        // 正文或评论任一步失败都落空态：样机是「整块换成样张」，正式版就是「整块空掉」
+      } catch (error) {
+        // 正文或评论任一步失败都落空态：样机是「整块换成样张」，正式版就是「整块空掉」。
+        // 但要分清**为什么**空：404 是"这篇不存在"，其余是"没读到" —— 两种给同一套动作，
+        // 文案不同（用户裁决 §58）。
         post.value = null
         comments.value = []
         dataSource.value = 'demo'
+        postError.value = error instanceof ApiError && error.status === 404 ? 'missing' : 'error'
       }
     })
   }
@@ -173,6 +189,7 @@ export const useContentStore = defineStore('content', () => {
     total,
     stats,
     post,
+    postError,
     comments,
     groups,
     tags,
