@@ -1,4 +1,7 @@
+import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
+
+import { scanViolations } from './a11y-known'
 
 /**
  * **打包产物冒烟门**（架构 §36）—— 跑在 `vite preview`（4175）上，不是 dev 服务器。
@@ -211,4 +214,88 @@ test('产物：设计系统的像素事实在打包产物里同样成立（样�
   // 再验一条只在产物里才成立的：懒加载视图的 CSS 真的被当成独立资源请求过
   await page.goto('/post/__no_such_post__')
   await expect(page.locator('.app')).not.toHaveAttribute('data-scene', 'boot')
+})
+
+/**
+ * 产物侧的无障碍扫描：清单仍然只有 `e2e/a11y-known.ts` 一份（§33）。
+ *
+ * **这道门能抓什么、抓不到什么**（写清楚免得下次白试）：
+ *   · 抓得到**结构性**问题 —— 去掉 `index.html` 的 `lang` 会立刻红在 `html-has-lang`
+ *     （实测过，见 §45 的反例）；少 `label` / 坏 `aria-*` 同理；
+ *   · **抓不到屏幕内的对比度** —— 屏幕外框里的文字在 CRT 扫描线之下，axe 只会归进
+ *     `incomplete`。实测：把 `.head-title` 改成 `#f2f2f2`（与白底几乎同色）这道门照样绿。
+ *     屏幕内的对比度目前只能靠 `palette.spec.ts` 的 token 对照 + 人工看。
+ */
+test('产物：axe 扫描在打包产物上也只有清单里的已知违规', async ({ page }) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('synthspark-icespark-sound-prompt', '1')
+  })
+  // 打桩内容：产物侧只验「结构 + 样式」的无障碍事实，不依赖真库有没有文章
+  const post = {
+    id: '11111111-2222-3333-4444-555555555555',
+    slug: 'prod-a11y',
+    title: '产物无障碍事实用的卡',
+    content: '# 产物\n\n正文。',
+    introduction: '摘要',
+    cover_image: null,
+    status: 'published',
+    author_id: 'u-1',
+    author_name: '作者',
+    author_username: 'e2e_writer',
+    author_avatar: null,
+    author_type: 'user',
+    tags: [],
+    group_id: 'g-1',
+    group_name: '技术',
+    view_count: 0,
+    like_count: 0,
+    created_at: '2026-09-20T10:00:00',
+    updated_at: '2026-09-20T10:00:00',
+    published_at: '2026-09-20T10:00:00',
+  }
+  await page.route(/\/(api)\/(posts|comments|groups|tags)\//, (route) => {
+    const pathname = new URL(route.request().url()).pathname
+    const body = pathname.startsWith('/api/comments/')
+      ? { total: 0, comments: [] }
+      : pathname === '/api/groups/' || pathname === '/api/tags/'
+        ? []
+        : { items: [post], total: 1 }
+    return route.fulfill({ status: 200, contentType: 'application/json', body: JSON.stringify(body) })
+  })
+
+  const report: Record<string, string[]> = {}
+  let allowedSeen = 0
+
+  /** 等自检过去、等一帧稳定，再按**唯一清单**判定（清单只有 `e2e/a11y-known.ts` 一份） */
+  const scan = async () => {
+    await page.waitForFunction(
+      () => document.querySelector('.app')?.getAttribute('data-scene') !== 'boot',
+      null,
+      { timeout: 20_000 },
+    )
+    await page.waitForTimeout(250)
+    const { violations, allowed } = scanViolations(await new AxeBuilder({ page }).analyze())
+    allowedSeen += allowed.length
+    return violations
+  }
+
+  for (const path of ['/', '/posts', '/about', '/nope-404', '/links']) {
+    await page.goto(path)
+    const violations = await scan()
+    if (violations.length) report[path] = violations
+  }
+
+  // 暂停菜单（外壳级模态在产物里同样要干净）
+  await page.goto('/')
+  await scan()
+  await page.keyboard.press('p')
+  await expect(page.locator('[data-testid="pause"]')).toBeVisible()
+  const paused = scanViolations(await new AxeBuilder({ page }).analyze())
+  allowedSeen += paused.allowed.length
+  if (paused.violations.length) report['pause'] = paused.violations
+
+  expect(report, `产物里出现了清单外的违规：${JSON.stringify(report, null, 1)}`).toEqual({})
+  // 自我证明：清单里那几处（底栏小字对比度）**确实被 axe 命中了** ——
+  // 否则「零违规」可能只是扫描没跑起来
+  expect(allowedSeen, '应当扫到底栏小字那几处已知命中（证明扫描真的跑了）').toBeGreaterThan(0)
 })

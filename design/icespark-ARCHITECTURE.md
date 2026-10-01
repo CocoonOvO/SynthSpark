@@ -3214,3 +3214,28 @@ P1 收尾时做过一次**人工**产物验证（§14.6：「`npm run build` 后
 
 - `npx playwright test`：**187 passed / 3 skipped**（190 条 / 30 个 spec）。
 - `npm run check` 八段 **EXIT=0**。
+
+## 45. 产物侧再补一道 axe 扫描：它能抓什么、抓不到什么（2026-10-01）
+
+§33 把 axe 的放行清单收成一份、§43 把像素事实搬进产物项目之后，产物侧只剩无障碍没扫过。
+`production.spec.ts` 新增一条：在 `vite preview` 上扫 5 条路由 + 暂停菜单，按**同一份**
+`e2e/a11y-known.ts` 判定（清单不新增第二份），并顺手自证「扫描真的跑了」——
+断言清单里那几处已知命中（底栏小字对比度）**确实被 axe 命中过**，
+否则「零违规」有可能只是扫描没起来。
+
+### 45.1 反例验证：一次失败、一次成功，两次都值得记
+
+1. **失败的那次**：把 `SceneHead` 的 `.head-title` 颜色改成 `#f2f2f2`（与白底几乎同色）
+   → 门**照样绿**。原因不是门坏了，而是**屏幕外框里的文字 axe 判不了对比度**
+   （CRT 扫描线是一层渐变，`color-contrast` 只会落进 `incomplete`）——
+   这条限制 `a11y.spec.ts` 的文件头早写过，这次是真撞上了。
+2. **成功的那次**：去掉 `index.html` 的 `<html lang="zh-CN">` → 门立刻红在
+   `[serious] html-has-lang → html`（五条路由各报一次，`lang` 是文档级的）。
+
+两条结论都写进了用例注释：**这道门抓结构性违规**（`lang` / `label` / `aria-*` 之类），
+**抓不到屏幕内的对比度**；屏幕内的对比度目前靠 `palette.spec.ts` 的 token 对照 + 人工看。
+
+### 45.2 验收
+
+- `npx playwright test`：**188 passed / 3 skipped**（191 条 / 30 个 spec；产物项目 6 → 7 条）。
+- `npm run check` 八段 **EXIT=0**。
