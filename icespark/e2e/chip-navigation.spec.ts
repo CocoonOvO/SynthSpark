@@ -441,3 +441,40 @@ test('文章列表：↑ 顶到标签栏、→ 走到下一枚页签、ENTER 切
   await expect(page.locator('[data-testid="link-card"]')).toHaveCount(LINKS.length)
   await expect(page.locator('.app')).toHaveAttribute('data-zone', 'content')
 })
+
+test('文章列表：进了标签栏分区之后，页内光标不再动（分区规则）+ 样机一致的那处「双光标」', async ({
+  page,
+}) => {
+  await stubApi(page)
+  await openList(page)
+
+  /** 页内（非标签栏）带自绘光标的元素 */
+  const pageSideFocused = () =>
+    page.evaluate(() =>
+      [...document.querySelectorAll('.focusable.is-focused')]
+        .filter((el) => !el.closest('[data-testid="tabbar"]'))
+        .map((el) => el.getAttribute('data-testid') ?? el.className)
+        .sort(),
+    )
+
+  await expect(page.locator('.app')).toHaveAttribute('data-zone', 'content')
+
+  // 三次 ↑ 顶到标签栏。注意这三次 ↑ **本来就会**把页内光标从卡片挪到分组行
+  // （分区是 卡片栅格 → 标签行 → 分组行 → 标签栏），所以基线必须取在**进分区之后**，
+  // 否则断言的是「↑ 不该动光标」——那是另一条规则（本门踩过一次）
+  for (let i = 0; i < 3; i += 1) await page.keyboard.press('ArrowUp')
+  await expect(page.locator('.app')).toHaveAttribute('data-zone', 'tabs')
+  const before = await pageSideFocused()
+
+  // 规则（`pad.ts`）：`focusZone === 'tabs'` 时**场景监听器整层跳过** ——
+  // 所以 ←→ 只该动标签栏的光标，页内光标一动不动
+  await page.keyboard.press('ArrowRight')
+  await expect(page.locator('[data-testid="tab-links"]')).toHaveClass(/is-focused/)
+  expect(await pageSideFocused(), '进了标签栏分区后，页内光标不该跟着动').toEqual(before)
+
+  // 同一时刻**页内光标仍然画着**（`group-all`）—— 「屏幕上永远只有一个光标」在这条边界上不成立。
+  // 这是**样机就有的怪相**，实测两个应用逐字一致（样机 `/posts` 三次 ↑ 之后：
+  // `zone=tabs`，`.focusable.is-focused` = `['tab-posts', 'group-all']`），所以生产版照样机保留。
+  // 谁要收掉它，属于改产品行为（先要用户口径），改的时候这条断言会拦一下并指向这里。
+  expect(before.length, '页内光标在标签栏分区里仍然可见（样机一致，别顺手「修」）').toBeGreaterThan(0)
+})

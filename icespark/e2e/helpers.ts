@@ -12,6 +12,16 @@ import { expect, type Page } from '@playwright/test'
  */
 export async function booted(page: Page): Promise<void> {
   await expect(page.locator('.app')).not.toHaveAttribute('data-scene', 'boot')
+  /**
+   * 顺手等**转场锁释放**（`scene/transition.ts` 的 `lockInput()` → `.app[data-locked]`）。
+   *
+   * 为什么必须等：锁窗口比场景切换多活 50~70ms（实测，见架构 §46），这期间内核**按设计**
+   * 把非 `start` 的按键全部丢掉（`dispatchPadAction` 里 `inputLocked && action !== 'start'`）。
+   * 于是「`booted()` 之后立刻按键」的用例会**偶发**丢键 —— 症状是断言超时（例如
+   * `toHaveURL(/page=2/)` 永远等不到），单跑绿、整套并行时红，很难查。
+   * 把这一步并进公共前置，比在每条用例里各加一个 `waitForTimeout` 可靠得多。
+   */
+  await expect(page.locator('.app')).toHaveAttribute('data-locked', 'false')
 }
 
 /**
