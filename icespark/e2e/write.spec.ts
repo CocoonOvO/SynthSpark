@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 import { scanViolations } from './a11y-known'
 
-import { booted } from './helpers'
+import { booted, press } from './helpers'
 
 /**
  * P6 写作页（`/write`）的用例（架构 §28.8 的验收口径）。
@@ -392,7 +392,7 @@ test('写作页：纯键盘 —— Tab 出正文到插入条、Enter 插入记�
 
   // M 开资料面板。选中一篇之后焦点落在正文里（`fill()` 的既定行为：接着写字），
   // 而焦点在可编辑目标里时面板键要加 Shift 才响 —— 先 Tab 出正文，和上面 N 那一步同一条路。
-  await page.keyboard.press('Tab')
+  await press(page, 'Tab')
   await expect(page.locator('[data-tool="bold"]')).toBeFocused()
   await page.keyboard.press('m')
   const meta = page.locator('[data-testid="write-panel-meta"]')

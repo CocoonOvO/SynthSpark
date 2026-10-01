@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { booted } from './helpers'
+import { booted, press } from './helpers'
 
 /**
  * 「芯片与栅格导航」用例簇：首页的三个芯片分区 + 文章列表页的栅格方向键 / 横向筛选条 / 标签栏导航。
@@ -435,7 +435,7 @@ test('文章列表：↑ 顶到标签栏、→ 走到下一枚页签、ENTER 切
   await expect(page).toHaveURL(/\/posts$/)
 
   // ENTER 才真的切页：URL 变、关联页渲染出来、焦点交还内容区
-  await page.keyboard.press('Enter')
+  await press(page, 'Enter')
   await expect(page).toHaveURL(/\/links$/)
   await expect(page.locator('[data-testid="links-grid"]')).toBeVisible()
   await expect(page.locator('[data-testid="link-card"]')).toHaveCount(LINKS.length)

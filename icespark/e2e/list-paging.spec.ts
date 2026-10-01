@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { booted } from './helpers'
+import { booted, press } from './helpers'
 
 /**
  * 文章列表（`/posts`）的「浏览状态」用例：分页 / 跳页 / 筛选写 URL / 返回后不丢状态。
@@ -352,7 +352,7 @@ test('文章列表：跳页回车之后键盘还活着（PgUp 仍能翻页）', 
   await expect(page).toHaveURL(/[?&]page=2/) // 跳页本身是成功的
 
   // 接着按 PgUp：期望回到第 1 页（page 参数被抹掉）—— 现在按下去毫无反应
-  await page.keyboard.press('PageUp')
+  await press(page, 'PageUp')
   await expect(page).toHaveURL((url) => !url.searchParams.has('page'))
   await expect(pager(page)).toHaveText('PAGE 1 / 2')
 })
@@ -391,7 +391,7 @@ test('文章列表：点「清除」之后键盘还活着（PgDn 仍能翻页）
   await expect(page.locator('[data-testid="post-card"]')).toHaveCount(4)
 
   // 清除之后键盘应当照常可用：6 篇 / 每页 4 篇 → PgDn 该翻到第 2 页
-  await page.keyboard.press('PageDown')
+  await press(page, 'PageDown')
   await expect(page).toHaveURL(/[?&]page=2/)
   await expect(pager(page)).toHaveText('PAGE 2 / 2')
 })
@@ -491,7 +491,7 @@ test('文章列表：第 2 页点开文章，Q 返回后仍是第 2 页', async 
   await expect(page).toHaveURL(/\/post\/slug-6$/)
 
   // Q（历史后退）回列表：页码与内容都必须是第 2 页那一套
-  await page.keyboard.press('q')
+  await press(page, 'q')
   await expect(page.locator('.app')).toHaveAttribute('data-scene', 'posts')
   await expect.poll(() => view(page).get('page')).toBe('2')
   await expect(pager(page)).toHaveText('PAGE 2 / 2')

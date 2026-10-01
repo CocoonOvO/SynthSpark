@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 import { scanViolations } from './a11y-known'
 
-import { booted, probeJson } from './helpers'
+import { booted, probeJson, press } from './helpers'
 
 /**
  * P4 用户档案页（`/user/:username`）的用例。
@@ -166,7 +166,7 @@ test('用户档案：返回按钮与 Q 键都能回上一页', async ({ page }) 
   // 深链接（历史里没有上一页）：兜底回主页，键盘用户不会卡死在档案页
   await page.goto(`/user/${username}`)
   await booted(page)
-  await page.keyboard.press('q')
+  await press(page, 'q')
   await expect(page).toHaveURL(/\/$/)
   await expect(page.locator('.app')).toHaveAttribute('data-scene', 'home')
 })

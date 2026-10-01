@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { booted, probeJson } from './helpers'
+import { booted, probeJson, press } from './helpers'
 
 /**
  * P3 迁移页面门：样机里每一个页面都要真的在路上。
@@ -114,7 +114,7 @@ test('标签栏：键盘 Tab / Shift+Tab 同样能切页签（不是只有鼠标
   await expect(page).toHaveURL(/\/posts$/)
   await expect(page.locator('[data-testid="tab-posts"]')).toHaveClass(/on/)
 
-  await page.keyboard.press('Shift+Tab')
+  await press(page, 'Shift+Tab')
   await expect(page).toHaveURL(/\/$/)
   await expect(page.locator('[data-testid="tab-home"]')).toHaveClass(/on/)
 })
@@ -205,11 +205,11 @@ test('Q / E 走浏览器前进后退，且菜单行的可用性跟着变', async
   await page.click('[data-testid="tab-links"]')
   await expect(page).toHaveURL(/\/links$/)
 
-  await page.keyboard.press('q')
+  await press(page, 'q')
   await expect(page).toHaveURL(/\/$/)
   await expect(page.locator('.app')).toHaveAttribute('data-scene', 'home')
 
-  await page.keyboard.press('e')
+  await press(page, 'e')
   await expect(page).toHaveURL(/\/links$/)
   await expect(page.locator('.app')).toHaveAttribute('data-scene', 'links')
 })
@@ -223,7 +223,7 @@ test('鼠标与键盘到达同一页：两条路径的落点完全一致', async
 
   await page.goto('/')
   await booted(page)
-  await page.keyboard.press('Tab')
+  await press(page, 'Tab')
   await expect(page.locator('.app')).toHaveAttribute('data-scene', 'posts')
   const byKeyboard = new URL(page.url()).pathname
 

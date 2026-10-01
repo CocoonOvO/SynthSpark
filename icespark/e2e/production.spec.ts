@@ -1,5 +1,6 @@
 import AxeBuilder from '@axe-core/playwright'
 import { expect, test, type Page } from '@playwright/test'
+import { press } from './helpers'
 
 import { scanViolations } from './a11y-known'
 
@@ -53,7 +54,7 @@ test('产物：跑的是打包产物 —— 没有 /src/ 或 @vite 请求，入�
 
   await page.goto('/')
   await expect(page.locator('.app')).not.toHaveAttribute('data-scene', 'boot')
-  await page.keyboard.press('Tab') // 切一页，逼出一个懒加载 chunk
+  await press(page, 'Tab') // 切一页，逼出一个懒加载 chunk
   await page.waitForURL(/\/posts$/)
 
   // ① 一条 dev-only 请求都不许有（源码模块 / HMR 客户端）
@@ -96,14 +97,14 @@ test('产物：切页 / 菜单 / 转场在产物里照常', async ({ page }) => 
   await expect(page.locator('.app')).not.toHaveAttribute('data-scene', 'boot')
 
   // 键盘切页（标签栏路径）
-  await page.keyboard.press('Tab')
+  await press(page, 'Tab')
   await expect(page).toHaveURL(/\/posts$/)
   await expect(page.locator('.app')).toHaveAttribute('data-scene', 'posts')
 
   // 菜单能起、ESC 能关（外壳的暂停菜单与外壳同生共死）
-  await page.keyboard.press('p')
+  await press(page, 'p')
   await expect(page.locator('[data-testid="pause"]')).toBeVisible()
-  await page.keyboard.press('Escape')
+  await press(page, 'Escape')
   await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
 
   // 转场遮罩走的是打包进去的 keyframes（转场那一层在产物里必须还能跑）

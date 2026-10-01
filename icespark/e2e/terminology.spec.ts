@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { booted } from './helpers'
+import { booted, press } from './helpers'
 
 /**
  * 术语门（样机 `design/icespark-prototype/e2e/gates.mjs` 第 3 节，原话是「用户要求第 1 条」）。
@@ -114,7 +114,7 @@ test('减动效下：自检照样落主页，切页照样能用', async ({ page 
   await expect(page.locator('[data-testid="tabbar"]')).toHaveCount(1)
   await expect(page).toHaveURL(/\/$/)
 
-  await page.keyboard.press('Tab')
+  await press(page, 'Tab')
   await expect(page).toHaveURL(/\/posts$/)
   // 列表页的结构在不在（不依赖库里有没有文章：筛选行是常驻的）
   await expect(page.locator('[data-testid="group-row"]')).toBeVisible()

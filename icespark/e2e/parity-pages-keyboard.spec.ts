@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { booted } from './helpers'
+import { booted, press } from './helpers'
 
 /**
  * **逐页的纯键盘门** —— 与 `parity-pages.spec.ts`（逐页纯鼠标）对称的另一半。
@@ -141,15 +141,15 @@ test('纯键盘：列表页筛选（G/→/ENTER）→ 回车进文章 → Q 回�
   await expect(page.locator('[data-testid="group-技术"]')).toHaveClass(/on/)
 
   // 从筛选行下到卡片：↓ 先到标签行、再到栅格（分区是 0 分组行 / 1 标签行 / 2 卡片栅格）
-  await page.keyboard.press('ArrowDown')
+  await press(page, 'ArrowDown')
   await expect(page.locator('[data-testid="tag-row"] .fchip')).toHaveCount(1)
-  await page.keyboard.press('ArrowDown')
+  await press(page, 'ArrowDown')
   await expect(page.locator('[data-testid="post-card"]').first()).toHaveClass(/is-focused/)
   await page.keyboard.press('Enter')
   await expect(page).toHaveURL(/\/post\/first-post$/)
 
   // Q：有历史就回上一页（保留筛选）
-  await page.keyboard.press('q')
+  await press(page, 'q')
   await expect(page).toHaveURL(/group=/)
 
   await expectNoPointer(page)
@@ -338,6 +338,77 @@ test('纯键盘：外链管理页 ↓ 到卡片、回车编辑、Tab 到保存�
 
   await expect.poll(() => writes.length, { message: '保存应当发一次 PUT' }).toBeGreaterThan(0)
   expect(writes).toEqual(['PUT'])
+
+  await expectNoPointer(page)
+})
+
+test('纯键盘：站点设置页 ↓/ENTER 换段、Tab 进字段改一处、Tab 到保存并回车（真发 PUT）', async ({
+  page,
+}) => {
+  await installPointerRecorder(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('synthspark-icespark-sound-prompt', '1')
+  })
+  await superuser(page)
+
+  const puts: Record<string, unknown>[] = []
+  await page.route('**/api/admin/site-config', (route) => {
+    const method = route.request().method()
+    if (method === 'PUT') {
+      puts.push(JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>)
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true }),
+      })
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        site: { name: '键盘站点', title: '', description: '', icp: '', defaultTheme: 'icespark', logo: '' },
+        navbar: { logo: '旧导航名', navItems: [{ label: '主页', path: '/' }] },
+        footer: { copyright: '', slogan: '', links: [] },
+        home: { title: '', desc: '' },
+        about: { body: '' },
+      }),
+    })
+  })
+
+  await page.goto('/admin/site')
+  await booted(page)
+  await expect(page.locator('[data-testid="admin-site-ready"]')).toBeVisible()
+
+  // 光标默认落在段列表第一段（site）；↓ 只移光标、ENTER 才换段（全站芯片口径）
+  await expect(page.locator('[data-testid="admin-site-segment"].is-focused')).toHaveAttribute(
+    'data-segment',
+    'site',
+  )
+  await page.keyboard.press('ArrowDown')
+  await page.keyboard.press('Enter')
+  await expect(page.locator('[data-testid="admin-site-segment-panel"]')).toHaveAttribute(
+    'data-segment',
+    'navbar',
+  )
+
+  // 从段列表进字段：管理页的表单把 Tab 交还浏览器，所以是**原生 Tab 遍历**。
+  // 实测顺序（navbar 段）：返回 → 新段名 → 加段 → 还原该段 → **该段第一个字段** → 段 JSON → 展开 → **保存**
+  for (let i = 0; i < 5; i += 1) await page.keyboard.press('Tab')
+  const field = page.locator('[data-field="navbar.logo"] input')
+  await expect(field).toBeFocused()
+  await page.keyboard.press('ControlOrMeta+a')
+  await page.keyboard.type('键盘导航名')
+
+  for (let i = 0; i < 3; i += 1) await page.keyboard.press('Tab')
+  await expect(page.locator('[data-testid="admin-site-save"]')).toBeFocused()
+  await page.keyboard.press('Enter')
+
+  await expect.poll(() => puts.length, { message: '保存应当真发一次 PUT' }).toBe(1)
+  const body = puts[0] as { navbar?: { logo?: string; navItems?: unknown }; site?: { name?: string } }
+  expect(body.navbar?.logo, 'PUT 里应当是键盘敲进去的新值').toBe('键盘导航名')
+  // 没动过的段与同段没动过的字段原样带回去
+  expect(body.site?.name).toBe('键盘站点')
+  expect(body.navbar?.navItems).toEqual([{ label: '主页', path: '/' }])
 
   await expectNoPointer(page)
 })

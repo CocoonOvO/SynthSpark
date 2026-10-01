@@ -61,3 +61,21 @@ export async function probeJson<T>(
   }
   return { data: null, reason: `${attempts} 次都没问到（最后一次：${last}）` }
 }
+
+/**
+ * 按一个键，但**先等转场锁释放**（§46 的锁 → §47 的真凶）。
+ *
+ * 为什么需要它：转场锁比导航本身多活 50~70ms，这期间内核**按设计**把非 `start` 的按键
+ * 全部丢掉（`dispatchPadAction` 里 `inputLocked && action !== 'start'`）。浏览器里用户
+ * 这么按是被允许的（就是会被丢掉），但**用例里这么按就是随机红** ——
+ * 症状是 `expect(page).toHaveURL(...)` 永远等不到，单跑绿、整套并行红。
+ * 实测到的两次：`booted()` 之后立刻 `PageDown`（已并入 `booted`）、
+ * 跳页回车之后立刻 `PageUp`（本函数的用例）。
+ *
+ * 用法：**「这次按键必须生效」**的地方用它；要验「锁定期内按键会被丢掉」就别用
+ * （`transition-lock.spec.ts` 正是那种用例，它故意直接用 `page.keyboard.press`）。
+ */
+export async function press(page: Page, key: string): Promise<void> {
+  await expect(page.locator('.app')).toHaveAttribute('data-locked', 'false')
+  await page.keyboard.press(key)
+}

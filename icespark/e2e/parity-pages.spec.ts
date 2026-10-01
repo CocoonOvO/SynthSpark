@@ -19,6 +19,22 @@ import { booted } from './helpers'
  */
 
 /** 装记录器：任何 keydown 都会被记下（捕获阶段，比组件监听早） */
+/** 打桩成已登录的超管（与 parity-pages-keyboard.spec.ts 同一写法） */
+async function superuser(page: Page): Promise<void> {
+  const user = { id: 'e2e-id', username: 'e2e_boss', display_name: '测试超管', is_superuser: true }
+  await page.addInitScript((u) => {
+    localStorage.setItem('synthspark-token', 'e2e-token')
+    localStorage.setItem('synthspark-icespark-user', JSON.stringify(u))
+  }, user)
+  await page.route('**/api/auth/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ...user, email: null, bio: null, avatar_url: null }),
+    }),
+  )
+}
+
 async function installRecorder(page: Page): Promise<void> {
   await page.addInitScript(() => {
     const store = window as unknown as { __keys: string[] }
@@ -260,6 +276,63 @@ test('纯鼠标：管理页读一条、改一条（编辑 → 保存）全程零
   await page.click('[data-testid="link-save"]')
   await expect(page.locator('[data-testid="link-form-note"]')).toContainText('已保存')
   expect(writes).toEqual(['PUT'])
+
+  await expectNoKeys(page)
+})
+
+test('纯鼠标：站点设置页点段换页、点进字段改一处、点保存（零键盘）', async ({ page }) => {
+  await installRecorder(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('synthspark-icespark-sound-prompt', '1')
+  })
+  await superuser(page)
+
+  const puts: Record<string, unknown>[] = []
+  await page.route('**/api/admin/site-config', (route) => {
+    if (route.request().method() === 'PUT') {
+      puts.push(JSON.parse(route.request().postData() ?? '{}') as Record<string, unknown>)
+      return route.fulfill({
+        status: 200,
+        contentType: 'application/json',
+        body: JSON.stringify({ success: true }),
+      })
+    }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        site: { name: '鼠标站点', title: '', description: '', icp: '', defaultTheme: 'icespark', logo: '' },
+        navbar: { logo: '', navItems: [] },
+        footer: { copyright: '', slogan: '', links: [] },
+        home: { title: '旧横幅', desc: '' },
+        about: { body: '' },
+      }),
+    })
+  })
+
+  await page.goto('/admin/site')
+  await booted(page)
+  await expect(page.locator('[data-testid="admin-site-ready"]')).toBeVisible()
+
+  // 点段直接换页（键盘那边要先 ↓ 再 ENTER，这里是鼠标直达）
+  await page.click('[data-testid="admin-site-segment"][data-segment="home"]')
+  await expect(page.locator('[data-testid="admin-site-segment-panel"]')).toHaveAttribute(
+    'data-segment',
+    'home',
+  )
+
+  // `fill()` 直接写值、不发按键事件 —— 这条旅程要的是「点击就能走完」
+  const field = page.locator('[data-field="home.title"] input')
+  await expect(field).toHaveValue('旧横幅')
+  await field.click()
+  await field.fill('鼠标横幅')
+  await page.click('[data-testid="admin-site-save"]')
+
+  await expect(page.locator('[data-testid="admin-site-saved"]')).toBeVisible()
+  await expect.poll(() => puts.length).toBe(1)
+  const body = puts[0] as { home?: { title?: string }; site?: { name?: string } }
+  expect(body.home?.title).toBe('鼠标横幅')
+  expect(body.site?.name, '没动过的段原样带回去').toBe('鼠标站点')
 
   await expectNoKeys(page)
 })

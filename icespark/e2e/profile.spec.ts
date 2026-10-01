@@ -3,7 +3,7 @@ import { expect, test, type Page, type Route } from '@playwright/test'
 
 import { scanViolations } from './a11y-known'
 
-import { booted } from './helpers'
+import { booted, press } from './helpers'
 
 /**
  * P5 个人信息编辑页（`/profile`）的用例（架构 §23.4 的三条手法）。
@@ -371,7 +371,7 @@ test('登出：在需要权限的页面上登出后自动回主页（普通页�
   await expect(page.locator('.app')).toHaveAttribute('data-scene', 'profile')
 
   // 菜单 → 账号行（已登录时它是「退出登录」）
-  await page.keyboard.press('p')
+  await press(page, 'p')
   await expect(page.locator('[data-testid="pause"]')).toBeVisible()
   await page.click('[data-testid="pause-account"]')
 

@@ -3349,3 +3349,51 @@ icespark 探针：三次 ↑ → zone=tabs · .focusable.is-focused = ['tab-post
 
 **验收**：纯文档改动（未动任何代码）；命名自查 `rg -i "synth[_-]?ink"` 无命中；
 `npm run check` 八段仍 EXIT=0；e2e 维持 190 passed / 3 skipped（193 条 / 31 spec）。
+
+## 49. 站点设置页的键 / 鼠两条旅程 + 另一个「按键被锁吃掉」的真凶（2026-10-01）
+
+### 49.1 站点设置页（硬要求 2 的编辑面）补上键鼠对称
+
+配置编辑是全站唯一「改一处再写回去」的表单页，此前只有 `admin-site.spec.ts` 的**混合**
+路径（点一下 + `Control+a` + `q`）。两条新用例把它补齐：
+
+| 旅程 | 落点与要点 |
+|---|---|
+| 纯键盘（`parity-pages-keyboard.spec.ts`） | ↓ + `ENTER` 换段（光标移动**不**换段，与全站芯片口径一致）→ **原生 Tab 遍历 5 下**进该段第一个字段 → `Ctrl/⌘+A` 重打 → **再 Tab 3 下**到「保存」→ 回车 → 真发 PUT；断言请求体里是键盘敲进去的新值，**没动过的段与同段没动过的字段原样带回去**。实测的 Tab 顺序（navbar 段）：返回 → 新段名 → 加段 → 还原该段 → **第一个字段** → 段 JSON → 展开 → **保存** |
+| 纯鼠标（`parity-pages.spec.ts`） | 点段直接换页（键盘那边要 ↓+ENTER）→ 点进字段 → `fill()` 改写 → 点「保存」→ 断言 `admin-site-saved` 与 PUT 体；全程零 `keydown` |
+
+### 49.2 真凶：`booted()` 之外还有一处「按键正好落进转场锁」
+
+§47 修的是「`booted()` 之后立刻按键」，但这只是**一处**。这轮整套又偶发红了一次，
+抓到的是 `list-paging.spec.ts`「跳页回车之后键盘还活着」：
+
+```
+跳页框回车 → 断言 toHaveURL(/page=2/) 已成立 → 立刻按 PageUp → 期望回到第 1 页
+```
+
+**根因同源**：`goPage()` 也是一次导航 → 也有转场锁；而 `toHaveURL` 在**地址栏刚变**就返回了，
+此时锁往往还活着 50~70ms → `PageUp` 被内核按设计丢掉 → 断言等不到「回到第 1 页」。
+（浏览器里用户这么按本来就是「会被丢掉」；用例里这么按就是随机红。）
+
+**改法**：`e2e/helpers.ts` 加 `press(page, key)` —— **按键前先等 `data-locked="false"`**，
+然后把 19 处「刚发生过导航、紧接着按键」的调用点机械替换成它（脚本按「上文 6 行内有
+URL / 场景断言、且没有别的守卫」筛出来，逐个核对）。**口径**：要验「锁定期内按键会被丢掉」
+的用例（`transition-lock.spec.ts`）**故意不用**它，继续直接 `page.keyboard.press`。
+
+**证据**：改之前整套大约**两次红一次**（红在 `list-paging.spec.ts:356`，
+报文 `expect(page).toHaveURL(expected) failed`）；改之后**连跑三次全绿**
+（每次 192 passed / 3 skipped），耗时没变（1.8m vs 1.9m）。
+
+### 49.3 顺带记一个基础设施抖动
+
+某次 `--project=chromium` 起不来，报 `Process from config.webServer was not able to start.
+Exit code: 2`：产物 webServer 是 `npm run build && vite preview --port 4175 --strictPort`
+且 `reuseExistingServer: false`（刻意不复用，免得拿旧产物给假 PASS）——
+上一次调用留下的预览进程还占着 4175 时，这次就直接失败。等端口空出来重跑即正常。
+**这是配置注释里写明的政策（「端口被占就直接失败，那本来也该先收拾现场」），不是 bug**；
+排查时先 `ss -ltnp | grep 4175`。
+
+### 49.4 验收
+
+- `npx playwright test`：**192 passed / 3 skipped**（195 条 / 31 个 spec），**连跑三次一致**。
+- `npm run check` 八段 **EXIT=0**。
