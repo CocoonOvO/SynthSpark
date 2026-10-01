@@ -1,6 +1,6 @@
 import { expect, test, type Page } from '@playwright/test'
 
-import { booted } from './helpers'
+import { booted, probeJson } from './helpers'
 
 /**
  * P3 迁移页面门：样机里每一个页面都要真的在路上。
@@ -22,13 +22,21 @@ test.beforeEach(async ({ page }) => {
   })
 })
 
-/** 取一篇已发布文章的 key（slug 优先，与 api/format.ts 的 postKey 同口径）；没有数据返回 null */
-async function firstPostKey(page: Page): Promise<string | null> {
-  const response = await page.request.get('/api/posts/?limit=1&status=published')
-  if (!response.ok()) return null
-  const data = (await response.json()) as { items?: { id: string; slug?: string | null }[] }
-  const item = data.items?.[0]
-  return item ? item.slug || item.id : null
+/**
+ * 取一篇已发布文章的 key（slug 优先，与 `api/format.ts` 的 postKey 同口径）。
+ *
+ * 用 `probeJson`（带重试）而不是裸 `request.get`：并行跑整套时后端偶尔忙一下，
+ * 一次探针失败就会把这条用例**静默跳掉**（报告里只剩「N skipped」）。返回值把
+ * 「为什么没有」一并带出来，交给 `test.skip` 当理由。
+ */
+async function firstPostKey(page: Page): Promise<{ key: string | null; reason: string }> {
+  const { data, reason } = await probeJson<{ items?: { id: string; slug?: string | null }[] }>(
+    page,
+    '/api/posts/?limit=1&status=published',
+  )
+  const item = data?.items?.[0]
+  if (!item) return { key: null, reason: `探不到已发布文章（${reason}）` }
+  return { key: item.slug || item.id, reason: 'OK' }
 }
 
 test('开机自检：先播 BOOT（底栏点亮 BOOT），再自动落到当前路由那一页', async ({ page }) => {
@@ -130,8 +138,9 @@ test('文章列表：/posts 是独立页面，筛选条件写在 URL 里', async
 })
 
 test('文章详情：深链接能直接进来，正文与操作条都在，键盘能返回列表', async ({ page }) => {
-  const key = await firstPostKey(page)
-  test.skip(!key, '后端没有已发布的文章，跳过详情页用例')
+  const { key, reason } = await firstPostKey(page)
+  test.skip(!key, reason)
+  if (!key) return
 
   await page.goto(`/post/${key}`)
   await booted(page)

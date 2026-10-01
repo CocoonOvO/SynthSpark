@@ -1,6 +1,6 @@
 import { expect, test } from '@playwright/test'
 
-import { booted } from './helpers'
+import { booted, probeJson } from './helpers'
 
 /**
  * 纯键盘门 —— 硬要求：**单独用键盘**能完成全部交互。
@@ -155,12 +155,13 @@ test('纯键盘：Tab 进正文后按方向键，键盘不会失效（焦点必�
   await installRecorder(page)
   // 关掉首访的音效询问框：不然第一次按键会先被那个模态吃掉，P 就轮不到外壳
   await page.addInitScript(() => localStorage.setItem('synthspark-icespark-sound-prompt', '1'))
-  const response = await page.request.get('/api/posts/?limit=1&status=published')
-  const data = response.ok()
-    ? ((await response.json()) as { items?: { id: string; slug?: string | null }[] })
-    : {}
-  const item = data.items?.[0]
-  test.skip(!item, '后端没有已发布文章，跳过（这条要一篇文章才走得通）')
+  // 探针带重试：并行跑整套时一次超时不该把这条门静默跳掉（原因会进 skip 的描述）
+  const probe = await probeJson<{ items?: { id: string; slug?: string | null }[] }>(
+    page,
+    '/api/posts/?limit=1&status=published',
+  )
+  const item = probe.data?.items?.[0]
+  test.skip(!item, `这条要一篇文章才走得通 —— 探不到（${probe.reason}）`)
   const key = item!.slug || item!.id
 
   await page.goto(`/post/${encodeURIComponent(key)}`)

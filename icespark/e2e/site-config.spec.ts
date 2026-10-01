@@ -19,17 +19,28 @@ interface Layer {
   data: Record<string, unknown>
 }
 
-/** 取当前生效的最高优先级覆盖层；两层都取不到返回 null */
+/**
+ * 取当前生效的最高优先级覆盖层；两层都取不到返回 `null`。
+ *
+ * **每层重试 3 次**：这套用例的判据是「渲染 == 覆盖层」，一次取不到就只能跳过 ——
+ * 而并行跑整套时后端偶尔忙一下，跳过会**静默**把这道门变成绿的。
+ * 两次都失败才认「这台机器没有覆盖层」，并且把 HTTP 状态一并带出来（见调用方）。
+ */
 async function topLayer(page: Page): Promise<Layer | null> {
   return page.evaluate(async () => {
     for (const url of ['/api/site-config', '/site.config.json']) {
-      try {
-        const response = await fetch(url, { headers: { accept: 'application/json' } })
-        if (!response.ok) continue
-        if (!(response.headers.get('content-type') ?? '').includes('json')) continue
-        return { url, data: (await response.json()) as Record<string, unknown> }
-      } catch {
-        // 取不到就试下一层
+      for (let attempt = 0; attempt < 3; attempt += 1) {
+        if (attempt > 0) await new Promise((resolve) => setTimeout(resolve, 250 * attempt))
+        try {
+          const response = await fetch(url, { headers: { accept: 'application/json' } })
+          // 4xx 是「这一层确实没有」，换下一层；5xx / 网络问题值得再试
+          if (response.status >= 500) continue
+          if (!response.ok) break
+          if (!(response.headers.get('content-type') ?? '').includes('json')) break
+          return { url, data: (await response.json()) as Record<string, unknown> }
+        } catch {
+          // 网络层失败：再试
+        }
       }
     }
     return null

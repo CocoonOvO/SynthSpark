@@ -3059,3 +3059,39 @@ P1 收尾时做过一次**人工**产物验证（§14.6：「`npm run build` 后
 
 - `site-config.spec.ts` 2 → 3 条；`npx playwright test` **182 passed / 3 skipped**（185 条 / 30 个 spec）。
 - `npm run check` 八段 **EXIT=0**。
+
+## 41. 探针加固：别让后端抖一下就把用例静默跳掉（2026-10-01）
+
+上轮收工时抓到一次**同一命令两次结果不同**的抖动：
+`npx playwright test` 先给 `181 passed / 4 skipped`，再跑又回到 `182 passed / 3 skipped`。
+查下去是「不依赖后端有数据」那套写法的副作用：一批用例先探一下有没有文章，
+探不到就 `test.skip` —— 写法本身没错（**跳过而不是假绿**，§16 定的），
+但它对**偶发抖动**太敏感：并行跑 30 个 spec 时后端忙一下、一次探针超时，
+那条用例就**静默变成 skip**，报告里只剩「N skipped」一行，很容易被当成全绿。
+
+### 41.1 两处改动
+
+1. **`e2e/helpers.ts` 新增 `probeJson(page, url, attempts = 3)`**：带退避重试；
+   `4xx` 立刻认「这机器上确实没有」（重试没意义），`5xx` 与网络错误才重试；
+   最终返回 `{ data, reason }`，`reason` 里写清是 `HTTP 500` 还是「3 次都没问到（最后一次：超时）」。
+2. **把「跳过」的措辞换成带原因的那句**：`test.skip(!key, reason)` ——
+   于是报告里的注解会写「探不到已发布文章（**HTTP 404**）」或
+   「探不到已发布文章（**3 次都没问到（最后一次：…）**）」，两种情形再也不会长得一样。
+   改动的探针：`pages.spec.ts` 的 `firstPostKey`、`user-profile.spec.ts` 的 `probeAuthor`
+   （六条用例共用一句 `probeReason`）、`parity-keyboard.spec.ts` 的正文 Tab 门、
+   以及 `site-config.spec.ts` 的 `topLayer`（每层重试 3 次，`>=500` 才重试）。
+
+### 41.2 验证
+
+- **原因真的进报告了**：把 `firstPostKey` 的地址临时改成不存在的端点，用 `--reporter=json` 看注解 ——
+  `{'type': 'skip', 'description': '探不到已发布文章（HTTP 404）'}`，然后逐字还原。
+  （这条恰好证明「没有数据」与「没问到」在报告里可分辨。）
+- **跳过数稳定了**：`npx playwright test` 连跑两次都是 **182 passed / 3 skipped**（另 3 条是
+  `real-login.spec.ts` 的环境变量门，没设凭据本来就该跳）。
+- `npm run check` 八段 **EXIT=0**。
+
+### 41.3 留下的口径
+
+「不依赖后端有数据」这条自我约束不放松：探不到仍然**跳过**，只是现在
+①探针会重试、②跳过必须带一句人话。真要抓「后端挂了」这类问题，那是另一道门的事
+（`skeleton.spec.ts` 的零报错门 + 各页的空态断言已经覆盖）。

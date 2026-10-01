@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 import { scanViolations } from './a11y-known'
 
-import { booted } from './helpers'
+import { booted, probeJson } from './helpers'
 
 /**
  * P4 用户档案页（`/user/:username`）的用例。
@@ -24,27 +24,42 @@ test.beforeEach(async ({ page }) => {
 })
 
 /** 探一个真实存在的用户名（取已发布文章的作者）。没有数据 / 后端不可达返回 null */
+/**
+ * 上一次探测「为什么没探到」——六条用例共用这句理由。
+ *
+ * 为什么要它：探针失败时若只写一句「后端没有已发布文章」，报告里就分不清
+ * 「这台机器确实没有文章」（正常跳过）与「后端抖了一下没问到」（异常）——
+ * 实测过一次：同一条命令连跑，一次 `181 passed / 4 skipped`、再跑 `182 / 3`。
+ * 探针现在带重试（`probeJson`），并且把真实原因带进 `test.skip` 的描述里。
+ */
+let probeReason = '后端没有可探测的已发布文章'
+
 async function probeAuthor(
   page: Page,
 ): Promise<{ username: string; displayName: string; total: number } | null> {
-  const response = await page.request.get('/api/posts/?limit=1&status=published')
-  if (!response.ok()) return null
-  const data = (await response.json()) as {
+  const { data, reason } = await probeJson<{
     total?: number
     items?: { author_username?: string }[]
+  }>(page, '/api/posts/?limit=1&status=published')
+  const username = data?.items?.[0]?.author_username
+  if (!username) {
+    probeReason = `探不到已发布文章（${reason}）`
+    return null
   }
-  const username = data.items?.[0]?.author_username
-  if (!username) return null
 
   // 显示名（优先 display_name）—— 就是这一页 h1 该有的文字
-  const info = await page.request.get(`/api/users/by-username/${encodeURIComponent(username)}`)
-  const user = info.ok() ? ((await info.json()) as { display_name?: string | null }) : {}
-  return { username, displayName: user.display_name || username, total: data.total ?? 0 }
+  const info = await probeJson<{ display_name?: string | null }>(
+    page,
+    `/api/users/by-username/${encodeURIComponent(username)}`,
+  )
+  probeReason = 'OK'
+  const displayName = info.data?.display_name || username
+  return { username, displayName, total: data?.total ?? 0 }
 }
 
 test('用户档案：深链接直接打开，用户卡 / 统计 / 文章列表 / 底栏都在', async ({ page }) => {
   const found = await probeAuthor(page)
-  test.skip(!found, '后端没有已发布文章，探不到真实用户名')
+  test.skip(!found, probeReason)
   const { username, displayName, total } = found!
 
   const errors: string[] = []
@@ -87,7 +102,7 @@ test('用户档案：深链接直接打开，用户卡 / 统计 / 文章列表 /
 
 test('用户档案：键盘能选卡并按回车进文章', async ({ page }) => {
   const found = await probeAuthor(page)
-  test.skip(!found || found.total < 2, '这篇文章数不足以验证「按卡移动」')
+  test.skip(!found || found.total < 2, found ? '这篇文章数不足以验证「按卡移动」' : probeReason)
   const { username } = found!
 
   await page.goto(`/user/${username}`)
@@ -107,7 +122,7 @@ test('用户档案：键盘能选卡并按回车进文章', async ({ page }) => 
 
 test('用户档案：鼠标点卡与键盘回车到达同一个落点', async ({ page }) => {
   const found = await probeAuthor(page)
-  test.skip(!found, '后端没有已发布文章，探不到真实用户名')
+  test.skip(!found, probeReason)
   const { username } = found!
 
   // 键盘路径：第一张卡 + 回车
@@ -130,7 +145,7 @@ test('用户档案：鼠标点卡与键盘回车到达同一个落点', async ({
 
 test('用户档案：返回按钮与 Q 键都能回上一页', async ({ page }) => {
   const found = await probeAuthor(page)
-  test.skip(!found, '后端没有已发布文章，探不到真实用户名')
+  test.skip(!found, probeReason)
   const { username } = found!
 
   // 键盘 Q：从首页跳进来（历史里有上一页）→ 回到首页
@@ -172,7 +187,7 @@ test('用户档案：不存在的用户名给页内空态，不是整页 404、�
 
 test('用户档案：自己出一个 h1（显示名）、文章标题是 h2，层级不跳级', async ({ page }) => {
   const found = await probeAuthor(page)
-  test.skip(!found, '后端没有已发布文章，探不到真实用户名')
+  test.skip(!found, probeReason)
   const { username, displayName } = found!
 
   await page.goto(`/user/${username}`)
@@ -200,7 +215,7 @@ test('用户档案：自己出一个 h1（显示名）、文章标题是 h2，�
 
 test('用户档案：这个人没有已发布文章时给空态', async ({ page }) => {
   const found = await probeAuthor(page)
-  test.skip(!found, '后端没有已发布文章，探不到真实用户名')
+  test.skip(!found, probeReason)
   const { username } = found!
 
   // 把作者文章接口打桩成空列表：不依赖库里真的有一个「零文章的用户」
