@@ -3330,3 +3330,22 @@ icespark 探针：三次 ↑ → zone=tabs · .focusable.is-focused = ['tab-post
 
 - `npx playwright test`：**190 passed / 3 skipped**（193 条 / 31 个 spec），**连跑三次一致**。
 - `npm run check` 八段 **EXIT=0**。
+
+## 48. 把新前端写进 `AGENTS.md`（2026-10-01）
+
+查文档时发现的：仓库唯一的 Agent 指导文件 `AGENTS.md`（145 行）**通篇没有出现过 `icespark`**，
+也没提 `design/` —— 也就是说，除了本文件（设计与决策记录）之外，**没有任何地方告诉后来的人：
+新前端在哪、跑在哪个端口、怎么验（门 / e2e）、product 的交互定稿是哪份**。
+`AGENTS.md` 第 5 节自己写着「重要改动同步更新本文件对应章节（**不要再新建第二份 Agent 文档**）」，
+所以这一轮补的就是它。改的都是事实，不动口径：
+
+| 章节 | 补了什么 |
+|---|---|
+| §2 项目结构 | `icespark/`（独立 app、M/F/S 分层、`e2e/`、`scripts/` 放各道门）、`design/icespark-prototype/`（**冻结的交互定稿**，别改它）、`design/icespark-ARCHITECTURE.md`（设计与决策记录，**不是第二份 Agent 文档**）；同时把 `frontend/` 两行标注为「旧」 |
+| §3 启动与端口 | 旧前端 5173、**新前端 5175**（`vite.config.ts` 代理 `/api` → 8002）、**产物预览 4175**、交互样机怎么起 |
+| §6 测试 | 旧前端条目标注「（旧）」并把旧 E2E 与它排在一起；新增两条 —— **`npm run check` 的八段**（独立性 / tokens:check / vitest / oxlint / eslint / api:check / vue-tsc / check:budget）与**两个 Playwright project**（`chromium` 跑 dev 全部用例、`preview` 只跑产物冒烟；真账号链路靠 `ICESPARK_E2E_USER`/`PW` 才跑） |
+| §9 部署 | 补一句：新前端的产物是 `cd icespark && npm run build` 的 `dist/`，**同样需要「未知路径回退 index.html」**（history 真路由）；线上跑哪一份由部署方决定 |
+| §10 故障排查 | 「前端 /api 全部 404」那一行补上新前端的检查项：`icespark/vite.config.ts` 的 `server.proxy` / `preview.proxy` |
+
+**验收**：纯文档改动（未动任何代码）；命名自查 `rg -i "synth[_-]?ink"` 无命中；
+`npm run check` 八段仍 EXIT=0；e2e 维持 190 passed / 3 skipped（193 条 / 31 spec）。

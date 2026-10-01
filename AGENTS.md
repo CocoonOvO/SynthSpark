@@ -18,15 +18,21 @@
 | `backend/app/models/`、`adapter/`、`config_db/` | Pydantic 模型、业务库适配器（SQLite/PostgreSQL 双方言）、配置库 |
 | `backend/app/services/` | 服务挂载框架；`impl/` 是用户自研服务（gitignored，不入库） |
 | `backend/tests/` | pytest 用例（`asyncio_mode=auto`） |
-| `frontend/src/` | Vue3 前端：`api/`、`stores/`、`views/`、`themes/`、`config/` |
-| `frontend/e2e/` | Playwright 用例；`frontend/public/` 放站点配置与静态资源 |
+| `frontend/src/` | 旧 Vue3 前端：`api/`、`stores/`、`views/`、`themes/`、`config/` |
+| `frontend/e2e/` | 旧前端的 Playwright 用例；`frontend/public/` 放站点配置与静态资源 |
+| `icespark/` | **新前端（独立 app，零 import 旧前端）**：Vue3 + Vite，`src/` 按 M/F/S 三层分层，`e2e/` 是它的 Playwright 用例，`scripts/` 放各道门 |
+| `design/icespark-prototype/` | **冻结的交互样机**（`dev` 5173）。它是交互定稿：新前端照它 1:1 落地，不重新设计 |
+| `design/icespark-ARCHITECTURE.md` | 新前端的**设计与决策记录**（不是第二份 Agent 文档）：每轮口径、偏差记账、门与验收都在里面，动手前先查相关章节 |
 
 ## 3. 启动与端口
 
 | 服务 | 端口 | 命令 |
 |------|------|------|
 | 后端 | 8002 | `cd backend && uv sync --all-groups && uv run python -m uvicorn app.main:app --host 0.0.0.0 --port 8002 --reload` |
-| 前端 | 5173 | `cd frontend && npm run dev` |
+| 旧前端 | 5173 | `cd frontend && npm run dev` |
+| 交互样机 | 5173 之外另起 | `cd design/icespark-prototype && npx vite --port 5173`（只作参考，别改它） |
+| **新前端（icespark）** | **5175** | `cd icespark && npm run dev`（`vite.config.ts` 把 `/api` 代理到 8002） |
+| 新前端产物预览 | 4175 | `cd icespark && npm run build && npx vite preview --port 4175`（同样代理 `/api`） |
 
 Python 依赖用 **uv 管理**（`backend/pyproject.toml`），增删依赖改 pyproject 后 `uv sync`；`requirements*.txt` 是 `uv export` 生成物，勿手改。
 
@@ -70,8 +76,10 @@ Python 依赖用 **uv 管理**（`backend/pyproject.toml`），增删依赖改 p
 
 - **后端**：`cd backend && uv run pytest`。测试库连接串**不硬编码**，由 `TEST_DATABASE_URL` 提供（如 `postgresql+asyncpg://用户:密码@localhost:5432/synthspark_test`）；未设置则回退读 `backend/.env`，都没有时依赖 DB 的用例自动跳过。单文件：`uv run pytest tests/test_posts.py`。
 - **冒烟测试**：`tests/test_smoke.py` 需要 8002 活服务，超管账号由 `SMOKE_SUPERUSER_USERNAME` / `SMOKE_SUPERUSER_PASSWORD` 提供，未设置则跳过。
-- **前端**：`cd frontend && npm run test:unit`（vitest）。
-- **E2E**：Playwright（`frontend/playwright.config.ts`，`testDir: ./e2e`）。用 `npx playwright test` 运行——README 里的 `npm run test:e2e` **在 package.json 中并不存在**；dev server 由配置自动拉起（5173），使用 Playwright 内置 chromium（无需系统 Chrome）；版本锁定 `@playwright/test@1.61.1`，升级后需 `npx playwright install chromium`。
+- **前端（旧，`frontend/`）**：`cd frontend && npm run test:unit`（vitest）。
+- **E2E（旧）**：Playwright（`frontend/playwright.config.ts`，`testDir: ./e2e`）。用 `npx playwright test` 运行——README 里的 `npm run test:e2e` **在 package.json 中并不存在**；dev server 由配置自动拉起（5173），使用 Playwright 内置 chromium（无需系统 Chrome）；版本锁定 `@playwright/test@1.61.1`，升级后需 `npx playwright install chromium`。
+- **新前端（icespark）的门**：`cd icespark && npm run check` —— 八段全绿才算过：独立性门 → `tokens:check`（配色无漂移）→ vitest 单测 → oxlint → eslint → `api:check`（契约漂移）→ `vue-tsc` → `check:budget`（性能预算，读构建产物）。单跑某一段直接 `npm run <那一段>`。
+- **新前端的 E2E**：`cd icespark && npx playwright test`。两个 project：`chromium` 跑 dev（5175）上的全部用例，**`preview` 只跑 `production.spec.ts`**（`vite preview` + 刚构建的产物；命令里自带构建）。只想跑 dev 那套：`--project=chromium`。需要真账号的链路（`real-login.spec.ts`）默认跳过，设 `ICESPARK_E2E_USER` / `ICESPARK_E2E_PW` 才会跑。
 - **已知既有失败（勿误判为回归）**：`test_register_api` / `test_integration`（注册已改为需超管，用例仍按公开注册断言）；`test_likes`（部分响应结构与状态码变更后的陈旧断言，且 SQLite 适配器未建 likes 表）；`test_seo`（SEOMiddleware 与新版 starlette 不兼容）；`test_smoke`（需活服务）。
 - **本地持久化建议**：psql 免密写 `~/.pgpass`（`localhost:5432:库名:用户名:密码`，权限 600）；测试配置写 `backend/.env`（gitignored）。
 
@@ -128,7 +136,7 @@ Python 依赖用 **uv 管理**（`backend/pyproject.toml`），增删依赖改 p
 ## 9. 部署（简要说明）
 
 - 本仓库**不包含任何部署配置**：反向代理、进程管理、容器编排均由部署环境自行提供，仓库内没有对应文件。
-- 部署涉及两部分：后端服务（默认 8002）与前端静态产物（`cd frontend && npm run build` 产出的 `dist/`）。
+- 部署涉及两部分：后端服务（默认 8002）与前端静态产物。**旧前端**是 `cd frontend && npm run build` 产出的 `dist/`；**新前端（icespark）**是 `cd icespark && npm run build` 产出的 `dist/`（同样需要「未知路径回退到 index.html」，它用 history 模式的真路由）。当前线上跑的是哪一份由部署方决定。
 - 请求如何分流由部署方的路由规则决定：后端提供 `/api/*` 与根路径 `/skill.md`（**该路径不带 `/api` 前缀**），其余页面与静态资源来自 `dist/`。
 - 具体配置以部署环境的实际情况为准，本文档不做约定、也不提供配置示例。
 
@@ -139,7 +147,7 @@ Python 依赖用 **uv 管理**（`backend/pyproject.toml`），增删依赖改 p
 | 数据库连接失败 | PostgreSQL 服务状态、配置库里的连接配置 |
 | 配置库损坏 | 删除 `backend/config.db` 后重启重新配置 |
 | 权限不足 403 | Token 是否过期、用户角色（管理类接口全靠 `is_superuser`） |
-| 前端 /api 全部 404 | Vite 代理：`frontend/.env` 的 `VITE_API_URL` 是否指向 8002 |
+| 前端 /api 全部 404 | 旧前端：`frontend/.env` 的 `VITE_API_URL` 是否指向 8002；新前端（icespark）：`icespark/vite.config.ts` 的 `server.proxy` / `preview.proxy` 是否指向 8002 |
 | 业务库缺表 | 超管登录后调 `POST /api/admin/database/init` 补建 |
 | `init-wizard` 报错 | 2026-08-06 已修 pydantic `schema` 序列化 bug；仍异常看控制台日志 |
 | 后端启动即崩 | `backend/.env` 缺少 `SECRET_KEY` |
