@@ -70,6 +70,16 @@ export function mountInput(root: HTMLElement): () => void {
       return
     }
 
+    // 非编辑目标上，Shift+字母（白名单内）同样是快捷键。
+    // 写作页的 `Shift+S` / `Shift+P` 在光标不在正文里时也要能按 —— 否则"专门的快捷键"
+    // 只在打字时有效，离开正文就失灵（用户反馈）。这一步必须排在 `resolvePadAction` 之前：
+    // 后者会把 `s` 认成 WASD 的"下"。
+    const combo = resolveComboAction(event)
+    if (combo && dispatchPadAction(combo)) {
+      event.preventDefault()
+      return
+    }
+
     const action = resolvePadAction(event)
     if (!action) return
 

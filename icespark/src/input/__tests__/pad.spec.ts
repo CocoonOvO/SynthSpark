@@ -116,10 +116,20 @@ describe('resolveComboAction：编辑框里的 Shift + 字母', () => {
   })
 
   it('白名单之外的字母不放行 —— 焦点移动与历史前进后退都假设「焦点不在输入框」', () => {
-    // W A S D = 方向键（场景分支会先 dropNativeFocus）、X Q E = 历史、Z = 确认、P = 菜单…
-    for (const letter of ['W', 'A', 'S', 'D', 'X', 'Q', 'E', 'Z', 'P', 'J', 'G', 'T', 'L', 'U']) {
+    // W A D = 方向键（场景分支会先 dropNativeFocus）、X Q E = 历史、Z = 确认、J G T L U = 各页快捷键…
+    // 注意 `S` / `P` **不在这张表里**了：写作页的「Shift+S 存草稿 / Shift+P 发布」把它们要走了
+    //（用户裁决 §62）。代价是正文里打不出大写的 S / P、且 Shift+S 不再等于"往下"。
+    for (const letter of ['W', 'A', 'D', 'X', 'Q', 'E', 'Z', 'J', 'G', 'T', 'L', 'U']) {
       expect(resolveComboAction(key(letter, true))).toBeNull()
     }
+  })
+
+  it('写作页的两个连击键：Shift+S 存草稿、Shift+P 发布（连击表与 KEYMAP 分开）', () => {
+    expect(resolveComboAction(key('S', true))).toBe('saveDraft')
+    expect(resolveComboAction(key('P', true))).toBe('publish')
+    // 分开的意义：`resolvePadAction` 里 `s` 仍然是 WASD 的"下"，两条路互不干扰
+    expect(resolvePadAction(key('s'))).toBe('down')
+    expect(resolvePadAction(key('S', true))).toBe('down')
   })
 
   it('只认字母：Shift+1 打出的是「!」，那是符号输入', () => {

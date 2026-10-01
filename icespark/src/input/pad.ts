@@ -42,6 +42,10 @@ export type PadAction =
   | 'focusTag'
   /** 聚焦点赞·评论栏：L */
   | 'focusLike'
+  /** 存草稿：`Shift+S`（写作页；Ctrl/⌘+S 由编辑框自己接，两条并存） */
+  | 'saveDraft'
+  /** 发布：`Shift+P`（写作页） */
+  | 'publish'
   /** 回到顶部：U */
   | 'toTop'
   /**
@@ -219,11 +223,27 @@ export type ComboKeyEvent = Pick<KeyboardEvent, 'key' | 'shiftKey'> & {
  * 先 `ESC` 失焦（见 `input/index.ts`），回到「不在输入」的状态再按原键。
  * 面板键不一样：它们本来就是「离开编辑区去看别的东西」，开面板时收掉原生焦点正是应有之义。
  */
-const COMBO_ACTIONS: ReadonlySet<PadAction> = new Set<PadAction>([
-  'panelDocs',
-  'panelMeta',
-  'panelPreview',
-])
+/**
+ * `Shift + 字母` 的**独立**映射表（不再借 `KEYMAP`）。
+ *
+ * 为什么不借：`s` 在 `KEYMAP` 里是 WASD 的"下"（用户要做方向键式的直观移动），
+ * 借过来就分不开「Shift+S 存草稿」与「Shift+S 当方向键」了。分开之后两边各说各话：
+ * 方向键/WASD 走 `KEYMAP`，连击快捷键走这张表。
+ *
+ * 代价要写清楚（用户口径）：在正文里打字时 `Shift+S` / `Shift+P` 会被接走，
+ * 也就是**打不出大写的 S / P**；`Shift+S` 也不再等于"往下"。
+ * 这是「连击快捷键」这套机制的固有取舍（`Shift+N/M/V` 早就是这样），
+ * 换来的是"写正文时也能一键存草稿 / 发布"。不想付这个代价就用 `Ctrl/⌘+S`、`Ctrl/⌘+Enter`。
+ */
+const COMBO_KEYMAP: Record<string, PadAction> = {
+  n: 'panelDocs',
+  m: 'panelMeta',
+  v: 'panelPreview',
+  s: 'saveDraft',
+  p: 'publish',
+}
+
+const COMBO_ACTIONS: ReadonlySet<PadAction> = new Set<PadAction>(Object.values(COMBO_KEYMAP))
 
 /**
  * `Shift + 字母` → 白名单内的按键动作（纯函数，方便单测）。
@@ -241,7 +261,7 @@ export function resolveComboAction(event: ComboKeyEvent): PadAction | null {
   if (!event.shiftKey || event.ctrlKey || event.altKey || event.metaKey) return null
   if (event.isComposing) return null
   if (event.key.length !== 1 || !/[a-z]/i.test(event.key)) return null
-  const action = KEYMAP[event.key.toLowerCase()]
+  const action = COMBO_KEYMAP[event.key.toLowerCase()]
   return action && COMBO_ACTIONS.has(action) ? action : null
 }
 

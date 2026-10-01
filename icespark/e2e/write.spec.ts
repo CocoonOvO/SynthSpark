@@ -645,9 +645,11 @@ test('写作页：窄屏预览面板滚得动（滚轮 + 方向键），关掉�
   await expect(body).toBeFocused()
 
   // ── 切到资料面板：焦点跟着走（预览体马上要被卸载，不收焦点键盘就掉线） ──
-  await page.keyboard.press('m')
+  // 焦点现在落在**面板容器**上（不是外壳根节点）：面板里要能用 Tab 走栏位，
+  // 焦点就必须在面板内（§62）—— 落在外壳根节点时 Tab 会被"模态期间不接管"那条规则吞掉。
+  await press(page, 'm')
   await expect(page.locator('[data-testid="write-panel-meta"]')).toBeVisible()
-  await expect(page.locator('.app')).toBeFocused()
+  await expect(page.locator('.sheet')).toBeFocused()
 
   // ── 关面板：焦点回外壳，ESC 还能起菜单（键盘真活着的硬证据） ──
   await page.keyboard.press('Escape')
@@ -942,4 +944,176 @@ test('滚动条：走 token 画成像素风（不是隐藏），且文本框更�
   )
   // 结论：是"画成像素风"而不是"隐藏"—— 可滚区域照旧有原生滚动条
   expect(patch.overflowY).toBe('auto')
+})
+
+/* ────────────── 用户反馈第二批：快捷键 / 弹窗层级 / 预览 WASD（§62） ────────────── */
+
+test('写作页：Shift+S 存草稿、Shift+P 发布 —— 正文里与正文外都生效', async ({ page }) => {
+  const recorder = await openWrite(page)
+  await page.fill('[data-testid="write-title"]', '快捷键试稿')
+  await page.click('[data-testid="write-content"]')
+  await page.keyboard.type('正文第一行')
+
+  // ① 光标在正文里：连击键被内核接走（白名单），所以不会往正文里打进一个 "S"
+  await page.keyboard.press('Shift+S')
+  await expect.poll(() => recorder.writes.length, { message: 'Shift+S 应当真发一次保存' }).toBe(1)
+  expect(recorder.writes[0]).toMatchObject({ method: 'POST' })
+  expect(await page.locator('[data-testid="write-content"]').inputValue()).toBe('正文第一行')
+
+  // ② 光标离开正文（点一下页头）：同两个键仍然生效 —— 这一步走的是内核里
+  //    「非编辑目标也先问连击键」那一支，没有它快捷键一离开正文就失灵。
+  //
+  // 计数口径说明：保存会让页面跳到 `/write/<slug>`（编辑器重新挂载），自动保存也可能
+  // 再补一次写，所以**不数总数**，而是按「有没有出现过某种状态的写」来断言。
+  const statusOf = (w: WriteRecord): string | undefined =>
+    (w.body as { status?: string } | null)?.status
+  const drafts = () => recorder.writes.filter((w) => statusOf(w) === 'draft').length
+  const draftBefore = drafts()
+
+  await page.locator('main h1').click()
+  await page.keyboard.press('Shift+S')
+  await expect.poll(drafts, { message: '正文外 Shift+S 也要能存草稿' }).toBe(draftBefore + 1)
+  // 等这一次写**落定**再按下一个键：保存期间 `busy` 为真，那时按发布会被人为挡掉
+  // （页面自己的状态行就是"落定"的信号，比等固定毫秒可靠）
+  await expect(page.locator('[data-testid="write-status"]')).toContainText(/已(自动)?保存/)
+
+  // ③ Shift+P 发布（光标此时不在正文里）：请求体里状态必须是 published
+  await page.keyboard.press('Shift+P')
+  await expect
+    .poll(() => recorder.writes.some((w) => statusOf(w) === 'published'), {
+      message: 'Shift+P 应当发一次 published',
+    })
+    .toBe(true)
+})
+
+test('写作页：暂停菜单开着时，动作条要和背景一起变暗（不许浮在遮罩之上）', async ({ page }) => {
+  /**
+   * 用户反馈：只解决了窄屏面板那处层级，暂停菜单这类**外壳弹窗**下动作条仍然亮着。
+   * 根因是层级排序错了：页内遮罩 200 / 动作条 201 跑到了外壳遮罩（200）之上。
+   * 现在页内遮罩 150、动作条 151，外壳 200 / 240 稳稳盖在上面。
+   */
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await openWrite(page)
+
+  const barZ = await page.locator('.write-bar').evaluate((el) => getComputedStyle(el).zIndex)
+  expect(Number(barZ), '大屏动作条应当在页内遮罩之上（§55 的鼠标一下换面板）').toBe(151)
+
+  // 先把焦点移出编辑框：写作页打开时标题框是有焦点的，而编辑框里的 `p` 是**打字**
+  // （编辑目标让开内核），不是呼出菜单
+  await page.locator('main h1').click()
+  await press(page, 'p')
+  await expect(page.locator('[data-testid="pause"]')).toBeVisible()
+
+  const hit = await page.evaluate(() => {
+    const bar = document.querySelector('.write-bar') as HTMLElement
+    const rect = bar.getBoundingClientRect()
+    const el = document.elementFromPoint(rect.left + 30, rect.top + rect.height / 2)
+    return {
+      inBar: !!el?.closest('.write-bar'),
+      inShellMask: !!el?.closest('[data-testid="pause"]'),
+      shellZ: getComputedStyle(document.querySelector('[data-testid="pause"]') as HTMLElement).zIndex,
+    }
+  })
+  expect(hit.inBar, '菜单开着时动作条不该还能被点到（它该被遮住）').toBe(false)
+  expect(Number(hit.shellZ), '外壳遮罩的层级要高于动作条的 151').toBeGreaterThan(151)
+})
+
+test('写作页：预览框方向键与 WASD 都能滚（宽屏分栏与窄屏面板一致）', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await openWrite(page)
+  await page.fill(
+    '[data-testid="write-content"]',
+    Array.from({ length: 80 }, (_, i) => `第 ${i + 1} 行正文`).join('\n\n'),
+  )
+
+  const body = page.locator('[data-testid="write-preview-body"]')
+  await body.evaluate((el) => {
+    ;(el as HTMLElement).focus()
+    ;(el as HTMLElement).scrollTop = 0
+  })
+  await expect(body).toBeFocused()
+
+  const top = () => body.evaluate((el) => el.scrollTop)
+  // WASD：与方向键同一组动作，预览是只读的，四个方向都该用来滚
+  await page.keyboard.press('s')
+  await expect.poll(top, { message: 'WASD 的 s 应当往下滚（与 ArrowDown 同义）' }).toBeGreaterThan(0)
+  const afterS = await top()
+  await page.keyboard.press('w')
+  await expect.poll(top, { message: 'w 应当往上滚' }).toBeLessThan(afterS)
+
+  await page.keyboard.press('ArrowDown')
+  await expect.poll(top, { message: '方向键照旧能滚' }).toBeGreaterThan(0)
+
+  // 宽屏这半边是「只读 + inert 包装」，滚轮也要能用（§60.2 的门守的是同一件事）
+  const box = (await body.boundingBox())!
+  await body.evaluate((el) => { (el as HTMLElement).scrollTop = 0 })
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2)
+  await page.mouse.wheel(0, 200)
+  await expect.poll(top).toBeGreaterThan(0)
+})
+
+test('写作页：非编辑态方向键/WASD 按布局移动（动作条 ←→、↑ 标题、↓ 正文）', async ({ page }) => {
+  await page.setViewportSize({ width: 1280, height: 800 })
+  await openWrite(page)
+
+  // ① 中立态：↑ 去标题框（布局上是上面那一格）
+  await page.locator('main h1').click()
+  await press(page, 'ArrowUp')
+  await expect(page.locator('[data-testid="write-title"]')).toBeFocused()
+
+  // ② 中立态：↓ / → / d 进动作条，且每次都从**第一颗**重新进（不接着上次的下标走）
+  for (const key of ['ArrowDown', 'ArrowRight', 'd']) {
+    await page.locator('main h1').click()
+    await press(page, key)
+    await expect(page.locator('[data-testid="write-open-docs"]'), `中立态 ${key} 应当从第一颗进`).toBeFocused()
+  }
+
+  // ③ 条里左右走（视觉顺序：文稿 → 资料 → 存草稿 → 发布；1280 下没有预览按钮、还没落库也没「查看」）
+  await press(page, 'ArrowRight')
+  await expect(page.locator('[data-testid="write-open-meta"]')).toBeFocused()
+  await press(page, 'd')
+  await expect(page.locator('[data-testid="write-save"]')).toBeFocused()
+  await press(page, 'a')
+  await expect(page.locator('[data-testid="write-open-meta"]')).toBeFocused()
+
+  // ④ 条里按 ↓ 进正文（布局上下一格），按 ↑ 回标题框
+  await press(page, 'ArrowDown')
+  await expect(page.locator('[data-testid="write-content"]')).toBeFocused()
+  await page.keyboard.press('Escape') // 从正文里失焦（内核的口径）
+  await expect(page.locator('.app')).toBeFocused()
+  await press(page, 'ArrowUp')
+  await expect(page.locator('[data-testid="write-title"]')).toBeFocused()
+})
+
+test('写作页：资料面板里只用 Tab 就能在各个栏位之间走', async ({ page }) => {
+  await openWrite(page)
+  // 打开页时标题框有焦点，而编辑框里的 `m` 是**打字**（编辑目标让开内核）——
+  // 先把焦点移出编辑框再按面板键（这是全站口径，不是这轮的改动）
+  await page.locator('main h1').click()
+  await press(page, 'm')
+  await expect(page.locator('[data-testid="write-panel-meta"]')).toBeVisible()
+
+  // 面板开着时原生焦点在**面板容器**上（焦点陷阱生效的前提），自绘光标仍只有一颗
+  await expect(page.locator('.sheet')).toBeFocused()
+
+  // 一路 Tab：关掉 → 标签框 → 加标签 → 建议标签 → 配图 → 分组框…（都在面板里循环）
+  const seen: string[] = []
+  for (let i = 0; i < 18; i += 1) {
+    await press(page, 'Tab')
+    const id = await page.evaluate(
+      () =>
+        (document.activeElement as HTMLElement | null)?.dataset?.testid ??
+        (document.activeElement as HTMLElement | null)?.tagName ??
+        'NONE',
+    )
+    seen.push(String(id))
+    // 焦点必须始终留在面板里（跑出去就说明陷阱没生效）
+    const inside = await page.evaluate(
+      () => document.activeElement?.closest('[data-testid="write-panel-meta"]') !== null,
+    )
+    expect(inside, `第 ${i + 1} 次 Tab 后焦点跑出面板了：${seen.join(' → ')}`).toBe(true)
+  }
+  // 关键栏位确实走得到（**输入类栏位**是这轮反馈的重点：以前键盘根本够不到）
+  expect(seen).toContain('write-tag-input')
+  expect(seen).toContain('write-group-select')
 })

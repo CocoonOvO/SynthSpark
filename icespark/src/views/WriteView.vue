@@ -725,8 +725,11 @@ function openPanel(which: Panel): void {
     void nextTick(() => previewBody.value?.focus())
     return
   }
-  // 另两个面板是自绘焦点的（不是原生焦点），进来先把焦点交给外壳
-  dropNativeFocus()
+  // 另两个面板是自绘焦点的（不是原生焦点）：把**原生焦点交给面板本身**。
+  // 不 `dropNativeFocus()`（那会送到外壳根节点，Tab 随即被模态规则吞掉），
+  // 而是落在面板容器上 —— 面板本身没有可见的焦点环（它不是 `.focusable`，CSS 里也压掉了 outline），
+  // 屏幕上仍然只有自绘的那一个光标；同时 Tab 的焦点陷阱因此生效。
+  void nextTick(() => sheetEl.value?.focus())
 }
 
 /**
@@ -756,6 +759,99 @@ const PANEL_KEY: Partial<Record<PadAction, Panel>> = {
 }
 
 /* ══════════════════════ 键盘 ══════════════════════ */
+
+/**
+ * 动作条上的自绘光标（用户反馈：非编辑态下方向键/WASD 该能在页面元素间**按布局**移动）。
+ *
+ * 这一页此前根本没有"基础态光标"：方向键的归宿是 `dropNativeFocus()` + 还给浏览器滚页面，
+ * 所以按什么键都没反应（实测 activeElement 一直黏在 `.app` 上）。现在补一套：
+ *   ← → 在动作条**同一行**里左右走（视觉顺序，不是 DOM 里的依次切换）；
+ *   ↑   按布局往上 —— 标题框；↓ 按布局往下 —— 正文编辑器（进去就是打字）。
+ * 空格/回车交给原生按钮（按钮是 `<button>`，聚焦后回车即激活），不自己模拟点击。
+ */
+const BAR_SLOTS = ['docs', 'meta', 'preview', 'view', 'save', 'publish'] as const
+type BarSlot = (typeof BAR_SLOTS)[number]
+
+/** 当前**真的画出来**的那几颗（预览只在窄屏、查看只在已落库时出现） */
+const barSlots = computed<BarSlot[]>(() =>
+  BAR_SLOTS.filter((slot) => {
+    if (slot === 'preview') return narrow.value
+    if (slot === 'view') return canView.value
+    return true
+  }),
+)
+
+const barIndex = ref(-1)
+const isBarFocused = (slot: BarSlot): boolean => barIndex.value === barSlots.value.indexOf(slot)
+
+const BAR_TESTID: Record<BarSlot, string> = {
+  docs: 'write-open-docs',
+  meta: 'write-open-meta',
+  preview: 'write-open-preview',
+  view: 'write-view',
+  save: 'write-save',
+  publish: 'write-publish',
+}
+
+/** 把**原生焦点**交给第 i 颗（这样回车就是原生激活，不必自己模拟点击） */
+async function focusBar(i: number): Promise<void> {
+  const slots = barSlots.value
+  if (slots.length === 0) return
+  const index = ((i % slots.length) + slots.length) % slots.length
+  barIndex.value = index
+  const slot = slots[index]!
+  await nextTick()
+  document.querySelector<HTMLElement>(`[data-testid="${BAR_TESTID[slot]}"]`)?.focus()
+}
+
+/** 原生焦点此刻是不是在动作条里（判断依据是**真实焦点**，不是可能过期的下标） */
+function barHasFocus(): boolean {
+  return Boolean((document.activeElement as HTMLElement | null)?.closest('.write-bar'))
+}
+
+/** 方向键在"非编辑态"下的按布局移动；返回是否消费了这次按键 */
+function moveByLayout(a: PadAction): boolean {
+  if (a === 'left' || a === 'right') {
+    // 焦点不在动作条里（例如刚从标题框 / 点空白回来）→ 一律从第一颗重新进入，
+    // 免得用上一次留下的下标接着走（那样"从中立态按 →"会莫名其妙落到中间某颗上）
+    if (!barHasFocus()) {
+      void focusBar(0)
+      return true
+    }
+    void focusBar(barIndex.value + (a === 'right' ? 1 : -1))
+    return true
+  }
+  if (a === 'up') {
+    // 布局上在动作条上面的是标题框
+    barIndex.value = -1
+    titleEl.value?.focus()
+    return true
+  }
+  if (a === 'down') {
+    // 布局上在动作条下面的是正文，但**先要经过动作条这一行**：
+    // 从"中立态"直接跳进编辑器会让方向键当场变成打字（可编辑目标让开内核），
+    // 用户就再也"走不回去"了。所以中立态按 ↓ 先落到动作条，再按一次 ↓ 才进正文。
+    if (!barHasFocus()) {
+      void focusBar(0)
+      return true
+    }
+    barIndex.value = -1
+    editorEl.value?.focus()
+    return true
+  }
+  return false
+}
+
+/**
+ * 面板（文稿 / 资料 / 预览）里的 Tab 归属（用户反馈：面板里没法只用键盘在不同栏位间切换）。
+ *
+ * 做法：面板容器声明 `data-focus-trap="cycle"`（内核那套焦点陷阱，§57 与登录框共用），
+ * 并把**原生焦点交给面板本身**（`openPanel` 里那一句）——
+ * 这样 Tab / Shift+Tab 会在面板内的栏位之间循环：分组框 → 标签框 → 动作芯片 → 回到第一格。
+ * 之前焦点被 `dropNativeFocus()` 送回外壳根节点，于是 Tab 被"模态期间不接管"那条规则吞掉，
+ * 面板里除了自绘光标能走的那几颗芯片，别的栏位（那两个输入框）键盘根本够不到。
+ */
+const sheetEl = ref<HTMLElement | null>(null)
 
 const docsFocus = useFocusGroup({ initial: 0 })
 const metaFocus = useFocusGroup({ initial: 0 })
@@ -867,7 +963,42 @@ function confirmPad(a: PadAction): boolean {
 }
 
 /** 面板里的按键归属 */
+/**
+ * 预览滚动（用户反馈：预览框不支持 WASD，要与编辑框交互一致）。
+ *
+ * 为什么需要它：`W A S D` 与方向键在内核里**是同一组动作**（`up/left/down/right`），
+ * 而预览是只读容器 —— 方向键本来由浏览器原生滚动，WASD 却什么也不做，两边手感不一致。
+ * 这里把四个方向统一接过来自己滚（`PageUp/PageDown` 仍留给浏览器整页滚），
+ * 于是"焦点在预览上"时方向键与 WASD 是同一种操作。
+ *
+ * 认的是**当前焦点所在的预览容器**（宽屏那份与窄屏面板那份用的是同一个 testid），
+ * 焦点不在预览上就不接管 —— 编辑区里的方向键照旧归浏览器与 textarea。
+ */
+const PREVIEW_SELECTOR = '[data-testid="write-preview-body"]'
+const PREVIEW_STEP = 72
+
+function scrollPreview(direction: PadAction): boolean {
+  const active = document.activeElement as HTMLElement | null
+  const scroller = active?.closest(PREVIEW_SELECTOR) as HTMLElement | null
+  if (!scroller) return false
+  const horizontal = direction === 'left' || direction === 'right'
+  const step = direction === 'up' || direction === 'left' ? -PREVIEW_STEP : PREVIEW_STEP
+  scroller.scrollBy(horizontal ? { left: step } : { top: step })
+  return true
+}
+
 function panelPad(a: PadAction, which: Panel): boolean {
+  // 两个专用快捷键在面板里同样生效：面板开着时想存一份草稿 / 直接发布是很自然的动作，
+  // 不该逼用户先关面板（存/发都不依赖面板内容，动作条按钮在面板里也是同样处理的）。
+  if (a === 'saveDraft') {
+    saveDraft()
+    return true
+  }
+  if (a === 'publish') {
+    publish()
+    return true
+  }
+
   // 页内模态：ESC / Q 关掉自己（先例与理由见文件头）。同一个面板键再按一下也是关。
   if (a === 'cancel' || a === 'back') {
     closePanel()
@@ -893,11 +1024,12 @@ function panelPad(a: PadAction, which: Panel): boolean {
   }
 
   if (a === 'up' || a === 'down' || a === 'left' || a === 'right') {
-    // 预览面板：没有可选项，方向键整个交给浏览器。
-    // **先于 `dropNativeFocus()` 返回** —— 开放面板时焦点就在这个滚动容器上（`openPanel`），
+    // 预览面板：没有可选项，四个方向（含 WASD）都用来滚预览。
+    // **先于 `dropNativeFocus()` 处理** —— 开放面板时焦点就在这个滚动容器上（`openPanel`），
     // 收掉它方向键就没有滚动目标了，正文一长照样滚不动（§28.12）。
-    if (which === 'preview') return false
-    dropNativeFocus()
+    if (which === 'preview') return scrollPreview(a)
+    // 方向键一动：把焦点收回**面板容器**（不是外壳根节点，理由同上——留在面板里 Tab 才走得通）
+    void nextTick(() => sheetEl.value?.focus())
     if (which === 'docs') {
       const next = spatialIndex(docsFocus.index.value, a, 1, docsRingCount.value)
       if (next === null) return false
@@ -930,6 +1062,19 @@ const off = onPad((a) => {
   // （编辑框里的 ESC 由内核拦下做「失焦」，到不了这里；见文件头的输入模型）
   if (a === 'cancel') return false
 
+  // 两个专用快捷键（用户反馈 §62）：存草稿 / 发布。
+  // 键盘路径是 `Shift+S` / `Shift+P`（正文里与不在正文里都认，见 `input/pad.ts`
+  // 的 `COMBO_KEYMAP` 与内核里"非编辑目标也先问连击键"那一支）；
+  // `Ctrl/⌘+S` 与 `Ctrl/⌘+Enter` 由编辑框自己接，两条并存、互不影响。
+  if (a === 'saveDraft') {
+    saveDraft()
+    return true
+  }
+  if (a === 'publish') {
+    publish()
+    return true
+  }
+
   // 三个面板键：焦点不在编辑框里时是 N / M / V，在正文里是 Shift+N / Shift+M / Shift+V
   // （组合键白名单就在这几个动作上，见 `input/pad.ts` 的 `COMBO_ACTIONS`）
   const which = PANEL_KEY[a]
@@ -946,9 +1091,18 @@ const off = onPad((a) => {
   }
 
   if (a === 'up' || a === 'down' || a === 'left' || a === 'right') {
-    // 惯例二：方向键一动就收掉原生焦点，屏幕上永远只有一个光标。
-    // 正文里的方向键根本到不了这里（可编辑目标被内核让开，组合键白名单里也没有它），
-    // 所以这里说的是「焦点停在按钮上」那条路径：收掉它，然后把按键还给浏览器滚动页面。
+    // 焦点在**宽屏预览**上时，四个方向（含 WASD）用来滚预览 —— 与窄屏面板、与编辑框里的
+    // 滚动键手感一致（用户反馈）。此时**不能** `dropNativeFocus()`：焦点一收，滚动目标就没了。
+    if (scrollPreview(a)) return true
+
+    // 方向键在基础态的归宿（用户反馈 §62 的第三条）：
+    //   ① 焦点在预览上 → 滚预览（上面那一步）；
+    //   ② 其余情形 → 按布局移动（←→ 走动作条、↑ 标题框、↓ 正文）——
+    //      这是"按页面布局直观切换"，不是 DOM 顺序里的依次跳。
+    // 焦点在**正文里**时这些键到不了这里（可编辑目标被内核让开），所以不会干扰打字。
+    if (moveByLayout(a)) return true
+
+    // 兜底：没有可移动的目标时，收掉原生焦点、把按键还给浏览器（旧口径）
     dropNativeFocus()
     return false
   }
@@ -1002,7 +1156,8 @@ onUnmounted(() => {
     <div class="write-bar px">
       <button
         type="button"
-        class="bar-btn"
+        class="bar-btn focusable"
+        :class="{ 'is-focused': isBarFocused('docs') }"
         data-testid="write-open-docs"
         title="文稿（N）"
         @click="pickPanel('docs')"
@@ -1011,7 +1166,8 @@ onUnmounted(() => {
       </button>
       <button
         type="button"
-        class="bar-btn"
+        class="bar-btn focusable"
+        :class="{ 'is-focused': isBarFocused('meta') }"
         data-testid="write-open-meta"
         title="资料（M）"
         @click="pickPanel('meta')"
@@ -1021,7 +1177,8 @@ onUnmounted(() => {
       <button
         v-if="narrow"
         type="button"
-        class="bar-btn"
+        class="bar-btn focusable"
+        :class="{ 'is-focused': isBarFocused('preview') }"
         data-testid="write-open-preview"
         title="预览（V）"
         @click="pickPanel('preview')"
@@ -1037,19 +1194,28 @@ onUnmounted(() => {
       <span class="bar-tail">
         <a
           v-if="canView"
-          class="bar-btn"
+          class="bar-btn focusable"
+          :class="{ 'is-focused': isBarFocused('view') }"
           data-testid="write-view"
           :href="viewHref"
           @click.prevent="goView()"
         >
           查看
         </a>
-        <button type="button" class="bar-btn" :disabled="busy" data-testid="write-save" @click="saveDraft()">
+        <button
+          type="button"
+          class="bar-btn focusable"
+          :class="{ 'is-focused': isBarFocused('save') }"
+          :disabled="busy"
+          data-testid="write-save"
+          @click="saveDraft()"
+        >
           存草稿
         </button>
         <button
           type="button"
-          class="bar-btn is-primary"
+          class="bar-btn is-primary focusable"
+          :class="{ 'is-focused': isBarFocused('publish') }"
           :disabled="busy"
           data-testid="write-publish"
           @click="publish()"
@@ -1119,15 +1285,20 @@ onUnmounted(() => {
       <span class="kb"><i class="kbd">Shift</i>+<i class="kbd">N</i> 文稿</span>
       <span class="kb"><i class="kbd">Shift</i>+<i class="kbd">M</i> 资料</span>
       <span class="kb" v-if="narrow"><i class="kbd">Shift</i>+<i class="kbd">V</i> 预览</span>
-      <span class="kb"><i class="kbd">Ctrl</i>+<i class="kbd">S</i> 存草稿</span>
-      <span class="kb"><i class="kbd">Ctrl</i>+<i class="kbd">↵</i> 发布</span>
+      <!-- 两个专用快捷键（§62）：正文里与不在正文里都认；Ctrl 那两条由编辑框自己接 -->
+      <span class="kb"><i class="kbd">Shift</i>+<i class="kbd">S</i> 存草稿</span>
+      <span class="kb"><i class="kbd">Shift</i>+<i class="kbd">P</i> 发布</span>
+      <span class="kb tail-hint"><i class="kbd">Ctrl</i>+<i class="kbd">S</i>/<i class="kbd">↵</i> 同样可用</span>
       <span class="kb tail"><i class="kbd">Q</i> 返回 · <i class="kbd">P</i> 菜单</span>
     </div>
 
     <!-- ══════════ 覆盖面板 ══════════ -->
     <div v-if="panel" class="sheet-mask" @click.self="closePanel()">
       <section
+        ref="sheetEl"
         class="sheet px"
+        tabindex="-1"
+        data-focus-trap="cycle"
         :class="`is-${panel}`"
         role="dialog"
         aria-modal="true"
@@ -1464,6 +1635,11 @@ onUnmounted(() => {
   color: var(--spark);
 }
 
+/* 面板容器拿原生焦点（为了 Tab 陷阱），但它不是可交互控件：不要画焦点环 */
+.sheet:focus {
+  outline: none;
+}
+
 /* ── 动作条 ── */
 /*
  * 动作条的层级**分两种形态**（用户两轮反馈都要满足）：
@@ -1488,11 +1664,13 @@ onUnmounted(() => {
   padding: 7px 9px;
 }
 
-/* 大屏：抬到遮罩之上（窄屏保持普通文档层，见上面那段说明） */
+/* 大屏：抬到**页内**遮罩之上（窄屏保持普通文档层，见上面那段说明）。
+   注意是 151 而不是 201 —— 要留在外壳弹窗（200 / 240）**之下**，否则暂停菜单一开，
+   动作条会亮在变暗的背景之上。 */
 @media (min-width: 1101px) {
   .write-bar {
     position: relative;
-    z-index: 201;
+    z-index: 151;
   }
 }
 
@@ -1660,7 +1838,16 @@ onUnmounted(() => {
 .sheet-mask {
   position: fixed;
   inset: 0;
-  z-index: 200;
+  /*
+   * 层级要**卡在外壳弹窗之下**（用户反馈：暂停菜单开着时动作条亮着、别的都暗了）。
+   * 外壳的遮罩是 200（`PauseMenu.vue`），登录 / 设置框是 240；页内遮罩选 150、
+   * 动作条选 151（见下）—— 这样三件事同时成立：
+   *   ① 页内遮罩盖得住页面内容（CRT 那两层是 100 / 101）；
+   *   ② 动作条盖得住**页内**遮罩（鼠标点另一颗面板按钮一下就切，§55）；
+   *   ③ 外壳弹窗（200 / 240）盖得住动作条 —— 暂停菜单一开，动作条与其它背景一起变暗。
+   * 原先页内遮罩是 200、动作条 201，于是动作条跑到了暂停菜单遮罩之上（就是这次的反馈）。
+   */
+  z-index: 150;
   background: var(--veil-deep);
   display: grid;
   place-items: center;
