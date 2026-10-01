@@ -3397,3 +3397,30 @@ Exit code: 2`：产物 webServer 是 `npm run build && vite preview --port 4175 
 
 - `npx playwright test`：**192 passed / 3 skipped**（195 条 / 31 个 spec），**连跑三次一致**。
 - `npm run check` 八段 **EXIT=0**。
+
+## 50. 写作页的键 / 鼠两条旅程（2026-10-01）
+
+写作页是全站唯一「打字 + 组合键」的页面，此前只有 `write.spec.ts` 的功能覆盖，
+没有「一种输入方式走完全程」的保证。两条新用例补上（都真发写请求、都录指针 / 按键事件）：
+
+| 旅程 | 要点 |
+|---|---|
+| 纯键盘（`parity-pages-keyboard.spec.ts`） | 打开 `/write` 时**标题框已经拿着原生焦点**（打开就能写）→ 打字 → **一直 `Tab` 直到落进正文**（中间隔着插入条 8 颗按钮与围栏语言下拉；**故意不写死步数**，以后插入条加按钮不会假红）→ 打字 → **`Ctrl/⌘+S`** 存草稿 → 断言 POST 体里有标题与正文、`status === 'draft'`、状态行变「已保存」；全程零指针事件 |
+| 纯鼠标（`parity-pages.spec.ts`） | 点标题 → 写 → 点正文 → 写 → 点「存草稿」→ 同样的断言；全程零 `keydown` |
+
+两条顺手钉住的实现事实（以后改坏了有人知道）：
+
+- **`Ctrl/⌘+S` 是编辑框自己接的**，不是内核 —— `pad.ts` 的 `resolveComboAction` 刻意对
+  `Ctrl / Alt / Meta` 一律让开（注释写明：「抢过来就成了『想存草稿却开了面板』这类事故」），
+  真正接它的是 `src/signal/MarkdownSourceEditor.vue`（并 `preventDefault()` 掉浏览器自己的
+  「保存网页」对话框）。所以这条旅程的**光标必须落在正文框里**才走得通 ——
+  这也正是上面那步「Tab 到落进正文为止」的用意。
+- **正文里的 `Tab` 归编辑框**：它把 `Tab` 接过去送进插入条（`focusToolbar()`），
+  理由是「原生 `Tab` 从正文往后走会撞上页面末尾那两个隐藏的文件输入框」。
+  所以页面上的原生 Tab 顺序会看到「工具条 → 语言下拉 → 正文 → 又回工具条」这种循环感，
+  这不是 bug。
+
+### 50.1 验收
+
+- `npx playwright test`：**194 passed / 3 skipped**（197 条 / 31 个 spec），连跑两次一致。
+- `npm run check` 八段 **EXIT=0**。

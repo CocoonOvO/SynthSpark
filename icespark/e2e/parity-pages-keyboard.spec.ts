@@ -89,6 +89,22 @@ async function stubContent(page: Page): Promise<void> {
 }
 
 /** 超管登录态（打桩 `/api/auth/me`，不碰真账号） */
+/** 打桩成已登录的普通作者（能写作、不能进管理页） */
+async function author(page: Page): Promise<void> {
+  const user = { id: 'e2e-id', username: 'e2e_writer', display_name: '测试作者', is_superuser: false }
+  await page.addInitScript((u) => {
+    localStorage.setItem('synthspark-token', 'e2e-token')
+    localStorage.setItem('synthspark-icespark-user', JSON.stringify(u))
+  }, user)
+  await page.route('**/api/auth/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ...user, email: null, bio: null, avatar_url: null }),
+    }),
+  )
+}
+
 async function superuser(page: Page): Promise<void> {
   const user = { id: 'e2e-id', username: 'e2e_boss', display_name: '测试超管', is_superuser: true }
   await page.addInitScript((u) => {
@@ -409,6 +425,70 @@ test('纯键盘：站点设置页 ↓/ENTER 换段、Tab 进字段改一处、Ta
   // 没动过的段与同段没动过的字段原样带回去
   expect(body.site?.name).toBe('键盘站点')
   expect(body.navbar?.navItems).toEqual([{ label: '主页', path: '/' }])
+
+  await expectNoPointer(page)
+})
+
+test('纯键盘：写作页打字 + Ctrl/⌘+S 存草稿（Tab 进正文、组合键真发 POST）', async ({ page }) => {
+  await installPointerRecorder(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('synthspark-icespark-sound-prompt', '1')
+  })
+  await author(page)
+
+  const writes: { method: string; body: string }[] = []
+  await page.route(/\/api\/(posts|groups|tags)\//, (route) => {
+    const method = route.request().method()
+    const pathname = new URL(route.request().url()).pathname
+    if (method !== 'GET') writes.push({ method, body: route.request().postData() ?? '' })
+    const body =
+      pathname === '/api/groups/' || pathname === '/api/tags/'
+        ? []
+        : {
+            id: 'p-e2e-new',
+            slug: 'e2e-new',
+            title: '键盘写的标题',
+            content: '# 键盘写的正文',
+            status: 'draft',
+            created_at: '2026-09-20T10:00:00',
+            updated_at: '2026-09-20T10:00:00',
+            published_at: null,
+          }
+    return route.fulfill({
+      status: method === 'POST' ? 201 : 200,
+      contentType: 'application/json',
+      body: JSON.stringify(body),
+    })
+  })
+
+  await page.goto('/write')
+  await booted(page)
+
+  // 写作页把正文框的**标题**给了原生焦点（打开就能写），这是键盘用户的入口
+  await expect(page.locator('[data-testid="write-title"]')).toBeFocused()
+  await page.keyboard.press('ControlOrMeta+a')
+  await page.keyboard.type('键盘写的标题')
+
+  // Tab 进正文：中间隔着插入条的 8 颗工具按钮与围栏语言下拉 ——
+  // 不写死步数（插入条以后加按钮就假红），改成「一直 Tab 到落进正文为止」
+  const content = page.locator('[data-testid="write-content"]')
+  for (let i = 0; i < 20; i += 1) {
+    await press(page, 'Tab')
+    if (await content.evaluate((el) => el === document.activeElement)) break
+  }
+  await expect(content, 'Tab 应当能一路走到正文框').toBeFocused()
+  await page.keyboard.type('# 键盘写的正文\n\n正文段落。')
+
+  // 「Ctrl/⌘ + S 存草稿」是**编辑框自己**接的（内核刻意不抢 Ctrl/Meta，见 pad.ts 的注释），
+  // 所以光标必须在正文框里 —— 这正是上面那步要落在正文而不是别处的原因
+  await press(page, 'ControlOrMeta+s')
+
+  await expect.poll(() => writes.length, { message: '存草稿应当真发一次写请求' }).toBe(1)
+  const sent = JSON.parse(writes[0]!.body) as { title?: string; content?: string; status?: string }
+  expect(sent.title).toBe('键盘写的标题')
+  expect(sent.content, '正文里敲的字都要进请求体').toContain('键盘写的正文')
+  expect(sent.status, 'Ctrl/⌘+S 是存草稿，不是发布').toBe('draft')
+  await expect(page.locator('[data-testid="write-status"]')).toContainText('已保存')
 
   await expectNoPointer(page)
 })

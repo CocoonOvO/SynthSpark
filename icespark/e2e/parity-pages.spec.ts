@@ -20,6 +20,22 @@ import { booted } from './helpers'
 
 /** 装记录器：任何 keydown 都会被记下（捕获阶段，比组件监听早） */
 /** 打桩成已登录的超管（与 parity-pages-keyboard.spec.ts 同一写法） */
+/** 打桩成已登录的普通作者（能写作、不能进管理页） */
+async function author(page: Page): Promise<void> {
+  const user = { id: 'e2e-id', username: 'e2e_writer', display_name: '测试作者', is_superuser: false }
+  await page.addInitScript((u) => {
+    localStorage.setItem('synthspark-token', 'e2e-token')
+    localStorage.setItem('synthspark-icespark-user', JSON.stringify(u))
+  }, user)
+  await page.route('**/api/auth/me', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ ...user, email: null, bio: null, avatar_url: null }),
+    }),
+  )
+}
+
 async function superuser(page: Page): Promise<void> {
   const user = { id: 'e2e-id', username: 'e2e_boss', display_name: '测试超管', is_superuser: true }
   await page.addInitScript((u) => {
@@ -333,6 +349,58 @@ test('纯鼠标：站点设置页点段换页、点进字段改一处、点保�
   const body = puts[0] as { home?: { title?: string }; site?: { name?: string } }
   expect(body.home?.title).toBe('鼠标横幅')
   expect(body.site?.name, '没动过的段原样带回去').toBe('鼠标站点')
+
+  await expectNoKeys(page)
+})
+
+test('纯鼠标：写作页点两格写字 + 点「存草稿」（零键盘）', async ({ page }) => {
+  await installRecorder(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('synthspark-icespark-sound-prompt', '1')
+  })
+  await author(page)
+
+  const writes: { method: string; body: string }[] = []
+  await page.route(/\/api\/(posts|groups|tags)\//, (route) => {
+    const method = route.request().method()
+    const pathname = new URL(route.request().url()).pathname
+    if (method !== 'GET') writes.push({ method, body: route.request().postData() ?? '' })
+    const body =
+      pathname === '/api/groups/' || pathname === '/api/tags/'
+        ? []
+        : {
+            id: 'p-e2e-new',
+            slug: 'e2e-new',
+            title: '鼠标写的标题',
+            content: '鼠标写的正文',
+            status: 'draft',
+            created_at: '2026-09-20T10:00:00',
+            updated_at: '2026-09-20T10:00:00',
+            published_at: null,
+          }
+    return route.fulfill({
+      status: method === 'POST' ? 201 : 200,
+      contentType: 'application/json',
+      body: JSON.stringify(body),
+    })
+  })
+
+  await page.goto('/write')
+  await booted(page)
+
+  // 点进标题、点进正文，再点「存草稿」——键盘那边走 Tab 与 Ctrl/⌘+S，这里全程只有点击
+  await page.click('[data-testid="write-title"]')
+  await page.fill('[data-testid="write-title"]', '鼠标写的标题')
+  await page.click('[data-testid="write-content"]')
+  await page.fill('[data-testid="write-content"]', '# 鼠标写的正文')
+  await page.click('[data-testid="write-save"]')
+
+  await expect.poll(() => writes.length, { message: '存草稿应当真发一次写请求' }).toBe(1)
+  const sent = JSON.parse(writes[0]!.body) as { title?: string; content?: string; status?: string }
+  expect(sent.title).toBe('鼠标写的标题')
+  expect(sent.content).toContain('鼠标写的正文')
+  expect(sent.status).toBe('draft')
+  await expect(page.locator('[data-testid="write-status"]')).toContainText('已保存')
 
   await expectNoKeys(page)
 })
