@@ -404,3 +404,24 @@ test('纯鼠标：写作页点两格写字 + 点「存草稿」（零键盘）',
 
   await expectNoKeys(page)
 })
+
+test('纯鼠标：404 皮肤点「文章列表」离开这一页（零键盘）', async ({ page }) => {
+  await installRecorder(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('synthspark-icespark-sound-prompt', '1')
+  })
+
+  await page.goto('/nope-404')
+  await booted(page)
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'error')
+
+  // 404 皮肤的四项里，三项是**真链接**（href 就是目标），另加一项「返回上一页」是动词
+  const toPosts = page.getByRole('link', { name: '文章列表' })
+  await expect(toPosts).toHaveAttribute('href', '/posts')
+  await toPosts.click()
+
+  await expect(page).toHaveURL(/\/posts$/)
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'posts')
+
+  await expectNoKeys(page)
+})

@@ -492,3 +492,27 @@ test('纯键盘：写作页打字 + Ctrl/⌘+S 存草稿（Tab 进正文、组�
 
   await expectNoPointer(page)
 })
+
+test('纯键盘：404 皮肤方向键选动作 + 回车离开这一页（零指针事件）', async ({ page }) => {
+  await installPointerRecorder(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('synthspark-icespark-sound-prompt', '1')
+  })
+
+  await page.goto('/nope-404')
+  await booted(page)
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'error')
+
+  // 页内四项共用一份自绘光标，顺序 = 视觉顺序：返回首页 · 文章列表 · 个人中心 · 返回上一页
+  await expect(page.locator('.back-home-btn')).toHaveClass(/is-focused/)
+  await page.keyboard.press('ArrowRight')
+  const toPosts = page.getByRole('link', { name: '文章列表' })
+  await expect(toPosts).toHaveClass(/is-focused/)
+
+  // 回车走的是页面自己的 activate（href 是真的，但路由交给前端）
+  await page.keyboard.press('Enter')
+  await expect(page).toHaveURL(/\/posts$/)
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'posts')
+
+  await expectNoPointer(page)
+})
