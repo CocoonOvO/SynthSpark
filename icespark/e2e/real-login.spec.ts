@@ -1,3 +1,5 @@
+import { readFileSync } from 'node:fs'
+
 import { expect, test, type Page } from '@playwright/test'
 
 import { booted } from './helpers'
@@ -23,12 +25,29 @@ import { booted } from './helpers'
  * 只有「是不是超管」这一条按 `/api/auth/me` 的返回值分支判（超管才有四张管理页的行）。
  */
 
-const USER = process.env.ICESPARK_E2E_USER ?? ''
-const PASS = process.env.ICESPARK_E2E_PW ?? ''
+/**
+ * 凭据来源（优先级从高到低）：
+ *   1. 环境变量 `ICESPARK_E2E_USER` / `ICESPARK_E2E_PW`（CI 与临时跑法）；
+ *   2. 本机文件 `e2e/.credentials.local.json`（**已 gitignore**，由维护者创建一次即可，见 §54）。
+ * 两者都没有就跳过 —— 跳过而不是假绿，文件里也永不写账号密码。
+ */
+function localCredentials(): { user: string; pw: string } | null {
+  try {
+    const raw = readFileSync(new URL('./.credentials.local.json', import.meta.url), 'utf8')
+    const parsed = JSON.parse(raw) as { user?: string; pw?: string }
+    return parsed.user && parsed.pw ? { user: parsed.user, pw: parsed.pw } : null
+  } catch {
+    return null
+  }
+}
+
+const local = localCredentials()
+const USER = process.env.ICESPARK_E2E_USER ?? local?.user ?? ''
+const PASS = process.env.ICESPARK_E2E_PW ?? local?.pw ?? ''
 
 test.skip(
   !USER || !PASS,
-  '未设置 ICESPARK_E2E_USER / ICESPARK_E2E_PW —— 跳过真实登录链路（设了就会跑）',
+  '没有真实测试账号（环境变量 ICESPARK_E2E_USER / ICESPARK_E2E_PW，或本机 e2e/.credentials.local.json）—— 跳过真实登录链路',
 )
 
 test.beforeEach(async ({ page }) => {

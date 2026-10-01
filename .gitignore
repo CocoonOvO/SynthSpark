@@ -178,3 +178,5 @@ icespark/.eslintcache
 icespark/public/fonts/*.woff2
 # 站点配置的工作副本（由 scripts/ensure-site-config.mjs 从 example 生成，部署方手改）
 icespark/public/site.config.json
+# 真实登录 e2e 的本地凭据（本机测试账号，不入库；也可以改用环境变量传入）
+icespark/e2e/.credentials.local.json

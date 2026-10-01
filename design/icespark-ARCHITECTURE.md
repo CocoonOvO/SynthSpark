@@ -3544,3 +3544,45 @@ login-submit → Shift+Tab → 还是 login-submit（不动）
 
 - `npx playwright test`：**209 passed / 3 skipped**（212 条 / 33 个 spec），连跑两次一致。
 - `npm run check` 八段 **EXIT=0**。
+
+## 54. 测试账号：清掉 72 个残留、建一个专用账号（2026-10-01）
+
+用户裁决「没用的清了就行」「你自己创建呗」，两件都办完了。
+
+### 54.1 清掉 72 个 e2e 残留账号
+
+业务库 `synthspark_test`（PostgreSQL）里原来有 **80** 个用户，其中 **72** 个是
+`site_cfg_*`（2026-09-30 由站点配置相关 e2e 跑出来的，其中 60 个还是超管）。
+删之前逐个查了引用关系，确认它们**不带任何内容**：
+
+| 引用检查 | 结果 |
+|---|---|
+| 这些用户写的文章 `posts.author_id` | 0 |
+| 这些用户的评论 `comments.author_id` | 0 |
+| 这些用户的点赞 `likes.user_id` | 0 |
+| 这些用户的 API 令牌 `user_api_tokens.user_id` | 0 |
+
+（全库只有这四张表引用用户，逐一查过。）删除后剩 **8** 个真账号：
+`human_admin`、`super_ai`、`normal_ai`、`normal_user`、`test_admin`、`mw_test`、
+`icespark_user`、`icespark_admin`。
+
+### 54.2 建一个专用测试账号，把 3 条真链路 e2e 从「跳过」变成「常跑」
+
+- 账号：`icespark_e2e`（普通用户，非超管，显示名「自动化测试账号」），经
+  `POST /api/auth/register`（超管令牌）创建 —— 用接口而不是直接写库，口令哈希走应用自己那一套。
+- 凭据落点：`icespark/e2e/.credentials.local.json`（**已 gitignore**），
+  环境变量 `ICESPARK_E2E_USER` / `ICESPARK_E2E_PW` 优先级更高（CI 用）。
+  `real-login.spec.ts` 两者都没有时照旧**跳过**（不是假绿），文件里也永不写账号密码。
+- 效果：`npx playwright test` 从 `209 passed / 3 skipped` 变成 **212 passed / 0 skipped** ——
+  表单编码登录、令牌换 `/api/auth/me`、刷新保持登录、登出清键，这四条真链路现在每次验收都跑。
+
+### 54.3 顺带发现（未处理，属部署/环境侧）
+
+本机 PostgreSQL 里还留着一个 `synthink_test` 数据库（**旧命名**，§1 已废弃的那种）。
+它不在仓库里、也没有任何代码引用（`.env` 的 `TEST_DATABASE_URL` 指向 `synthspark_test`），
+所以不影响任何门；要不要删掉由维护者定（删库是不可逆操作，不擅自做）。
+
+### 54.4 验收
+
+- `npx playwright test`：**212 passed / 0 skipped**（212 条 / 33 个 spec）。
+- `npm run check` 八段 **EXIT=0**。
