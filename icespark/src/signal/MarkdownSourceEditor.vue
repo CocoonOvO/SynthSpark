@@ -14,9 +14,12 @@
  * **往光标处插入 markdown 片段**（`**x**` / `## ` / `> ` / 围栏…），这是形态的必然结果，
  * 已与用户在 §28 二次确认（D9：保留一行插入条）。
  *
- * ⚠️ **旧版有「删除线」，这里没有**，是刻意的：GFM 的 `~~x~~` 需要 markdown-it 打开
- * `strikethrough` 规则，而本项目那个渲染器（`signal/MarkdownBody.vue`）用的是
- * markdown-it **默认 preset**，删除线**没开** —— 插进去只会原样显示两个波浪号。
+ * 「删除线」这颗按钮**曾经被误删过**：当时的理由是「GFM 的 `~~x~~` 需要 markdown-it 打开
+ * `strikethrough` 规则，而本项目渲染器用的是默认 preset，删除线没开」。这个前提是**错的** ——
+ * markdown-it 的 default preset 本来就开了 `strikethrough`（`gfm-like` 的表格与删除线都在），
+ * `signal/MarkdownBody.vue` 的 `PURIFY_TAGS` 里也一直有 `s`。实测 `~~删掉这段~~` 渲染为
+ * `<s>删掉这段</s>`，所以按钮已按旧版顺序（粗体 · 斜体 · **删除线** · 行内码…）恢复，
+ * 并由 `md-and-pixels.spec.ts` 的渲染门 + `write.spec.ts` 的插入门两边守住。
  * 要恢复这个按钮就得先改 `MarkdownBody`，那是样机已定稿的渲染器（硬要求 1：不许擅自改
  * 既有页面效果）。所以本轮**不做**，把这件事留给用户裁决（已写进 §28.9 交付记录）。
  *
@@ -256,6 +259,7 @@ function insertFence(): void {
 const TOOLS = [
   { id: 'bold', label: '粗体', title: '粗体 **文字**', run: () => wrap('**', '**', '粗体') },
   { id: 'italic', label: '斜体', title: '斜体 *文字*', run: () => wrap('*', '*', '斜体') },
+  { id: 'strike', label: '删除线', title: '删除线 ~~文字~~', run: () => wrap('~~', '~~', '删除线') },
   { id: 'code', label: '行内码', title: '行内代码 `文字`', run: () => wrap('`', '`', 'code') },
   { id: 'h2', label: '标题', title: '二级标题 ## ', run: () => prefixLine('## ', '标题') },
   { id: 'quote', label: '引用', title: '引用 > ', run: () => prefixLine('> ', '引用') },

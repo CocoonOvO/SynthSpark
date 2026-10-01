@@ -729,6 +729,17 @@ function openPanel(which: Panel): void {
   dropNativeFocus()
 }
 
+/**
+ * 动作条上那颗按钮的点击：**同一个面板再点一下就关**，与键盘的同一颗键同义
+ * （`panelPad` 里写的是「同一个面板键再按一下也是关」）。
+ * 不直接改 `openPanel` 的原因是它另有调用点（面板键切换、开资料时顺手拉标签），
+ * 那些地方要的是「打开」，不是「切换」。
+ */
+function pickPanel(which: Panel): void {
+  if (panel.value === which) closePanel()
+  else openPanel(which)
+}
+
 function closePanel(): void {
   if (!panel.value) return
   panel.value = null
@@ -994,7 +1005,7 @@ onUnmounted(() => {
         class="bar-btn"
         data-testid="write-open-docs"
         title="文稿（N）"
-        @click="openPanel('docs')"
+        @click="pickPanel('docs')"
       >
         文稿 <i class="kbd">N</i>
       </button>
@@ -1003,7 +1014,7 @@ onUnmounted(() => {
         class="bar-btn"
         data-testid="write-open-meta"
         title="资料（M）"
-        @click="openPanel('meta')"
+        @click="pickPanel('meta')"
       >
         资料 <i class="kbd">M</i>
       </button>
@@ -1013,7 +1024,7 @@ onUnmounted(() => {
         class="bar-btn"
         data-testid="write-open-preview"
         title="预览（V）"
-        @click="openPanel('preview')"
+        @click="pickPanel('preview')"
       >
         预览 <i class="kbd">V</i>
       </button>
@@ -1441,7 +1452,20 @@ onUnmounted(() => {
 }
 
 /* ── 动作条 ── */
+/*
+ * 动作条**抬在面板遮罩之上**（用户裁决：鼠标换面板不该比键盘多点一下）。
+ *
+ * 原先它与页面其余部分一样被 `.sheet-mask`（`fixed` + `z-index: 200`）盖住，
+ * 于是「已经有面板开着时点另一颗面板按钮」第一下点到的是遮罩——那一层只负责关，
+ * 要点第二下才真的打开；而键盘按 M 是**直接切**（`panelPad`：换面板不要求先关）。
+ * 两边行为不一致，也不好解释。抬到 201 之后鼠标也一下切到，`pickPanel` 再让
+ * 「点同一个」等价于键盘的「再按一下就是关」。
+ *
+ * 代价：面板开着时动作条不再被遮罩压暗（它本来就是那颗开关，留着更合理）。
+ */
 .write-bar {
+  position: relative;
+  z-index: 201;
   display: flex;
   align-items: center;
   gap: 8px;

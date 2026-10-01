@@ -488,8 +488,17 @@ test('写作页：纯鼠标 —— 三个面板互相切换、删除走二次确
   await page.click('[data-testid="write-save"]')
   await expect(page).toHaveURL(/\/write\/brand-new$/)
 
-  // 面板是页内模态（§28.4）：一次只开一个，动作条也被遮罩盖住 —— 换面板先关
-  // （这是全站页内模态的既定口径，管理页的 `.del-mask` 同款；遮罩自带点击即关）
+  // 面板是页内模态（§28.4）：一次只开一个；遮罩空白处点一下即关。
+  // **换面板不必先关**（用户裁决，§55）：动作条抬在遮罩之上，点另一颗按钮一下就切 ——
+  // 与键盘「换面板直接切」同义；点**同一颗**再一下就是关（与键盘同一颗键同义）。
+  await page.click('[data-testid="write-open-docs"]')
+  await expect(page.locator('[data-testid="write-panel-docs"]')).toBeVisible()
+  await page.click('[data-testid="write-open-meta"]')
+  await expect(page.locator('[data-testid="write-panel-meta"]')).toBeVisible()
+  await expect(page.locator('[data-testid="write-panel-docs"]')).toHaveCount(0)
+  await page.click('[data-testid="write-open-meta"]')
+  await expect(page.locator('[data-testid="write-panel-meta"]')).toHaveCount(0)
+  // 遮罩空白处点一下仍旧是关
   await page.click('[data-testid="write-open-docs"]')
   await expect(page.locator('[data-testid="write-panel-docs"]')).toBeVisible()
   await page.locator('.sheet-mask').click({ position: { x: 6, y: 6 } })
@@ -759,4 +768,42 @@ test('写作页：停笔两秒自动存一次（已落库的稿子），新稿�
   await page.fill('[data-testid="write-content"]', '再写一段，接着写不该被卡住。')
   await expect(page.locator('[data-testid="write-content"]')).toBeEnabled()
   await expect(page.locator('[data-testid="write-title"]')).toBeEnabled()
+})
+
+test('写作页：插入条有「删除线」，插进去的是 ~~…~~（旧版有、曾误删的那颗）', async ({ page }) => {
+  await openWrite(page)
+
+  // 这颗按钮曾经以「渲染器没开 strikethrough」为由删掉，实测那前提是错的
+  //（渲染侧的门在 md-and-pixels.spec.ts）—— 这里钉插入侧：按钮在、插的记法对。
+  const strike = page.locator('[data-tool="strike"]')
+  await expect(strike).toBeVisible()
+  await expect(strike).toHaveAttribute('title', /删除线/)
+
+  // 点在正文上 → 光标进正文 → 点按钮插占位
+  await page.click('[data-testid="write-content"]')
+  await strike.click()
+  await expect(page.locator('[data-testid="write-content"]')).toHaveValue('~~删除线~~')
+  // 插完焦点交回正文（接着打字就替换掉占位）—— 与其它插入按钮同一手感
+  await expect(page.locator('[data-testid="write-content"]')).toBeFocused()
+
+  // 选中一段再点，包住的应当是**选中的那一段**，而不是占位文字。
+  // 选区要用真实输入建立：`fill()` 会把整段选中并把那个状态缓存下来，
+  // 随后点击按钮时浏览器把选区恢复成"全选"，看起来就像「包住了整段」（本门踩过一次）。
+  const content = page.locator('[data-testid="write-content"]')
+  await content.fill('')
+  await content.click()
+  await page.keyboard.type('保留这段')
+  await page.keyboard.press('Home')
+  // 只选前两个字（「保留」）—— 按 4 下就是整段，那是「包住整段」而不是「包住选区」
+  for (let i = 0; i < 2; i += 1) await page.keyboard.press('Shift+ArrowRight')
+  await expect
+    .poll(() => content.evaluate((el) => (el as HTMLTextAreaElement).selectionEnd))
+    .toBe(2)
+
+  await strike.click()
+  await expect(content).toHaveValue('~~保留~~这段')
+  // 插完把新包住的那一段选中（接着打字替换它）—— 插入条的统一手感
+  await expect
+    .poll(() => content.evaluate((el) => (el as HTMLTextAreaElement).selectionStart))
+    .toBe(2)
 })

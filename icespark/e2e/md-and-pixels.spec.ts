@@ -127,7 +127,7 @@ const LIST_ITEMS: Record<string, unknown>[] = [
  * 不桩它的话，夹具的假 id 会打到真后端拿 404，而 loadPost 的 catch 会把
  * **整篇文章**落成空态（正文直接消失）—— 那就成了「依赖后端恰好没有这条评论」。
  */
-async function stubIcesparkApi(page: Page): Promise<void> {
+async function stubIcesparkApi(page: Page, options: { content?: string } = {}): Promise<void> {
   await page.route(/\/api\/(posts|comments)\//, async (route) => {
     const pathname = new URL(route.request().url()).pathname
     const json = (body: unknown) =>
@@ -141,7 +141,8 @@ async function stubIcesparkApi(page: Page): Promise<void> {
 
     // 详情：`/api/posts/slug/<slug>`（非 UUID 走这条）或 `/api/posts/<id>`
     if (/^\/api\/posts\/(slug\/)?[^/]+$/.test(pathname)) {
-      await json(ARTICLE)
+      // `options.content` 给「只想换正文」的用例用（后注册的 route 覆盖 beforeEach 那条）
+      await json(options.content === undefined ? ARTICLE : { ...ARTICLE, content: options.content })
       return
     }
 
@@ -249,6 +250,23 @@ test.describe('① markdown 正文渲染（MarkdownBody.vue + DOMPurify 白名�
     })
     expect(firstRowTags, '表格首行必须是表头单元格').toEqual(['TH', 'TH'])
     await expect(table.locator('thead th')).toHaveCount(2)
+  })
+
+  test('删除线：~~x~~ 渲染成 <s>（默认 preset 本来就开，白名单里也有 s）', async ({ page }) => {
+    // 这颗按钮曾被误删，理由写的是「渲染器没开 strikethrough」—— 实测是错的：
+    // 正文里的 `~~x~~` 一直能渲染成 `<s>`。这条门钉住渲染侧，插入侧在 write.spec.ts。
+    await stubIcesparkApi(page, { content: '正常文字 ~~删掉这段~~ 后面' })
+    await page.goto(`/post/${FIXTURE_SLUG}`)
+    await booted(page)
+
+    const body = page.locator('[data-testid="md-body"]')
+    await expect(body.locator('s')).toHaveCount(1)
+    await expect(body.locator('s')).toHaveText('删掉这段')
+    // 波浪号不许原样留在页面上（那正是「没开规则」的样子）
+    await expect(body).not.toContainText('~~')
+    // 同行其余文字照旧是普通文本，没有被一起吞掉
+    await expect(body).toContainText('正常文字')
+    await expect(body).toContainText('后面')
   })
 
   test('站内链接：正文里的 /post/ 链接渲染成 a[href^="/post/"]，并接上全站焦点视觉', async ({ page }) => {
