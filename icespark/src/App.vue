@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { computed, nextTick, onMounted, onUnmounted, ref, watch } from 'vue'
+import { computed, nextTick, onMounted, onUnmounted, ref, watch, watchEffect } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 
 import {
@@ -12,6 +12,11 @@ import {
 import { mountInput } from '@/input'
 import { onPad } from '@/input/pad'
 import { activeScope, focusZone, inputLocked, pageModalOpen, setScope } from '@/input/scopes'
+import {
+  applyDocumentMeta,
+  composeTitle,
+  pageTitleOverride,
+} from '@/frame/documentMeta'
 import { playSfx, previewSfx } from '@/input/sfx'
 import BootScreen from '@/machine/BootScreen.vue'
 import LoginDialog from '@/machine/LoginDialog.vue'
@@ -155,9 +160,26 @@ const SELF_TITLED_SCENES = [
   'write',
 ]
 
+/**
+ * 浏览器标题：`页面名 · 站点名`（§56）。页面名默认取路由 `meta.title`，
+ * 「打开才知道名字」的页面（文章 / 用户主页）用 `usePageTitle()` 覆盖；
+ * 站点名与描述都来自三级合并后的配置 —— 这样后台改站名，标签页跟着变。
+ */
+const shellTitle = computed(
+  () => pageTitleOverride() || ((route.meta.title as string | undefined) ?? ''),
+)
+
 const shellHeading = computed(() => {
   if (SELF_TITLED_SCENES.includes(sceneId.value)) return ''
   return sceneDef(sceneId.value)?.hint ?? site.config.site.name
+})
+
+watchEffect(() => {
+  applyDocumentMeta(
+    document,
+    composeTitle(shellTitle.value, site.config.site.name),
+    site.config.site.description,
+  )
 })
 
 let bootTimer = 0

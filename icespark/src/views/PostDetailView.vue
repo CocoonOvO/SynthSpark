@@ -48,6 +48,7 @@ import { coverOk, markCoverFailed } from '@/scene/cover'
 import MarkdownBody from '@/signal/MarkdownBody.vue'
 import SceneHead from '@/machine/SceneHead.vue'
 import { ACTIVE_PALETTE, PALETTES, avatarPalette } from '@/styles/tokens'
+import { usePageTitle } from '@/frame/documentMeta'
 
 const route = useRoute()
 const content = useContentStore()
@@ -102,6 +103,9 @@ const zone = ref<'none' | 'chips' | 'actions'>('none')
 const chipFocus = useFocusGroup({ initial: -1 })
 
 const post = computed(() => content.post)
+
+// 浏览器标题跟着文章走（打开之前不知道名字）；组件卸载自动让位给路由那张表
+usePageTitle(() => post.value?.title)
 const comments = computed(() => content.comments)
 
 /** 芯片列表：分组在前，标签在后，顺序与 DOM 一致（焦点索引才对得上） */

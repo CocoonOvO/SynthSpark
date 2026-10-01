@@ -3632,3 +3632,46 @@ GFM 的 `~~x~~` 需要 markdown-it 打开 `strikethrough` 规则，而本项目�
 
 - `npx playwright test`：**214 passed / 0 skipped**（214 条 / 33 个 spec）。
 - `npm run check` 八段 **EXIT=0**。
+
+## 56. 浏览器标题与页面描述（用户裁决「标题问题要做」）（2026-10-01）
+
+此前：`index.html` 里写死一个标题，不管看哪一篇文章标签页都同名；`router/routes.ts` 里
+那张 `meta.title` 表是**没人消费的死数据**；`site.name` / `site.description` 属
+§40.2 那批「能填但到不了屏幕」的字段。这一批一起接上。
+
+### 56.1 口径
+
+- `<title>` = **`页面名 · 站点名`**：
+  - 页面名默认取**路由表**的 `meta.title`（首页 / 文章 / 关联 / 关于 / 用户主页 /
+    个人信息 / 站点设置 / 外链管理 / 审计日志 / 写作 / 页面不存在）；
+  - 文章页与用户主页这种「**打开才知道名字**」的用 `usePageTitle()` 覆盖，组件卸载自动让位；
+  - 站点名取三级合并后的 `site.name` —— **后台改站名，标签页跟着变**。
+- `<meta name="description">` = `site.description`（配置没给描述就**不挂**空的上去，
+  空描述会被搜索引擎当成"没有描述"）。`index.html` 里刻意不写死它，否则就绕过了三级合并。
+- **没做**：JSON-LD（要部署域名）与 sitemap（用户裁决「将来后端再说」）。
+
+### 56.2 实现
+
+| 文件 | 职责 |
+|---|---|
+| `src/frame/documentMeta.ts`（新） | `composeTitle()` 纯函数（缺哪边只留另一边、不留孤零零的 ` · `）；模块级 ref 承载"页面级覆盖"；`applyDocumentMeta(doc, title, description)` 写 `<head>`（meta 不存在才建，避免越用越长） |
+| `src/App.vue` | 一个 `watchEffect` 把算好的标题与描述写进 `<head>` |
+| `PostDetailView.vue` / `UserProfileView.vue` | 各一行 `usePageTitle(...)`（后者特意放在 `displayName` 之后 —— `watchEffect` 是**同步跑第一次**的，放前面会撞 `const` 的 TDZ） |
+
+### 56.3 门
+
+- 单测 `src/frame/__tests__/documentMeta.spec.ts`：`composeTitle` 五种边界
+  （都有 / 缺页面名 / 缺站点名 / 都空 / 首尾空白）。
+- e2e `document-title.spec.ts`（新，3 条）：
+  ① **逐页**标题形状 —— 5 条路由各断言 `页面名 · 站点名`，站点名从**运行期取当前生效的
+  覆盖层**（沿用 `site-config.spec.ts` 的手法，不写死字）；
+  ② 文章页标题跟着文章走（`toContain(文章名)`），离开后回到路由表那一页的名字；
+  ③ `<meta name="description">` 等于配置里的描述；配置没给就断言**不该有**这个 meta。
+
+（这道门自己也踩了一次：查"文章页标题"时先写了 `[data-testid="post-title"]`，实际是
+`.doc-title`；好在断言是 `toBeVisible()` 直接红的，没有假绿。）
+
+### 56.4 验收
+
+- `npx playwright test`：**217 passed / 0 skipped**（217 条 / 34 个 spec）。
+- `npm run check` 八段 **EXIT=0**（顺手清掉一个未使用的 import —— `npm run check` 会拦）。

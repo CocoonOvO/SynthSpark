@@ -65,6 +65,7 @@ import { canGoBack, goArticle, goBack, goTab } from '@/scene/nav'
 import { scrollScreenTop } from '@/scene/screen'
 import PixelAvatar from '@/signal/PixelAvatar.vue'
 import { ACTIVE_PALETTE, PALETTES, avatarPalette } from '@/styles/tokens'
+import { usePageTitle } from '@/frame/documentMeta'
 
 /** 头像调色板按当前配色方案现算（与列表页 / 文章页同一处改法，加主题时不用改这里） */
 const AVATAR_PALETTE = avatarPalette(PALETTES[ACTIVE_PALETTE])
@@ -95,6 +96,13 @@ let reqId = 0
 const displayName = computed(
   () => user.value?.display_name || user.value?.username || username.value || '用户档案',
 )
+
+/*
+ * 浏览器标题跟着这位用户走（显示名要等接口回来）。
+ * **必须放在 `displayName` 定义之后**：`usePageTitle` 内部的 `watchEffect` 是同步跑第一次的，
+ * 放在前面会撞上 `const` 的暂时性死区（TDZ）。
+ */
+usePageTitle(() => displayName.value)
 
 /** 简介：空则占位 —— 文案照旧前端（`'暂无简介'`） */
 const bio = computed(() => user.value?.bio || '暂无简介')
