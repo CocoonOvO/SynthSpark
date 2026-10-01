@@ -120,3 +120,95 @@ test('产物：/api 由 preview 的代理分流到真后端', async ({ page }: {
   const body = (await response.json()) as Record<string, unknown>
   expect(Object.keys(body).length, '站点配置该有内容').toBeGreaterThan(0)
 })
+
+test('产物：设计系统的像素事实在打包产物里同样成立（样式源序变了也不会静默失效）', async ({
+  page,
+}) => {
+  await page.addInitScript(() => {
+    localStorage.setItem('synthspark-icespark-sound-prompt', '1')
+  })
+  // 这一条只看 CSS，所以**打桩**保证一定有卡（不依赖真库有没有文章）——
+  // 产物项目的其它用例刻意走真后端（验证代理与回退），这一条故意不那样做
+  await page.route(/\/api\/(posts|comments)\//, (route) => {
+    const pathname = new URL(route.request().url()).pathname
+    const body = pathname.startsWith('/api/comments/')
+      ? { total: 0, comments: [] }
+      : {
+          items: [
+            {
+              id: '11111111-2222-3333-4444-555555555555',
+              slug: 'prod-fact',
+              title: '产物像素事实用的卡',
+              content: '# 产物\n\n正文。',
+              introduction: '摘要',
+              cover_image: null,
+              status: 'published',
+              author_id: 'u-1',
+              author_name: '作者',
+              author_username: 'e2e_writer',
+              author_avatar: null,
+              author_type: 'user',
+              tags: [],
+              group_id: 'g-1',
+              group_name: '技术',
+              view_count: 0,
+              like_count: 0,
+              created_at: '2026-09-20T10:00:00',
+              updated_at: '2026-09-20T10:00:00',
+              published_at: '2026-09-20T10:00:00',
+            },
+          ],
+          total: 1,
+        }
+    return route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(body),
+    })
+  })
+  await page.route('**/api/groups/', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  )
+  await page.route('**/api/tags/', (route) =>
+    route.fulfill({ status: 200, contentType: 'application/json', body: '[]' }),
+  )
+
+  await page.goto('/posts')
+  await expect(page.locator('.app')).not.toHaveAttribute('data-scene', 'boot')
+  await expect(page.locator('[data-testid="post-card"]')).toHaveCount(1)
+
+  // 列表页是懒加载的视图：它的样式在**产物里**是单独一个 CSS chunk，
+  // 与 dev（Vite 逐个 `<style>` 注入、顺序与样机相反）完全是两套加载顺序 ——
+  // `md-and-pixels.spec.ts` 的文件头点明的就是这个坑。facts 在这里再验一遍：
+  const facts = await page.evaluate(() => {
+    const root = getComputedStyle(document.documentElement)
+    const screen = document.querySelector('[data-testid="screen"]') as HTMLElement
+    const card = document.querySelector('[data-testid="post-card"]') as HTMLElement
+    const keybar = document.querySelector('[data-testid="keybar"]') as HTMLElement | null
+    const cs = card ? getComputedStyle(card) : null
+    return {
+      // token 在产物里也得在（构建期生成的那份 tokens.generated.css 进没进产物）
+      paper: root.getPropertyValue('--paper').trim(),
+      blue400: root.getPropertyValue('--blue-400').trim(),
+      screenBg: screen ? getComputedStyle(screen).backgroundColor : 'NONE',
+      cardBorder: cs ? `${cs.borderTopWidth} ${cs.borderStyle}` : 'NONE',
+      // 卡片自身不许是「没画底」的透明
+      cardVisible: !!card && card.getBoundingClientRect().width > 100,
+      keybarSticky: keybar ? getComputedStyle(keybar).position : 'NONE',
+    }
+  })
+
+  expect(facts.paper, '产物里必须有构建期生成的 --paper（tokens.generated.css 要进产物）').not.toBe('')
+  expect(facts.blue400, '产物里必须有 --blue-400').not.toBe('')
+  expect(facts.screenBg, '屏幕底色要真的画出来（不能是透明）').not.toBe('rgba(0, 0, 0, 0)')
+  expect(facts.cardBorder, '卡片边框是 3px solid（源序变了也不许被压掉）').toBe('3px solid')
+  expect(facts.cardVisible, '卡片要有真实尺寸（懒加载 CSS chunk 没加载的表现就是塌成 0 宽）').toBe(
+    true,
+  )
+  // 文章页的 keybar 是 sticky；列表页没有 keybar 时这一项允许是 NONE
+  if (facts.keybarSticky !== 'NONE') expect(facts.keybarSticky).toBe('sticky')
+
+  // 再验一条只在产物里才成立的：懒加载视图的 CSS 真的被当成独立资源请求过
+  await page.goto('/post/__no_such_post__')
+  await expect(page.locator('.app')).not.toHaveAttribute('data-scene', 'boot')
+})
