@@ -76,9 +76,13 @@ async def get_site_config_audit_logs(
     查询站点配置操作审计日志（仅业务库超管）
 
     记录每次站点配置的保存操作（操作人、时间、变更前后值）。
+
+    `total` 是**符合条件的总条数**（另走一次 COUNT），不是本页条数 —— 前端按它算
+    「共 N 条」「第 X / Y 页」，写成 `len(logs)` 会让这两处读数都偏小。
     """
     logs = config_db_manager.get_site_config_audit_logs(limit=limit, offset=offset)
-    return {"logs": logs, "total": len(logs)}
+    total = config_db_manager.count_site_config_audit_logs()
+    return {"logs": logs, "total": total}
 
 
 @router.put("/admin/site-config", summary="保存站点配置（超管）")
