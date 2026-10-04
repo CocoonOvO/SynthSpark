@@ -32,13 +32,13 @@
 | 旧前端 | 5173 | `cd frontend && npm run dev` |
 | 交互样机 | 5173 之外另起 | `cd design/icespark-prototype && npx vite --port 5173`（只作参考，别改它） |
 | **新前端（icespark）** | **5175** | `cd icespark && npm run dev`（`vite.config.ts` 把 `/api` 代理到 8002） |
+| 新前端产物预览 | 4175 | `cd icespark && npm run build && npx vite preview --port 4175`（同样代理 `/api`） |
 
 新前端有一份**不入库**的编译输入：像素字体 `public/fonts/ark-pixel-12px-zh-hans.woff2`（756KB 二进制，与样机同一套约定）。
 `vite.config.ts` 的插件会在 dev / 构建前调 `scripts/ensure-font.mjs` 备好它，取用顺序：
 目标文件已存在 → `ICESPARK_FONT_SRC`（本地文件）→ 仓库样机目录里的定稿副本 → `ICESPARK_FONT_URL`（下载地址）。
 **新 clone 时后两者都没有**，所以要么先 `ICESPARK_FONT_URL=<地址> npm run font:ensure`，
 要么把字体放到上面任一路径；都没有会明确报错并列出补救办法（不会静默退回系统字体）。
-| 新前端产物预览 | 4175 | `cd icespark && npm run build && npx vite preview --port 4175`（同样代理 `/api`） |
 
 Python 依赖用 **uv 管理**（`backend/pyproject.toml`），增删依赖改 pyproject 后 `uv sync`；`requirements*.txt` 是 `uv export` 生成物，勿手改。
 
