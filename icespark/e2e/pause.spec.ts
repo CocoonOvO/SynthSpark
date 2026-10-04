@@ -183,7 +183,9 @@ test('登录：密码错误时框不关（错误留在框里），取消后菜�
 
   await page.keyboard.press('p')
   await page.click('[data-testid="pause-account"]')
-  await page.fill('[data-testid="login-username"]', 'icespark_user')
+  // 用户名用"显然不存在"的那种：这条用例验的是**密码错时框不关**，
+  // 任何 401 都能触发同一条路径，不需要真库里有这么个账号（原先写的是本机演示账号）
+  await page.fill('[data-testid="login-username"]', '__no_such_user__')
   await page.fill('[data-testid="login-password"]', '肯定不是这个密码')
   await page.click('[data-testid="login-submit"]')
 

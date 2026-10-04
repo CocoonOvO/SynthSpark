@@ -219,8 +219,13 @@ test('ESC 在每一页都能起暂停菜单（不再有个别页面把它吃掉�
   const posts = await (await page.request.get('/api/posts/?limit=1&status=published')).json()
   const first = posts.items?.[0]
   const articleKey = first ? first.slug || first.id : null
+  // 用户档案那一页要一个**真实存在**的用户名：从同一个列表接口里拿作者的
+  //（原先这里硬编码了本机演示账号，换台机器/换个库就悄悄退化成"用户不存在"的空态，
+  //  测试还在过、但覆盖的东西变了 —— 用运行时的真名，退化时才看得出来）
+  const authorUsername: string | null = first?.author_username ?? null
 
-  const paths = ['/', '/posts', '/links', '/about', '/user/icespark_admin', '/no/such/page']
+  const paths = ['/', '/posts', '/links', '/about', '/no/such/page']
+  paths.push(authorUsername ? `/user/${encodeURIComponent(authorUsername)}` : '/user/__route-scan__')
   if (articleKey) paths.push(`/post/${encodeURIComponent(articleKey)}`)
 
   for (const path of paths) {

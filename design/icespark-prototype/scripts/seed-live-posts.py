@@ -27,11 +27,12 @@ except ImportError:
     sys.exit('需要 Pillow：pip install pillow')
 
 API = os.environ.get('ICESPARK_API', 'http://localhost:8002/api')
-USER = os.environ.get('ICESPARK_SEED_USER', 'icespark_admin')
-# 口令只从环境变量来：仓库是公开的，明文默认值等于把口令发出去（2026-10-01 清理）
+# 账号名与口令都只从环境变量来：本机演示账号名与口令一样属于"这台机器才有意义"的东西，
+# 写进默认值换台机器就跑不起来（2026-10-01 清理）
+USER = os.environ.get('ICESPARK_SEED_USER')
 PW = os.environ.get('ICESPARK_SEED_PW')
-if not PW:
-    sys.exit('缺 ICESPARK_SEED_PW：本脚本要真账号口令，请用环境变量传入')
+if not USER or not PW:
+    sys.exit('缺 ICESPARK_SEED_USER / ICESPARK_SEED_PW：本脚本要真账号，请用环境变量传入')
 
 PAL = {
     'deep': (18, 58, 82),

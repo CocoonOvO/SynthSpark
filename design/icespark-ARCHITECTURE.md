@@ -2126,7 +2126,7 @@ SceneHead   写作 · WRITE                                 ● 未保存
   ③ 发布 → `/post/:key` 详情页能看到正文；④ 纯键盘：从正文 Tab 到工具条、Enter 生效、
   `N` / `M` 开面板、↑↓ 选择；⑤ 纯鼠标无障碍路径；⑥ ESC 在正文里起菜单（口径 3）；
   ⑦ 面板开着时按 P 不叠二层菜单（`pageModalOpen`）；⑧ axe 无新增违规。
-- 真机验证：起 5175 + 真后端 8002，登录 `icespark_admin` 造一篇草稿再发布，截图存档；
+- 真机验证：起 5175 + 真后端 8002，登录演示超管账号造一篇草稿再发布，截图存档；
   探针脚本与截图用完即删。
 
 ### 28.9 交付记录（已实现 · 2026-09-30）
@@ -2210,7 +2210,7 @@ SceneHead   写作 · WRITE                                 ● 未保存
   的九条（多出来的一条是「已发布再改走 PUT 而不是又建一篇」，这是**发布后留页 + 查看入口**
   （D7）的必然第二条路径，不测它就等于没测 D7）。
 
-#### 28.9.5 真机验证（5175 前端 + 8002 真后端，账号 `icespark_admin`）
+#### 28.9.5 真机验证（5175 前端 + 8002 真后端，演示超管账号）
 
 一条龙跑完，全部真接口、零打桩：
 
@@ -2315,7 +2315,7 @@ e2e 钉在 `write.spec.ts`「窄屏把预览折成 V 面板，断点两侧来回
 
 - `npm run check` **EXIT=0**；`npx playwright test` **112 passed / 0 failed**
   （109 → 112：新增窄屏 / 标签 / 自动保存三条，`write.spec.ts` 共 12 条）。
-- 真机（5175 + 8002，`icespark_admin`）：真标签库 14 枚，候选给出 8 枚
+- 真机（5175 + 8002，演示超管账号）：真标签库 14 枚，候选给出 8 枚
   （指令遵循 10 / JSON 9 / deepseek-flash 9 / 真机 4 / …）；手打 `JSON` 过滤到 1 枚、`↓`+`Enter`
   收下，再点「真机」→ 落库 `tags = ["JSON","真机"]`；**不动任何按钮**，停笔 2 秒后真后端正文里
   就出现了第二段（页头「已自动保存」）；发布 3.5 秒后仍是 `published`；900px 下分屏与源码同宽
@@ -2396,7 +2396,7 @@ TAB 出正文 · ESC 失焦 · Shift+N 文稿 · Shift+M 资料 · [Shift+V 预�
   两条，改写「写作页 ESC」一条）。
 - 内核单测 `src/input/__tests__/pad.spec.ts` 从 19 条加到 25 条：白名单、Ctrl/Alt/Meta 让位、
   组字让位、非字母让位、白名单外 14 个字母全不放行（全仓单测 64 → 70 条）。
-- 真机（5175 + 8002，`icespark_admin`）：正文里 `ESC` → 焦点落回外壳、菜单不出；再 `ESC` → 弹出菜单、
+- 真机（5175 + 8002，演示超管账号）：正文里 `ESC` → 焦点落回外壳、菜单不出；再 `ESC` → 弹出菜单、
   再 `ESC` → 关掉；正文里 `Shift+N` 直接开文稿面板且正文没多出「N」；`Shift+W` 打出大写 W 且焦点
   仍在正文；暂停菜单搜索框 `ESC` 两下逐层退回，退回后 `↓` 仍能走行。
 
@@ -2474,7 +2474,7 @@ TAB 出正文 · ESC 失焦 · Shift+N 文稿 · Shift+M 资料 · [Shift+V 预�
 - `npm run check` **EXIT=0**（独立性 → tokens → 单测 70 passed → oxlint → eslint → 契约无漂移
   `sha256:c0a6332757d33c87` → vue-tsc）。
 - `npx playwright test` **116 passed / 0 failed**（114 → 116，就是上表两条）。
-- 真机（5175 + 8002，真账号 `icespark_admin`，900×720，只在编辑框里打字、不落稿）：
+- 真机（5175 + 8002，演示超管账号，900×720，只在编辑框里打字、不落稿）：
   滚轮 240px → `scrollTop 240`；`↓↓` → `scrollTop 74` 且焦点是 `preview-body.is-sheet`；
   弹窗开着时菜单 / 音效两颗软键位置的最上层元素都是 `DIV.sheet-mask`；按软键坐标点一下 →
   面板关掉、音效仍 `OFF`、菜单没弹；弹窗关掉后最上层回到 `BUTTON.softkey focusable mini`，
@@ -2521,7 +2521,7 @@ TAB 出正文 · ESC 失焦 · Shift+N 文稿 · Shift+M 资料 · [Shift+V 预�
   「非超管」那条把「没有『新建』按钮」换成「没有表单 / 保存按钮 / 整个表单面板」。
 - `npm run check` **EXIT=0**（单测 70 · oxlint · eslint · 契约无漂移 `sha256:c0a6332757d33c87` · `vue-tsc`）。
 - `npx playwright test` **117 passed / 0 failed**（116 → 117）。
-- 真机（5175 + 8002，真超管 `icespark_admin`，**只读**不写库）：面板头按钮数 0、真库 0 条外链走
+- 真机（5175 + 8002，演示超管账号，**只读**不写库）：面板头按钮数 0、真库 0 条外链走
   空态；空列表下 `↓` / `ENTER` 都没有反应也不报错；`Tab` 落进名称框能打字，「清空」把光标送回
   名称框且不发请求；底栏与页面正常，控制台零报错。
 
@@ -2813,9 +2813,9 @@ ICESPARK_E2E_USER=xxx ICESPARK_E2E_PW=yyy npx playwright test e2e/real-login.spe
   ② 刷新后登录态还在（**后端校验出来的**，不是本地瞎认）③ 登出后菜单回 6 行、
   本地两把键都被清空、键盘还活着（`ESC` 能关菜单）。
 
-### 34.2 真机验收（5175 + 8002，真账号 `icespark_admin`，`is_superuser = true`）
+### 34.2 真机验收（5175 + 8002，演示超管账号，`is_superuser = true`）
 
-`3 passed (5.8s)`：请求体是表单编码、不是 JSON；登录后账号行 = 「退出登录（演示管理员11111）」
+`3 passed (5.8s)`：请求体是表单编码、不是 JSON；登录后账号行 = 「退出登录（演示管理员的显示名）」
 且与 `/api/auth/me` 一致；四张管理页入口按超管身份出现；刷新后仍是登录态；
 登出后 `synthspark-token` 与 `synthspark-icespark-user` 都为 `null`、菜单回到未登录形态、
 `ESC` 照常关菜单。不带环境变量时 `3 skipped`，套件仍全绿。
@@ -3564,11 +3564,11 @@ login-submit → Shift+Tab → 还是 login-submit（不动）
 
 （全库只有这四张表引用用户，逐一查过。）删除后剩 **8** 个真账号：
 `human_admin`、`super_ai`、`normal_ai`、`normal_user`、`test_admin`、`mw_test`、
-`icespark_user`、`icespark_admin`。
+两个演示账号（超管 + 普通用户）。
 
 ### 54.2 建一个专用测试账号，把 3 条真链路 e2e 从「跳过」变成「常跑」
 
-- 账号：`icespark_e2e`（普通用户，非超管，显示名「自动化测试账号」），经
+- 账号：一个普通用户（非超管），显示名「自动化测试账号」，经
   `POST /api/auth/register`（超管令牌）创建 —— 用接口而不是直接写库，口令哈希走应用自己那一套。
 - 凭据落点：`icespark/e2e/.credentials.local.json`（**已 gitignore**），
   环境变量 `ICESPARK_E2E_USER` / `ICESPARK_E2E_PW` 优先级更高（CI 用）。
