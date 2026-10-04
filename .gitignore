@@ -171,6 +171,9 @@ design/icespark-prototype/*.mjs
 design/icespark-prototype/public/fonts/*.woff2
 # 补数据脚本现画的封面（每次跑都重新生成）
 design/icespark-prototype/scripts/_covers/
+# 样机各轮的验收截图：由 `design/icespark-prototype/e2e/shots.mjs` / `round5.mjs` /
+# `round6.mjs` / `smoke.mjs` 现场生成，随时可重跑 —— 17MB 二进制不进仓库
+design/icespark-shots*/
 
 # icespark 生产前端：源码、生成物（src/api/schema.d.ts、tokens.generated.css）与锁文件入库；
 # 依赖、构建/测试产物、像素字体（756KB 二进制，由 scripts/ensure-font.mjs 备好）不入库
