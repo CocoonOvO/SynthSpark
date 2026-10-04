@@ -59,7 +59,10 @@ backend/app/services/impl/
 agent_project.md
 
 # Development Documentation (for internal use only)
-docs/
+# 只锚定**仓库根**的 docs/：原先这条写的是裸 `docs/`，它会连带忽略任意层级的
+# `frontend/docs/`、`icespark/docs/` —— 后者的截图因此从没入库，而架构文档里还引用了它
+# （悬空引用）。要忽略的是"根目录那批内部文档"，不是所有叫 docs 的目录。
+/docs/
 
 # Test coverage
 .coverage
