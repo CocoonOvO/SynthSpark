@@ -4,19 +4,25 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
+# 下面这批是 Python 打包目录（GitHub 模板样板），一律**锚定仓库根**。
+# 原先 `dist/` `lib/` 是不带斜杠的裸规则，会匹配任意层级的同名目录 —— 于是
+# `icespark/scripts/lib/openapi.mjs`（两个门 import 的源码）被静默忽略：本机能跑、
+# 别人 clone 下来 `npm run check` 直接崩。各工作区自己的产物另有显式规则
+# （`frontend/.gitignore`、`icespark/dist/`、`design/icespark-prototype/dist/`），
+# 不依赖这几条兜底。
+/build/
+/develop-eggs/
+/dist/
+/downloads/
+/eggs/
+/.eggs/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
+/*.egg-info/
 .installed.cfg
 *.egg
 
@@ -59,7 +65,10 @@ backend/app/services/impl/
 agent_project.md
 
 # Development Documentation (for internal use only)
-docs/
+# 只锚定**仓库根**的 docs/：原先这条写的是裸 `docs/`，它会连带忽略任意层级的
+# `frontend/docs/`、`icespark/docs/` —— 后者的截图因此从没入库，而架构文档里还引用了它
+# （悬空引用）。要忽略的是"根目录那批内部文档"，不是所有叫 docs 的目录。
+/docs/
 
 # Test coverage
 .coverage
@@ -168,6 +177,9 @@ design/icespark-prototype/*.mjs
 design/icespark-prototype/public/fonts/*.woff2
 # 补数据脚本现画的封面（每次跑都重新生成）
 design/icespark-prototype/scripts/_covers/
+# 样机各轮的验收截图：由 `design/icespark-prototype/e2e/shots.mjs` / `round5.mjs` /
+# `round6.mjs` / `smoke.mjs` 现场生成，随时可重跑 —— 17MB 二进制不进仓库
+design/icespark-shots*/
 
 # icespark 生产前端：源码、生成物（src/api/schema.d.ts、tokens.generated.css）与锁文件入库；
 # 依赖、构建/测试产物、像素字体（756KB 二进制，由 scripts/ensure-font.mjs 备好）不入库

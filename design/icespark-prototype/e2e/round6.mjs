@@ -19,10 +19,23 @@ import { mkdirSync } from 'node:fs'
 const OUT = new URL('../../icespark-shots-v3/round6/', import.meta.url).pathname
 mkdirSync(OUT, { recursive: true })
 
-const ADMIN_USER = process.env.ICESPARK_ADMIN_USER || 'icespark_admin'
-const ADMIN_PW = process.env.ICESPARK_ADMIN_PW || 'icespark2026'
-const PLAIN_USER = process.env.ICESPARK_USER || 'icespark_user'
-const PLAIN_PW = process.env.ICESPARK_USER_PW || 'icespark2026'
+const ADMIN_USER = process.env.ICESPARK_ADMIN_USER
+const PLAIN_USER = process.env.ICESPARK_USER
+
+/*
+ * 口令**只从环境变量来**，没有默认值。
+ * 原先这里写着 `|| '<明文口令>'` —— 仓库是公开的，那等于把口令一起发出去
+ *（2026-10-01 清理，见 design/README.md 第 5 条）。缺变量就直接退出，别用弱默认兜底。
+ */
+const ADMIN_PW = process.env.ICESPARK_ADMIN_PW
+const PLAIN_PW = process.env.ICESPARK_USER_PW
+if (!ADMIN_PW || !PLAIN_PW || !ADMIN_USER || !PLAIN_USER) {
+  console.error(
+    '缺 ICESPARK_ADMIN_USER / ICESPARK_ADMIN_PW / ICESPARK_USER / ICESPARK_USER_PW：' +
+      '本脚本要真账号，账号名与口令都从环境变量来（本机演示账号名不入库）',
+  )
+  process.exit(2)
+}
 
 const errors = []
 const results = []

@@ -98,7 +98,7 @@
 | 2 | 设置只留展示相关项；菜单去掉 back / forward；登录后加编辑文章 + 个人信息编辑，超管再加站点管理 | 设置收口为**音效 / 每页条数 / 动效**三项（「数据来源」这类非展示项移出）；菜单删掉前进 / 后退两行；登录后出现 **编辑文章 `/write`**、**个人信息编辑 `/profile?tab=settings`**，`is_superuser` 再多一条 **站点管理 `/profile?tab=siteConfig`**。三者都是真 `<a href>`（可复制、可中键开新标签），菜单行数 6（未登录）/ 8（登录）/ 9（超管） | `ui/PauseMenu.vue`、`ui/SettingsDialog.vue`、`ui/auth.ts` |
 | 3 | 文章页 TAB 按 DOM 顺序遍历链接（用户批准「这个可以做」） | 从「消费但不动作」改为**把 Tab 还给浏览器**：原生 Tab 天然按 DOM 顺序走（芯片 → 操作条 → 正文链接），`Shift+Tab` 反向、自动滚进视野、回车自动激活全部免费。为此把原生 `:focus-visible` 并进**唯一那套焦点视觉**，并用 `nativeFocusInside()` 保证「原生激活」与「手柄确认」不会双触发 | `App.vue`、`styles/pixel.css`、`scenes/ArticleScene.vue`、`ui/MarkdownBody.vue` |
 | 4 | 没有封面的文章放马赛克图太丑，要更优雅的策略 | 改成**空画框记号**（外框 + 方块太阳 + 地平线，纯蓝色阶、硬边、无圆角，形状跟随画框自身宽高比）：语义仍是「这里是图片位」，但长在这套像素语言里。曾经试过「放大标题首字做水印」，`ArkPixel` 是 12px 点阵字体，放大到 94px 后笔画被拉开、再加灰度抗锯齿，一个字会被看成两团碎块 —— 已放弃并记录 | `ui/ImageFrame.vue`、`styles/pixel.css` |
-| 5 | 给管理员账号和密码测试 | 业务库里建了两个演示账号（前台 `/api/auth/token` 可登录）：`icespark_admin` / `icespark2026`（`is_superuser=true`，显示名「演示管理员」）与 `icespark_user` / `icespark2026`（普通用户）。配置库超管 `admin` / `123456` 只作用于 `/api/admin/login`，**登不进这个前台** | `e2e/round6.mjs` 的登录用例 |
+| 5 | 给管理员账号和密码测试 | 业务库里建了演示账号（前台 `/api/auth/token` 可登录）：一个超管（`is_superuser=true`）与一个普通用户 —— **账号名与口令都由本地环境提供**（`ICESPARK_ADMIN_USER` / `ICESPARK_ADMIN_PW` / `ICESPARK_USER` / `ICESPARK_USER_PW`）—— **口令不入库**，脚本从环境变量取（`ICESPARK_ADMIN_PW` / `ICESPARK_USER_PW` / `ICESPARK_SEED_PW`）。配置库超管 `admin` / `123456` 只作用于 `/api/admin/login`，**登不进这个前台** | `e2e/round6.mjs` 的登录用例 |
 
 顺带做掉的两件小事：
 
@@ -286,7 +286,7 @@ node e2e/smoke.mjs     # 交互回归：59 项（带 PROBE_USER/PROBE_PW 则 63 
 node e2e/gates.mjs     # 回归门：21 项，全通过
 node e2e/round5.mjs    # 第五轮 8 条：41 项，全通过
 node e2e/round6.mjs    # 第六轮 5 条 + 第七轮：50 项，全通过（含超管菜单、TAB 遍历、无封面版式、标题不截断）
-node e2e/shots.mjs     # 出图 31 张 → design/icespark-shots-v3/
+node e2e/shots.mjs     # 现场出图 31 张 → design/icespark-shots-v3/（本地生成，不入库）
 ```
 
 `smoke.mjs` 覆盖：
@@ -345,7 +345,7 @@ node e2e/shots.mjs     # 出图 31 张 → design/icespark-shots-v3/
 > 而缺变量导致的「白底黑字无边框」被误读成了「1-bit 像素风」。本轮起，凡是色彩/视觉结论
 > 都必须有计算样式或像素级断言兜底。
 
-### 第二轮复测（截图见 `design/icespark-shots/`，共 6 张）
+### 第二轮复测（当时出图 6 张，`e2e/shots.mjs` 可重跑；图本地生成，不入库）
 
 | 验证项 | 结果 |
 |--------|------|
@@ -398,7 +398,7 @@ node e2e/shots.mjs     # 出图 31 张 → design/icespark-shots-v3/
 | 2 | 登录后菜单出现链接 | 普通用户 8 行、含 `edit` / `profile`、无 `site`；超管 9 行且 `site` 存在；三行都是 `A` 标签、`href` 分别为 `/write`、`/profile?tab=settings`、`/profile?tab=siteConfig`；点一下只给正式版路径说明、**URL 不变**；刷新后仍认得超管（`/api/auth/me` 回填 `is_superuser`） |
 | 3 | 文章页 TAB 遍历 | 落点序列与 `document.querySelectorAll('.article a[href], .chip, .act')` **逐项相等**（芯片 → 操作条 → 正文链接，共 8 个）；每个落点 `el.matches(':focus-visible')` 为真；最后一个落点确实在屏幕可视区内（浏览器自动滚入）；`SHIFT+TAB` 回到上一个；回车打开正文链接后 `history.length` **只加 1**（证明原生激活与手柄确认没有双触发），且是站内路由（`navigation` 计数仍为 1，没有整页刷新）；芯片同理 |
 | 4 | 无封面策略（**已被第七轮推翻，见下**） | 同一页混排「有封面 2 / 无封面 2」；本地封面 `naturalWidth > 0`（不依赖外网）；`.img-fallback` 计数为 0；无封面卡片画的是 `.img-ph-box`（方块太阳 + 地平线）且横向居中；`.img-ph-glyph` 计数为 0（放大字方案已撤）；四张卡片封面区高度完全相同（213/213/213/213） |
-| 5 | 超管账号 | `icespark_admin` 能通过前台登录并拿到超管菜单（`/api/auth/token` → `/api/auth/me` 全链路） |
+| 5 | 超管账号 | 演示超管账号能通过前台登录并拿到超管菜单（`/api/auth/token` → `/api/auth/me` 全链路） |
 
 ### 第六轮修掉的真实缺陷与踩到的坑
 
@@ -467,7 +467,7 @@ node e2e/shots.mjs     # 出图 31 张 → design/icespark-shots-v3/
    现在走的是同一条 `vue-router` 历史
 7. 评论提交、文章编辑仍是演示入口：`POST /api/comments` 匿名可用，编辑器未实现（本轮只保留入口）
 
-### 截图（`design/icespark-shots-v3/`，共 31 张）
+### 截图（31 张，跑 `e2e/shots.mjs` 现场出图到 `design/icespark-shots-v3/`；图不入库）
 
 `1-boot` / `2-home` / `3-home-focus-group` / `4-posts` / `4b-card-focus-closeup` /
 `4c-group-row-focus` / `4d-jump-box` / `4e-foot` / `5-page-turn-mid` / `5b-page-2` /
@@ -482,8 +482,8 @@ node e2e/shots.mjs     # 出图 31 张 → design/icespark-shots-v3/
 第七轮还加了 `17b-posts-live` / `17c-posts-live-page2`：**真实接口**的文章列表
 （要先用 `scripts/seed-live-posts.py` 补几篇带封面的文章，否则整页都是文字卡）——
 这两张才是「真上传的封面 + 无封面文字卡」混排的样子。
-`e2e/round5.mjs` 与 `e2e/round6.mjs` 另把交互过程截图写到
-`design/icespark-shots-v3/round5/`（14 张）与 `round6/`（8 张，含超管菜单、TAB 焦点、无封面文字卡列表）。
+`e2e/round5.mjs` 与 `e2e/round6.mjs` 另把交互过程截图写到 `design/icespark-shots-v3/round5/`（14 张）
+与 `round6/`（8 张，含超管菜单、TAB 焦点、无封面文字卡列表）—— 同样是本地生成，不入库。
 
 > **⚠️ 这些截图不是实时接口的结果（用户第 1 条疑问）。**
 > 除 `17-home-live` 一张外，**全部**跑在 `?demo=1`（内置样张）上：真实库里 6 篇里有 5 篇同标题、
