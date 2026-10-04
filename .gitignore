@@ -187,7 +187,10 @@ icespark/dist/
 icespark/test-results/
 icespark/playwright-report/
 icespark/.eslintcache
-icespark/public/fonts/*.woff2
+# 像素字体（Ark Pixel 12px zh_hans）**入库**了：它是纯静态设计资产（756KB + OFL.txt），
+# 而且性能预算那条线（738.23 / 800 kB）与像素渲染都是针对**这一个文件**量的 ——
+# 让新 clone 现取上游会引入网络依赖与版本漂移（上游只发 zip、且不在 npm，也没法热链）。
+# 兜底通道仍然留着：`npm run font:ensure`（样机副本 / ICESPARK_FONT_SRC / ICESPARK_FONT_URL）。
 # 站点配置的工作副本（由 scripts/ensure-site-config.mjs 从 example 生成，部署方手改）
 icespark/public/site.config.json
 # 真实登录 e2e 的本地凭据（本机测试账号，不入库；也可以改用环境变量传入）

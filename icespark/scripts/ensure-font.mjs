@@ -2,8 +2,19 @@
 /**
  * 备好像素字体文件（Ark Pixel 12px 简体中文）。
  *
- * 为什么用脚本而不是把它提交进仓库：这是一份 756KB 的二进制字体资产，
- * 与样机保持同一套约定（样机也把它 gitignore）。仓库里入库的是「怎么拿到它」。
+ * 字体**已经入库**（`public/fonts/ark-pixel-12px-zh-hans.woff2` + 同目录 `OFL.txt`），
+ * 所以正常 clone 走第 1 步、什么都不用做。这个脚本保留下来是因为它还有两个用处：
+ *   · 万一文件被误删 / 在别的环境里缺失 —— 按下面的顺序补齐，并且明确报错而不是静默退回系统字体；
+ *   · 记录**出处与身份**（见下），换人接手时能核对拿到的到底是不是同一个文件。
+ *
+ * 出处（2026-10-04 核对，逐字节一致）：
+ *   上游 https://github.com/TakWolf/ark-pixel-font 发布 2026.09.25
+ *   资产 ark-pixel-font-12px-proportional-ttf.woff2-v2026.09.25.zip
+ *   包内 ark-pixel-12px-proportional-zh_hans.ttf.woff2（755,952 字节，OFL-1.1）
+ *   入库时改名为 ark-pixel-12px-zh-hans.woff2
+ *   sha256 06daf2fa4a0c0c7262db632c0303456ea1aa274eba47a9f18b08094648b29e0e
+ * 为什么不再走"运行时请求第三方源"：上游不在 npm、仓库里也没有构建好的 woff2，
+ * 发布资产只有 zip（浏览器不能当字体吃）—— 直链不成立；构建时现取又会把预算线与字形绑到上游版本上。
  *
  * 取用顺序（先命中者胜）：
  *   1. 目标文件已存在 → 什么都不做
@@ -82,6 +93,7 @@ async function main() {
       `    · 从样机目录复制：cp ../design/icespark-prototype/public/fonts/${FONT_NAME} public/fonts/\n` +
       `    · 指定本地文件：ICESPARK_FONT_SRC=/path/to/${FONT_NAME} node scripts/ensure-font.mjs\n` +
       `    · 指定下载地址：ICESPARK_FONT_URL=https://... node scripts/ensure-font.mjs`,
+      `    · 上游出处与 sha256 见本文件顶部注释（入库文件被误删时照它核对）`,
   )
 }
 

@@ -34,11 +34,13 @@
 | **新前端（icespark）** | **5175** | `cd icespark && npm run dev`（`vite.config.ts` 把 `/api` 代理到 8002） |
 | 新前端产物预览 | 4175 | `cd icespark && npm run build && npx vite preview --port 4175`（同样代理 `/api`） |
 
-新前端有一份**不入库**的编译输入：像素字体 `public/fonts/ark-pixel-12px-zh-hans.woff2`（756KB 二进制，与样机同一套约定）。
-`vite.config.ts` 的插件会在 dev / 构建前调 `scripts/ensure-font.mjs` 备好它，取用顺序：
-目标文件已存在 → `ICESPARK_FONT_SRC`（本地文件）→ 仓库样机目录里的定稿副本 → `ICESPARK_FONT_URL`（下载地址）。
-**新 clone 时后两者都没有**，所以要么先 `ICESPARK_FONT_URL=<地址> npm run font:ensure`，
-要么把字体放到上面任一路径；都没有会明确报错并列出补救办法（不会静默退回系统字体）。
+新前端的像素字体 `icespark/public/fonts/ark-pixel-12px-zh-hans.woff2`（756KB）**已入库**（同目录带 `OFL.txt`），
+新 clone 零配置。它曾一度不入库，导致"配置新前端的 agent 拿到裸报错"—— 改口径的理由与出处记在
+`icespark/scripts/ensure-font.mjs` 顶部：上游只发 zip、且不在 npm，**没法热链**；而性能预算那条线
+（738.23 / 800 kB）与像素渲染都是针对这一个文件量的，现取上游会引入网络依赖与版本漂移。
+文件万一缺失，`vite.config.ts` 的插件仍会调 `scripts/ensure-font.mjs` 按序补齐：
+目标文件已存在 → `ICESPARK_FONT_SRC`（本地文件）→ 仓库样机目录里的副本 → `ICESPARK_FONT_URL`（下载地址），
+都没有会明确报错并列出补救办法（不会静默退回系统字体）。
 
 Python 依赖用 **uv 管理**（`backend/pyproject.toml`），增删依赖改 pyproject 后 `uv sync`；`requirements*.txt` 是 `uv export` 生成物，勿手改。
 
@@ -157,4 +159,4 @@ Python 依赖用 **uv 管理**（`backend/pyproject.toml`），增删依赖改 p
 | 业务库缺表 | 超管登录后调 `POST /api/admin/database/init` 补建 |
 | `init-wizard` 报错 | 2026-08-06 已修 pydantic `schema` 序列化 bug；仍异常看控制台日志 |
 | 后端启动即崩 | `backend/.env` 缺少 `SECRET_KEY` |
-| 新前端 dev / 构建报 `[字体]` 失败 | 字体没就位（它不入库）：设 `ICESPARK_FONT_URL` 跑 `npm run font:ensure`，或 `ICESPARK_FONT_SRC` 指向本地字体文件 |
+| 新前端 dev / 构建报 `[字体]` 失败 | 字体文件被删了（它已入库，正常不会有这一步）：`git checkout -- icespark/public/fonts/` 拿回来；或在别处用 `ICESPARK_FONT_SRC` / `ICESPARK_FONT_URL` 跑 `npm run font:ensure`（出处与 sha256 见脚本顶部注释） |
