@@ -4,19 +4,25 @@ __pycache__/
 *$py.class
 *.so
 .Python
-build/
-develop-eggs/
-dist/
-downloads/
-eggs/
-.eggs/
-lib/
-lib64/
-parts/
-sdist/
-var/
-wheels/
-*.egg-info/
+# 下面这批是 Python 打包目录（GitHub 模板样板），一律**锚定仓库根**。
+# 原先 `dist/` `lib/` 是不带斜杠的裸规则，会匹配任意层级的同名目录 —— 于是
+# `icespark/scripts/lib/openapi.mjs`（两个门 import 的源码）被静默忽略：本机能跑、
+# 别人 clone 下来 `npm run check` 直接崩。各工作区自己的产物另有显式规则
+# （`frontend/.gitignore`、`icespark/dist/`、`design/icespark-prototype/dist/`），
+# 不依赖这几条兜底。
+/build/
+/develop-eggs/
+/dist/
+/downloads/
+/eggs/
+/.eggs/
+/lib/
+/lib64/
+/parts/
+/sdist/
+/var/
+/wheels/
+/*.egg-info/
 .installed.cfg
 *.egg
 
