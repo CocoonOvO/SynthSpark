@@ -1,0 +1,63 @@
+{
+  "name": "icespark",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "SynthSpark 独立前端（8bit 像素皮肤 · 零 import 旧前端）",
+  "engines": {
+    "node": ">=20.19.0"
+  },
+  "scripts": {
+    "dev": "vite",
+    "build": "npm run type-check && vite build",
+    "preview": "vite preview",
+    "type-check": "vue-tsc --build",
+    "lint": "npm run lint:oxlint && npm run lint:eslint",
+    "lint:oxlint": "oxlint . --fix",
+    "lint:eslint": "eslint . --fix --cache",
+    "format": "prettier --write .",
+    "test:e2e": "playwright test",
+    "api:gen": "node scripts/gen-api-types.mjs",
+    "api:check": "node scripts/check-api-drift.mjs",
+    "check:independence": "node scripts/check-independence.mjs",
+    "check": "npm run check:independence && npm run tokens:check && npm run test:unit && npm run lint:oxlint && npm run lint:eslint && npm run api:check && npm run type-check && npm run check:budget",
+    "check:budget": "npm run build && node scripts/check-budget.mjs",
+    "tokens:gen": "node scripts/gen-tokens-css.mjs",
+    "tokens:check": "node scripts/gen-tokens-css.mjs --check",
+    "font:ensure": "node scripts/ensure-font.mjs",
+    "site:ensure": "node scripts/ensure-site-config.mjs",
+    "test:unit": "vitest run"
+  },
+  "dependencies": {
+    "dompurify": "3.3.1",
+    "highlight.js": "^11.12.0",
+    "markdown-it": "14.3.2",
+    "pinia": "3.0.4",
+    "vue": "3.5.41",
+    "vue-router": "5.2.0"
+  },
+  "devDependencies": {
+    "@axe-core/playwright": "4.11.0",
+    "@playwright/test": "1.61.1",
+    "@tsconfig/node24": "24.0.4",
+    "@types/dompurify": "3.0.5",
+    "@types/markdown-it": "14.2.0",
+    "@types/node": "24.13.3",
+    "@vitejs/plugin-vue": "6.0.8",
+    "@vue/eslint-config-typescript": "14.9.0",
+    "@vue/tsconfig": "0.8.1",
+    "axe-core": "4.11.0",
+    "eslint": "10.8.0",
+    "eslint-config-prettier": "10.1.8",
+    "eslint-plugin-oxlint": "1.50.0",
+    "eslint-plugin-vue": "10.8.0",
+    "jiti": "2.7.0",
+    "openapi-typescript": "7.13.0",
+    "oxlint": "1.50.0",
+    "prettier": "3.8.1",
+    "typescript": "5.9.3",
+    "vite": "7.3.6",
+    "vitest": "4.1.10",
+    "vue-tsc": "3.3.9"
+  }
+}

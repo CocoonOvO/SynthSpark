@@ -472,10 +472,13 @@ async def create_post(
 
     # 更新分组使用计数
     if post_data.get("group_id"):
+        group_count = await db_manager.db.count("posts", filters={"group_id": post_data["group_id"]})
         await db_manager.db.update(
             "groups",
             post_data["group_id"],
-            {"post_count": (await db_manager.db.count("posts", filters={"group_id": post_data["group_id"]})).get("count", 0)}
+            # count() 返回 {"success", "count"}：不能把这个 dict 直接写进 int 列
+            # （postgres 会 500，sqlite 只是默默存下垃圾）
+            {"post_count": group_count.get("count", 0) if isinstance(group_count, dict) else group_count},
         )
 
     # 返回创建的文章
@@ -707,10 +710,11 @@ async def delete_post(
 
     # 更新分组使用计数
     if group_id:
+        group_count = await db_manager.db.count("posts", filters={"group_id": group_id})
         await db_manager.db.update(
             "groups",
             group_id,
-            {"post_count": (await db_manager.db.count("posts", filters={"group_id": group_id})).get("count", 0)}
+            {"post_count": group_count.get("count", 0) if isinstance(group_count, dict) else group_count},
         )
 
     return {"success": True, "message": "文章已删除"}

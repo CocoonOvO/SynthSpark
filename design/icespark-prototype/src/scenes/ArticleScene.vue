@@ -1,0 +1,678 @@
+<script setup lang="ts">
+/**
+ * ARTICLE 场景：文章详情
+ *
+ * 用户反馈第 5 条的三处改动都在这里：
+ * 1. 去掉进场「关卡牌」这类仪式化开场，直接给正文
+ * 2. 干掉左侧竖列（作者 / 点赞 / 评论 / 返回）—— 在窄屏上它只会把正文挤成一条。
+ *    改成标题下的**横向操作条**：作者信息并入元信息行，动作按钮横排
+ * 3. 正文容器宽度自适应（只设上限，不写死像素），并接上 markdown 渲染器
+ * 4. 快捷键指南固定在文章底部（sticky），不用滚到底才看得到，且刻意做得很轻
+ *
+ * 阅读层的取舍：像素是外壳，文档是本体 —— 标题/代码/表格走像素字体，
+ * 大段正文走中文黑体，长文才读得下去。
+ */
+import { ref, computed, onMounted, onUnmounted } from 'vue'
+import { onPad, usePad } from '../ui/pad'
+import { useStatusBar, scrollScreenBy, scrollScreenTo } from '../ui/scene'
+import { useFocusGroup } from '../ui/focus'
+import { goPosts, goBackOrPosts } from '../ui/nav'
+import { playSfx } from '../ui/sfx'
+import { store, loadPost, shortDate } from '../data/api'
+import PixelAvatar from '../ui/PixelAvatar.vue'
+import PixelDialog from '../ui/PixelDialog.vue'
+import ImageFrame from '../ui/ImageFrame.vue'
+import { coverOk, markCoverFailed } from '../ui/cover'
+import MarkdownBody from '../ui/MarkdownBody.vue'
+import SceneHead from '../ui/SceneHead.vue'
+import { AVATAR_PALETTE } from '../styles/tokens'
+import { frame as currentScene } from '../ui/scene'
+
+usePad()
+const { clock, stop } = useStatusBar()
+
+/** 一次方向键滚动的像素数：8px 栅格的整数倍，离散跳步而不是平滑滚动 */
+const SCROLL_STEP = 64
+/** PgUp / PgDn 滚一屏 */
+const PAGE_STEP = 360
+
+const liked = ref(false)
+const heartPop = ref(false)
+const dialogLines = ref<string[] | null>(null)
+const hearts = ref(0)
+/** 本文档根节点：用来判定原生焦点（Tab 遍历）是否落在正文范围内 */
+const rootEl = ref<HTMLElement | null>(null)
+
+const ACTIONS = [
+  { key: 'like', label: '点赞' },
+  { key: 'comment', label: '评论' },
+  { key: 'back', label: '返回列表' },
+] as const
+
+/** 横向操作条：初始 -1 表示未进入，因此进场时 Enter 不会误触第一个动作 */
+const actionFocus = useFocusGroup({ initial: -1 })
+
+/**
+ * 焦点分区（用户第 7 条）：
+ *   'none'    没进任何分区 → 方向键滚动正文
+ *   'chips'   分组 / 标签芯片行（G 键直达，芯片可跳到对应列表）
+ *   'actions' 点赞 / 评论 / 返回 操作栏（L 键直达）
+ * 用一条 zone 管住两块，才不会出现「芯片和操作栏同时高亮」的双焦点。
+ */
+const zone = ref<'none' | 'chips' | 'actions'>('none')
+const chipFocus = useFocusGroup({ initial: -1 })
+
+const post = computed(() => store.post.value)
+const comments = computed(() => store.comments.value)
+
+/** 芯片列表：分组在前，标签在后，顺序与 DOM 一致（焦点索引才对得上） */
+const chips = computed(() => {
+  const list: { kind: 'group' | 'tag'; label: string }[] = []
+  if (post.value?.group_name) list.push({ kind: 'group', label: post.value.group_name })
+  for (const t of post.value?.tags ?? []) list.push({ kind: 'tag', label: t })
+  return list
+})
+
+onMounted(async () => {
+  // 深链接 /post/:key 能直接进来，所以正文用「路由参数」加载，而不是靠上一层传值
+  const key = currentScene.value.param
+  await loadPost(key && key !== 'all' ? key : undefined)
+  hearts.value = post.value?.like_count ?? 0
+})
+onUnmounted(stop)
+
+function runAction(key: string) {
+  if (key === 'like') like()
+  else if (key === 'comment') openComment()
+  else backToList()
+}
+
+/** 返回列表：优先走浏览器历史（从列表点进来的），深链接进来时退到列表页 */
+function backToList() {
+  playSfx('cancel')
+  goBackOrPosts(post.value?.group_name || undefined)
+}
+
+/** 芯片 = 链接：分组跳分组列表，标签跳标签列表（用户第 7 条） */
+function openChip(i: number) {
+  const c = chips.value[i]
+  if (!c) return
+  playSfx('confirm')
+  if (c.kind === 'group') goPosts({ group: c.label }, 'wipe')
+  else goPosts({ tag: c.label }, 'wipe')
+}
+
+/**
+ * 原生焦点（Tab 走出来的链接）与自绘焦点（.is-focused）共存的两条规矩：
+ *
+ * 1. 原生焦点在本文档内时，**回车/空格交给浏览器**：它自己会激活那个链接。
+ *    否则一次回车会先被我们的 confirm 分支处理一次、再被浏览器处理一次，
+ *    变成「按一下跳两次」（历史里多出一条）。
+ * 2. 我们自己的焦点一动（方向键 / G / L / 鼠标划过），就把原生焦点收掉，
+ *    保证屏幕上永远只有一个光标。这一条正是第六轮加 Tab 遍历时最容易翻车的地方。
+ */
+function nativeFocusInside(): boolean {
+  const el = document.activeElement as HTMLElement | null
+  return !!el && el !== document.body && !!rootEl.value?.contains(el)
+}
+
+function dropNativeFocus() {
+  if (!nativeFocusInside()) return
+  ;(document.activeElement as HTMLElement).blur()
+}
+
+const off = onPad((a) => {
+  if (dialogLines.value) return false // 对话框自己处理按键
+
+  if (a === 'confirm' && nativeFocusInside()) return false
+  dropNativeFocus()
+
+  if (a === 'up' || a === 'down') {
+    // 方向键始终是「滚动正文」：屏幕是 overflow 容器而不是文档，
+    // 浏览器原生方向键滚不动它，所以显式滚一步；滚不动了就把按键交还浏览器
+    exitZone()
+    return scrollScreenBy(a === 'down' ? SCROLL_STEP : -SCROLL_STEP)
+  }
+
+  if (a === 'pageNext' || a === 'pagePrev') {
+    return scrollScreenBy(a === 'pageNext' ? PAGE_STEP : -PAGE_STEP)
+  }
+
+  // 回到文章顶部（用户第 7 条）
+  if (a === 'toTop') {
+    exitZone()
+    return scrollScreenTo(0)
+  }
+
+  // 快捷键直达：G 分组 / 标签行，L 点赞评论栏（用户第 7 条）
+  if (a === 'focusGroup') {
+    if (!chips.value.length) return true
+    zone.value = 'chips'
+    if (chipFocus.index.value < 0) chipFocus.set(0)
+    playSfx('move')
+    return true
+  }
+  if (a === 'focusLike') {
+    zone.value = 'actions'
+    if (actionFocus.index.value < 0) actionFocus.set(0)
+    playSfx('move')
+    return true
+  }
+
+  if (a === 'right' || a === 'left') {
+    const d = a === 'right' ? 1 : -1
+    if (zone.value === 'chips') {
+      const next = chipFocus.index.value + d
+      if (next < 0 || next >= chips.value.length) return false
+      chipFocus.set(next)
+      return true
+    }
+    if (zone.value === 'actions') {
+      const i = actionFocus.index.value
+      if (d < 0 && i === 0) {
+        actionFocus.set(-1, true)
+        zone.value = 'none'
+        return true
+      }
+      if (i < 0) {
+        actionFocus.set(0)
+        return true
+      }
+      if (i >= ACTIONS.length - 1 && d > 0) return false
+      actionFocus.set(i + d)
+      return true
+    }
+    // 还没进任何分区：→ 直接进操作栏，← 不做事
+    if (d < 0) return false
+    zone.value = 'actions'
+    actionFocus.set(0)
+    playSfx('move')
+    return true
+  }
+
+  if (a === 'confirm') {
+    if (zone.value === 'chips') {
+      openChip(chipFocus.index.value)
+      return true
+    }
+    if (zone.value === 'actions' && actionFocus.index.value >= 0) {
+      runAction(ACTIONS[actionFocus.index.value].key)
+      return true
+    }
+    return false
+  }
+
+  // ESC：先退出当前分区；没进分区时交还给全局（全局用它开菜单）
+  if (a === 'cancel') {
+    if (zone.value !== 'none') {
+      exitZone()
+      return true
+    }
+    return false
+  }
+
+  return false
+})
+
+/** 退出分区：两块焦点都收回「未进入」态 */
+function exitZone() {
+  if (zone.value === 'none') return
+  zone.value = 'none'
+  actionFocus.set(-1, true)
+  chipFocus.set(-1, true)
+}
+onUnmounted(off)
+
+function isFocused(i: number) {
+  return zone.value === 'actions' && actionFocus.index.value === i
+}
+
+function isChipFocused(i: number) {
+  return zone.value === 'chips' && chipFocus.index.value === i
+}
+
+function hoverAction(i: number) {
+  // hover 在 useFocusGroup 里已经静音（鼠标划过不出声）
+  dropNativeFocus()
+  zone.value = 'actions'
+  actionFocus.hover(i)
+}
+
+function hoverChip(i: number) {
+  dropNativeFocus()
+  zone.value = 'chips'
+  chipFocus.hover(i)
+}
+
+function like() {
+  liked.value = !liked.value
+  hearts.value += liked.value ? 1 : -1
+  playSfx(liked.value ? 'heart' : 'move')
+  if (liked.value) {
+    heartPop.value = true
+    window.setTimeout(() => (heartPop.value = false), 320)
+  }
+}
+
+function openComment() {
+  playSfx('confirm')
+  dialogLines.value = [
+    '在这里发表评论。匿名访客需要留下称呼（1–50 字），登录用户会自动署名。',
+    '（样机演示：实际调用 POST /api/comments。匿名可提交，但按 IP 限流 24 小时 20 条、间隔 30 秒。）',
+  ]
+}
+
+function closeDialog() {
+  dialogLines.value = null
+}
+</script>
+
+<template>
+  <div ref="rootEl" class="article">
+    <SceneHead :title="`文章 · ${post?.group_name || '未分组'}`" :clock="clock">
+      <span v-if="post" class="head-date hint">{{ shortDate(post.created_at) }}</span>
+    </SceneHead>
+
+    <div v-if="!post" class="loading px">
+      <span class="blink">▌</span> 读取正文 …
+    </div>
+
+    <div v-else class="doc-wrap">
+      <h1 class="doc-title">{{ post.title }}</h1>
+
+      <!-- 元信息：作者并入这里，取代原来的左侧作者卡竖列 -->
+      <div class="doc-meta px">
+        <PixelAvatar
+          :src="post.author_avatar"
+          :name="post.author_name"
+          :size="16"
+          :display="28"
+          :palette="AVATAR_PALETTE"
+        />
+        <span class="meta-author">{{ post.author_name }}</span>
+        <span class="meta-type hint">{{ post.author_type === 'agent' ? 'AGENT' : 'HUMAN' }}</span>
+        <span class="sep">·</span>
+        <span class="hint">{{ shortDate(post.created_at) }}</span>
+        <span class="sep">·</span>
+        <span class="hint num">◉ {{ post.view_count }}</span>
+      </div>
+
+      <!-- 分组 / 标签：不只是展示，点一下就到对应列表（G 键直达本行） -->
+      <div v-if="chips.length" class="chips" data-testid="chips">
+        <span class="chips-cap px">归类</span>
+        <button
+          v-for="(c, i) in chips"
+          :key="`${c.kind}:${c.label}`"
+          class="chip focusable mini"
+          :data-testid="`chip-${c.kind}-${i}`"
+          :class="{ 'is-focused': isChipFocused(i), group: c.kind === 'group' }"
+          @mouseenter="hoverChip(i)"
+          @click="((zone = 'chips'), (chipFocus.index = i), openChip(i))"
+        >
+          <span v-if="c.kind === 'group'" class="chip-mark">▣</span>
+          <span v-else class="chip-mark">#</span>{{ c.label }}
+          <span class="chip-go">→</span>
+        </button>
+      </div>
+
+      <!-- 封面：没有（或加载失败）就整块不渲染，正文直接顶上来 -->
+      <ImageFrame
+        v-if="coverOk(post.cover_image)"
+        class="doc-cover"
+        :src="post.cover_image"
+        :alt="post.title"
+        ratio="21 / 9"
+        @error="markCoverFailed(post.cover_image)"
+      />
+
+      <!-- 横向操作条：取代左侧竖列，窄屏自然折行 -->
+      <div class="actions" data-testid="actions">
+        <button
+          class="act focusable"
+          data-testid="action-like"
+          :class="{ 'is-focused': isFocused(0), on: liked, pop: heartPop }"
+          @mouseenter="hoverAction(0)"
+          @click="((actionFocus.hover(0)), like())"
+        >
+          <span class="act-icon">{{ liked ? '♥' : '♡' }}</span>
+          <span class="act-label">{{ liked ? '已点赞' : '点赞' }}</span>
+          <span class="act-num">{{ hearts }}</span>
+        </button>
+
+        <button
+          class="act focusable"
+          data-testid="action-comment"
+          :class="{ 'is-focused': isFocused(1) }"
+          @mouseenter="hoverAction(1)"
+          @click="((actionFocus.hover(1)), openComment())"
+        >
+          <span class="act-icon">▤</span>
+          <span class="act-label">评论</span>
+          <span class="act-num">{{ comments.length }}</span>
+        </button>
+
+        <button
+          class="act focusable"
+          data-testid="action-back"
+          :class="{ 'is-focused': isFocused(2) }"
+          @mouseenter="hoverAction(2)"
+          @click="((actionFocus.hover(2)), backToList())"
+        >
+          <span class="act-icon">◀</span>
+          <span class="act-label">返回列表</span>
+        </button>
+      </div>
+
+      <!-- 正文：markdown 渲染，宽度只设上限 -->
+      <div class="doc-body">
+        <MarkdownBody :source="post.content" />
+      </div>
+
+      <!-- 评论区 -->
+      <section class="records">
+        <div class="records-cap px">
+          <span>评论</span>
+          <span class="records-num hint">{{ comments.length }}</span>
+        </div>
+        <div v-for="(c, i) in comments" :key="c.id" class="record">
+          <span class="record-no px">{{ String(i + 1).padStart(2, '0') }}</span>
+          <div class="record-main">
+            <div class="record-head px">
+              <span class="record-author">{{ c.author.display_name || c.author.username }}</span>
+              <span class="hint">{{ shortDate(c.created_at) }}</span>
+            </div>
+            <p class="record-text read">{{ c.content }}</p>
+          </div>
+        </div>
+        <div v-if="!comments.length" class="record-empty hint">还没有人留言。</div>
+      </section>
+    </div>
+
+    <!-- 快捷键指南：sticky 在屏幕底部，滚动时始终可见，刻意做得轻 -->
+    <div class="keybar px" data-testid="keybar">
+      <span class="kb"><i class="kbd">↑</i><i class="kbd">↓</i> 滚动</span>
+      <span class="kb"><i class="kbd">PgUp</i><i class="kbd">PgDn</i> 整屏</span>
+      <span class="kb"><i class="kbd">G</i> 分组/标签</span>
+      <span class="kb"><i class="kbd">L</i> 点赞评论</span>
+      <span class="kb"><i class="kbd">→</i><i class="kbd">←</i> 行内移动</span>
+      <span class="kb"><i class="kbd">TAB</i> 遍历链接</span>
+      <span class="kb"><i class="kbd">ENTER</i> 执行</span>
+      <span class="kb"><i class="kbd">U</i> 回顶部</span>
+      <span class="kb"><i class="kbd">Q</i> 返回</span>
+      <span class="kb tail"><i class="kbd">P</i>/<i class="kbd">ESC</i> 菜单</span>
+    </div>
+
+    <PixelDialog
+      v-if="dialogLines"
+      speaker="评论"
+      :lines="dialogLines"
+      @done="closeDialog"
+      @close="closeDialog"
+    />
+  </div>
+</template>
+
+<style scoped>
+.article {
+  min-height: 100%;
+  display: flex;
+  flex-direction: column;
+  padding: 18px 26px 0;
+}
+
+.head-date {
+  color: var(--ink-faint);
+}
+
+.loading {
+  flex: 1;
+  display: grid;
+  place-items: center;
+  color: var(--ink-soft);
+}
+
+/* 正文容器：跟随视口自适应，只设上限，不写死像素宽度 */
+.doc-wrap {
+  width: 100%;
+  max-width: min(100%, 1180px);
+  margin: 0 auto;
+  padding: 16px 0 24px;
+  display: flex;
+  flex-direction: column;
+}
+
+.doc-title {
+  font-family: 'Source Han Sans CN', 'Noto Sans CJK SC', sans-serif;
+  font-weight: 700;
+  font-size: clamp(24px, 3.4vw, 38px);
+  line-height: 1.3;
+  margin: 0 0 12px;
+  color: var(--ink);
+}
+
+.doc-meta {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  color: var(--ink-soft);
+  border-bottom: 2px solid var(--blue-200);
+  padding-bottom: 10px;
+}
+
+.meta-author {
+  font-family: 'Source Han Sans CN', 'Noto Sans CJK SC', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+  color: var(--ink);
+}
+
+.meta-type {
+  border: 1.5px solid var(--blue-300);
+  padding: 0 4px;
+}
+
+.sep {
+  color: var(--blue-300);
+}
+
+.num {
+  font-variant-numeric: tabular-nums;
+}
+
+/* 分组 / 标签芯片行：既是展示也是链接（用户第 7 条） */
+.chips {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+  margin-top: 10px;
+}
+
+.chips-cap {
+  color: var(--ink-faint);
+}
+
+.chip {
+  font: inherit;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  background: var(--paper);
+  border: 2px solid var(--blue-300);
+  color: var(--blue-700);
+  padding: 2px 8px;
+  cursor: pointer;
+  font-family: 'Source Han Sans CN', 'Noto Sans CJK SC', sans-serif;
+  font-size: 12.5px;
+}
+
+.chip.group {
+  border-color: var(--blue-500);
+}
+
+.chip-mark {
+  color: var(--blue-400);
+}
+
+/* 跳转箭头常显（淡），划过或聚焦时加深 —— 芯片是链接这件事不该靠悬停才发现 */
+.chip-go {
+  color: var(--blue-300);
+}
+
+.chip:hover .chip-go,
+.chip.is-focused .chip-go {
+  color: var(--blue-700);
+}
+
+.doc-cover {
+  margin-top: 18px;
+}
+
+/* 横向操作条：不再是左侧竖列 */
+.actions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  margin: 16px 0 4px;
+  padding-bottom: 14px;
+  border-bottom: 2px solid var(--blue-200);
+}
+
+.act {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: inherit;
+  background: var(--paper);
+  border: 3px solid var(--blue-400);
+  color: var(--blue-700);
+  padding: 7px 14px;
+  cursor: pointer;
+}
+
+.act.on {
+  color: var(--spark);
+  border-color: var(--spark);
+}
+
+.act-icon {
+  font-size: 16px;
+  line-height: 1;
+}
+
+.act-label {
+  font-family: 'Source Han Sans CN', 'Noto Sans CJK SC', sans-serif;
+  font-size: 13px;
+  font-weight: 700;
+}
+
+.act-num {
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
+.act.pop {
+  animation: shake-step 160ms steps(1, end) 2;
+}
+
+.doc-body {
+  padding: 6px 0 8px;
+}
+
+.records {
+  margin-top: 22px;
+}
+
+.records-cap {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  border-bottom: 2px solid var(--blue-300);
+  padding-bottom: 8px;
+  color: var(--blue-600);
+}
+
+.records-num {
+  margin-left: auto;
+}
+
+.record {
+  display: flex;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1.5px dashed var(--blue-300);
+}
+
+.record-no {
+  color: var(--ink-faint);
+  padding-top: 3px;
+}
+
+.record-main {
+  flex: 1;
+  min-width: 0;
+}
+
+.record-head {
+  display: flex;
+  gap: 10px;
+  align-items: baseline;
+}
+
+.record-author {
+  font-family: 'Source Han Sans CN', 'Noto Sans CJK SC', sans-serif;
+  font-weight: 700;
+  font-size: 13px;
+}
+
+.record-text {
+  margin: 5px 0 0;
+  font-size: 14px;
+  line-height: 1.85;
+}
+
+.record-empty {
+  padding: 14px 0;
+}
+
+/* 快捷键指南：贴在滚动容器底部，始终可见；低对比度，不抢正文 */
+.keybar {
+  position: sticky;
+  bottom: 0;
+  margin-top: auto;
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  flex-wrap: wrap;
+  background: var(--paper-alt);
+  border-top: 2px solid var(--blue-200);
+  padding: 6px 10px;
+  color: var(--ink-faint);
+  font-size: 12px;
+  z-index: 5;
+}
+
+.kb {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.kb .kbd {
+  color: var(--ink-soft);
+  border-color: var(--blue-300);
+  background: var(--paper);
+  padding: 0 4px;
+}
+
+.kb.tail {
+  margin-left: auto;
+}
+
+@media (max-width: 700px) {
+  .keybar {
+    gap: 8px;
+  }
+}
+</style>

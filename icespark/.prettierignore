@@ -1,0 +1,11 @@
+# 生成物：schema.d.ts 是 openapi-typescript 的产物，格式由契约漂移门逐字节把关，不能被 prettier 改写
+src/api/schema.d.ts
+# 生成物：token CSS 是 gen-tokens-css.mjs 的产物，配色漂移门同样是逐字节比对
+src/styles/tokens.generated.css
+
+# 构建与测试产物
+dist/
+node_modules/
+test-results/
+playwright-report/
+.eslintcache
