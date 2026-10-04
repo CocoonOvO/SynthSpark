@@ -28,7 +28,10 @@ except ImportError:
 
 API = os.environ.get('ICESPARK_API', 'http://localhost:8002/api')
 USER = os.environ.get('ICESPARK_SEED_USER', 'icespark_admin')
-PW = os.environ.get('ICESPARK_SEED_PW', 'icespark2026')
+# 口令只从环境变量来：仓库是公开的，明文默认值等于把口令发出去（2026-10-01 清理）
+PW = os.environ.get('ICESPARK_SEED_PW')
+if not PW:
+    sys.exit('缺 ICESPARK_SEED_PW：本脚本要真账号口令，请用环境变量传入')
 
 PAL = {
     'deep': (18, 58, 82),

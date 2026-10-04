@@ -98,7 +98,7 @@
 | 2 | 设置只留展示相关项；菜单去掉 back / forward；登录后加编辑文章 + 个人信息编辑，超管再加站点管理 | 设置收口为**音效 / 每页条数 / 动效**三项（「数据来源」这类非展示项移出）；菜单删掉前进 / 后退两行；登录后出现 **编辑文章 `/write`**、**个人信息编辑 `/profile?tab=settings`**，`is_superuser` 再多一条 **站点管理 `/profile?tab=siteConfig`**。三者都是真 `<a href>`（可复制、可中键开新标签），菜单行数 6（未登录）/ 8（登录）/ 9（超管） | `ui/PauseMenu.vue`、`ui/SettingsDialog.vue`、`ui/auth.ts` |
 | 3 | 文章页 TAB 按 DOM 顺序遍历链接（用户批准「这个可以做」） | 从「消费但不动作」改为**把 Tab 还给浏览器**：原生 Tab 天然按 DOM 顺序走（芯片 → 操作条 → 正文链接），`Shift+Tab` 反向、自动滚进视野、回车自动激活全部免费。为此把原生 `:focus-visible` 并进**唯一那套焦点视觉**，并用 `nativeFocusInside()` 保证「原生激活」与「手柄确认」不会双触发 | `App.vue`、`styles/pixel.css`、`scenes/ArticleScene.vue`、`ui/MarkdownBody.vue` |
 | 4 | 没有封面的文章放马赛克图太丑，要更优雅的策略 | 改成**空画框记号**（外框 + 方块太阳 + 地平线，纯蓝色阶、硬边、无圆角，形状跟随画框自身宽高比）：语义仍是「这里是图片位」，但长在这套像素语言里。曾经试过「放大标题首字做水印」，`ArkPixel` 是 12px 点阵字体，放大到 94px 后笔画被拉开、再加灰度抗锯齿，一个字会被看成两团碎块 —— 已放弃并记录 | `ui/ImageFrame.vue`、`styles/pixel.css` |
-| 5 | 给管理员账号和密码测试 | 业务库里建了两个演示账号（前台 `/api/auth/token` 可登录）：`icespark_admin` / `icespark2026`（`is_superuser=true`，显示名「演示管理员」）与 `icespark_user` / `icespark2026`（普通用户）。配置库超管 `admin` / `123456` 只作用于 `/api/admin/login`，**登不进这个前台** | `e2e/round6.mjs` 的登录用例 |
+| 5 | 给管理员账号和密码测试 | 业务库里建了两个演示账号（前台 `/api/auth/token` 可登录）：`icespark_admin`（`is_superuser=true`，显示名「演示管理员」）与 `icespark_user`（普通用户）—— **口令不入库**，脚本从环境变量取（`ICESPARK_ADMIN_PW` / `ICESPARK_USER_PW` / `ICESPARK_SEED_PW`）。配置库超管 `admin` / `123456` 只作用于 `/api/admin/login`，**登不进这个前台** | `e2e/round6.mjs` 的登录用例 |
 
 顺带做掉的两件小事：
 
