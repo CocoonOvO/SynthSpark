@@ -39,6 +39,7 @@ import { scrollScreenBy, scrollScreenTo } from '@/scene/screen'
 import { useFocusGroup } from '@/input/focus'
 import { goPosts, goBackOrPosts, goTab } from '@/scene/nav'
 import { playSfx, type SfxKind } from '@/input/sfx'
+import { useAvatarStore } from '@/stores/avatars'
 import { useContentStore } from '@/stores/content'
 import { shortDate } from '@/api/format'
 import PixelAvatar from '@/signal/PixelAvatar.vue'
@@ -52,6 +53,7 @@ import { usePageTitle } from '@/frame/documentMeta'
 
 const route = useRoute()
 const content = useContentStore()
+const avatars = useAvatarStore()
 
 /**
  * 样机是 `styles/tokens.ts` 里写死的 `AVATAR_PALETTE` 数组；
@@ -373,6 +375,7 @@ function closeDialog() {
       <div class="doc-meta px">
         <PixelAvatar
           :src="post.author_avatar"
+          :rows="avatars.rowsFor(post.author_name)"
           :name="post.author_name"
           :size="16"
           :display="28"

@@ -60,7 +60,9 @@ import { useLongText } from '@/scene/longtext'
 import { canGoBack, goBack, goTab } from '@/scene/nav'
 import { scrollScreenTop } from '@/scene/screen'
 import PixelAvatar from '@/signal/PixelAvatar.vue'
+import { emptyGrid, gridToText, parseGridInput, type AvatarRows } from '@/signal/pixel-grid'
 import { useAuthStore } from '@/stores/auth'
+import { useAvatarStore } from '@/stores/avatars'
 import { ACTIVE_PALETTE, PALETTES, avatarPalette } from '@/styles/tokens'
 
 /** 头像调色板按当前配色方案现算（与列表 / 文章 / 用户档案页同一处改法，加主题时不用改这里） */
@@ -74,6 +76,7 @@ const BIO_MAX = 500
 
 const { clock, stop } = useStatusBar()
 const auth = useAuthStore()
+const avatars = useAvatarStore()
 
 /**
  * 四态。
@@ -127,6 +130,9 @@ function fill(u: User): void {
   form.display_name = u.display_name ?? ''
   form.bio = u.bio ?? ''
   form.avatar_url = u.avatar_url ?? ''
+  // 头像两栏：有图片就先看图片，没有图片但配过点阵就直接看那栏
+  avatarMode.value = !form.avatar_url && myRows.value ? 'pixels' : 'photo'
+  fillGridBox()
   baseline.email = form.email
   baseline.display_name = form.display_name
   baseline.bio = form.bio
@@ -245,6 +251,142 @@ function removeAvatar(): void {
   clearSaveFeedback()
 }
 
+/* ────────────────────────── 点阵头像（icespark 自己那份） ──────────────────────────
+ *
+ * 与图片头像的关系（架构 §67）：
+ *   · 展示优先级是 **图片 → 点阵 → 名字哈希**，这条只写在 `PixelAvatar` 里；
+ *   · 所以「切换到点阵」要真的生效，就得把后端那张图片清掉 —— 保存点阵时顺手做，
+ *     并且**明说**做了（否则用户会以为自己的图片还在）；
+ *   · 反过来清掉点阵不会碰图片：图片还在的话，展示自然回到图片。
+ *
+ * 存储不在后端：这份点阵由 icespark 自己的 `/avatar` 路由管（本地文件、不入库），
+ * 而且那条路由在静态部署里可能根本不存在 —— 那时 `gridAvailable` 为假，这一栏给一句人话。
+ */
+type AvatarMode = 'photo' | 'pixels'
+
+/** 现在在看哪一栏：有图片头像时默认图片（先看见自己现在用的那个） */
+const avatarMode = ref<AvatarMode>('photo')
+/** 用户自己点过切换键没有 —— 点过一次就不再替他挑（否则会被自动跳栏拽走） */
+const modePicked = ref(false)
+
+const gridEl = ref<HTMLTextAreaElement | null>(null)
+
+/** 我在 icespark 那份存储里的用户名（= 登录用户名；没登录时没有） */
+const myName = computed(() => user.value?.username ?? '')
+/** 我那一条点阵；没配过就是 null */
+const myRows = computed(() => avatars.rowsFor(myName.value))
+/** 这条路由在不在（静态部署里不在） */
+const gridAvailable = computed(() => avatars.state !== 'unavailable')
+
+/** 编辑框里的文本与它的解析结果（解析失败要有能读的原因，不能悄悄吞） */
+const gridText = ref('')
+const gridTouched = ref(false)
+const gridParse = computed(() => parseGridInput(gridText.value))
+const gridBusy = ref(false)
+const gridError = ref('')
+const gridNotice = ref('')
+
+/**
+ * 预览用的那一版：解析失败时**保持上一次合法的**。
+ * 否则打到一半手滑，预览会突然变成「名字哈希那张脸」—— 看着像头像丢了。
+ */
+const gridPreview = ref<AvatarRows | null>(null)
+watch(
+  gridParse,
+  (parsed) => {
+    if (parsed.ok) gridPreview.value = parsed.rows
+  },
+  { immediate: true },
+)
+
+/** 把「已保存的那份」灌进编辑框（没配过就给一张空白画布） */
+function fillGridBox(): void {
+  gridText.value = gridToText(myRows.value ?? emptyGrid())
+  gridPreview.value = myRows.value ?? emptyGrid()
+  gridTouched.value = false
+}
+
+/**
+ * 别人（或另一次保存）改了我的那条时，只要编辑框还没被碰过就跟着刷新；
+ * 顺便把「默认看哪一栏」补上一次 —— `fill()` 跑的时候映射可能还在路上
+ * （`avatars.load()` 与 `fetchMe()` 是两条独立的请求，谁先回来不定），
+ * 光靠 `fill()` 里那一判会变成看运气。
+ */
+watch(myRows, () => {
+  if (!gridTouched.value) fillGridBox()
+  if (!modePicked.value && !form.avatar_url && myRows.value) avatarMode.value = 'pixels'
+})
+
+function setAvatarMode(mode: AvatarMode): void {
+  if (mode === avatarMode.value) return
+  modePicked.value = true
+  avatarMode.value = mode
+  gridError.value = ''
+  gridNotice.value = ''
+  clearSaveFeedback()
+  if (mode === 'pixels') {
+    fillGridBox()
+    uploadError.value = ''
+    uploadNotice.value = ''
+  }
+}
+
+function onGridInput(): void {
+  gridTouched.value = true
+  gridError.value = ''
+  gridNotice.value = ''
+}
+
+/** 保存点阵：借后端令牌鉴权由 `stores/avatars` 那条链路负责 */
+async function saveGrid(): Promise<void> {
+  if (gridBusy.value) return
+  const parsed = parseGridInput(gridText.value)
+  gridError.value = ''
+  gridNotice.value = ''
+  clearSaveFeedback()
+  if (!parsed.ok) {
+    gridError.value = parsed.reason
+    return
+  }
+  gridBusy.value = true
+  try {
+    const username = await avatars.save(parsed.rows)
+    gridText.value = gridToText(parsed.rows)
+    gridTouched.value = false
+    if (form.avatar_url) {
+      // 图片会盖住点阵：要「切换」就得把图片拿掉，并把这件事说出来
+      const updated = await updateMe({ avatar_url: '' })
+      form.avatar_url = updated.avatar_url ?? ''
+      baseline.avatar_url = form.avatar_url
+      gridNotice.value = `已存为 ${username} 的点阵头像；同时清掉了图片头像（它本来会盖住点阵）`
+    } else {
+      gridNotice.value = `已存为 ${username} 的点阵头像`
+    }
+  } catch (err) {
+    gridError.value = detailOf(err, '保存点阵头像失败')
+  } finally {
+    gridBusy.value = false
+  }
+}
+
+/** 清掉点阵：展示会回到图片头像（如果还有）或名字那张脸 */
+async function clearGrid(): Promise<void> {
+  if (gridBusy.value) return
+  gridError.value = ''
+  gridNotice.value = ''
+  clearSaveFeedback()
+  gridBusy.value = true
+  try {
+    const username = await avatars.clear()
+    fillGridBox()
+    gridNotice.value = `已清掉 ${username} 的点阵头像`
+  } catch (err) {
+    gridError.value = detailOf(err, '清除点阵头像失败')
+  } finally {
+    gridBusy.value = false
+  }
+}
+
 async function changePassword(): Promise<void> {
   if (pwBusy.value) return
   pwError.value = ''
@@ -352,7 +494,8 @@ function runAct(id: ActId | undefined): boolean {
   }
   if (id === 'avatar') {
     playSfx('confirm')
-    fileEl.value?.click()
+    if (avatarMode.value === 'pixels') gridEl.value?.focus()
+    else fileEl.value?.click()
     return true
   }
   if (id === 'removeAvatar') {
@@ -575,8 +718,11 @@ onUnmounted(off)
         <span class="hint">用户名不可修改</span>
       </div>
 
-      <!-- 头像：预览 + 文件框 +（有头像时）清除 -->
-      <div class="field">
+      <!--
+        头像：两栏 —— 图片（后端 `avatar_url`）/ 点阵（icespark 自己的 `/avatar`，架构 §67）。
+        左边那张预览永远是**当前生效**的那张：图片 → 点阵 → 名字哈希，优先级只写在 PixelAvatar 里。
+      -->
+      <div class="field" data-testid="profile-avatar-field">
         <span class="field-cap">头像</span>
         <div class="avatar-row">
           <PixelAvatar
@@ -584,45 +730,146 @@ onUnmounted(off)
             aria-hidden="true"
             data-testid="profile-avatar-canvas"
             :src="form.avatar_url || null"
+            :rows="myRows"
             :name="user?.username || 'account'"
             :size="16"
             :display="64"
             :palette="AVATAR_PALETTE"
           />
           <div class="avatar-ops">
-            <input
-              id="profile-avatar-file"
-              ref="fileEl"
-              class="file"
-              data-testid="profile-avatar-file"
-              type="file"
-              accept="image/*"
-              aria-label="选择头像图片"
-              @change="onAvatarChange"
-              @keydown="onFileKey"
-              @mouseenter="releaseFileFocus"
-            />
-            <button
-              v-if="form.avatar_url"
-              class="btn ghost focusable mini"
-              data-testid="profile-avatar-remove"
-              type="button"
-              :class="{ 'is-focused': isFocused('removeAvatar') }"
-              @mouseenter="hoverAct('removeAvatar')"
-              @click="removeAvatar"
-            >
-              清除头像
-            </button>
-            <p class="hint">只能图片（JPG / PNG），≤ 5MB；上传后还要点「保存资料」才写进账号。</p>
-            <p v-if="uploading" class="status px" data-testid="profile-avatar-uploading">
-              <span class="blink" aria-hidden="true">▌</span> 头像上传中 …
-            </p>
-            <p v-else-if="uploadError" class="err" data-testid="profile-avatar-error">
-              ✕ {{ uploadError }}
-            </p>
-            <p v-else-if="uploadNotice" class="ok" data-testid="profile-avatar-ok">
-              ✔ {{ uploadNotice }}
-            </p>
+            <!-- 切换键：两个小键，当前那个按成实底（`aria-pressed` 给屏幕阅读器） -->
+            <div class="av-mode" role="group" aria-label="头像来源">
+              <button
+                type="button"
+                class="btn av-mode-btn focusable mini"
+                data-testid="avatar-mode-photo"
+                :aria-pressed="avatarMode === 'photo'"
+                :class="{ 'is-on': avatarMode === 'photo' }"
+                @click="setAvatarMode('photo')"
+              >
+                图片头像
+              </button>
+              <button
+                type="button"
+                class="btn av-mode-btn focusable mini"
+                data-testid="avatar-mode-pixels"
+                :aria-pressed="avatarMode === 'pixels'"
+                :class="{ 'is-on': avatarMode === 'pixels' }"
+                @click="setAvatarMode('pixels')"
+              >
+                点阵头像
+              </button>
+            </div>
+
+            <!-- 图片这一栏：沿用原来的文件框与清除，一个字没改 -->
+            <template v-if="avatarMode === 'photo'">
+              <input
+                id="profile-avatar-file"
+                ref="fileEl"
+                class="file"
+                data-testid="profile-avatar-file"
+                type="file"
+                accept="image/*"
+                aria-label="选择头像图片"
+                @change="onAvatarChange"
+                @keydown="onFileKey"
+                @mouseenter="releaseFileFocus"
+              />
+              <button
+                v-if="form.avatar_url"
+                class="btn ghost focusable mini"
+                data-testid="profile-avatar-remove"
+                type="button"
+                :class="{ 'is-focused': isFocused('removeAvatar') }"
+                @mouseenter="hoverAct('removeAvatar')"
+                @click="removeAvatar"
+              >
+                清除头像
+              </button>
+              <p class="hint">只能图片（JPG / PNG），≤ 5MB；上传后还要点「保存资料」才写进账号。</p>
+              <p v-if="myRows" class="hint" data-testid="avatar-photo-shadow-hint">
+                你还有一张点阵头像；图片拿掉之后它才会显示。
+              </p>
+              <p v-if="uploading" class="status px" data-testid="profile-avatar-uploading">
+                <span class="blink" aria-hidden="true">▌</span> 头像上传中 …
+              </p>
+              <p v-else-if="uploadError" class="err" data-testid="profile-avatar-error">
+                ✕ {{ uploadError }}
+              </p>
+              <p v-else-if="uploadNotice" class="ok" data-testid="profile-avatar-ok">
+                ✔ {{ uploadNotice }}
+              </p>
+            </template>
+
+            <!-- 点阵这一栏：预览 + 字符串 + 保存 / 清除 -->
+            <template v-else>
+              <p v-if="!gridAvailable" class="hint" data-testid="avatar-grid-unavailable">
+                这台部署没有点阵头像服务（{{ avatars.error || '取不到 /avatar' }}）。
+                它由 icespark 自己的服务器提供；只用静态托管 dist 的部署里不存在这一条路由。
+              </p>
+              <template v-else>
+                <div class="av-grid">
+                  <PixelAvatar
+                    class="av-grid-pv"
+                    aria-hidden="true"
+                    data-testid="avatar-grid-preview"
+                    :src="null"
+                    :rows="gridPreview"
+                    :name="myName || 'account'"
+                    :size="16"
+                    :display="96"
+                    :palette="AVATAR_PALETTE"
+                  />
+                  <textarea
+                    ref="gridEl"
+                    v-model="gridText"
+                    class="av-text"
+                    data-testid="avatar-grid-text"
+                    rows="16"
+                    spellcheck="false"
+                    aria-label="点阵头像字符串：十六行，每行十六个 0-7 的字符"
+                    @input="onGridInput"
+                  />
+                </div>
+                <p class="hint">
+                  十六行、每行十六个字，字符是调色板下标 <code>0-7</code>（<code>0</code> 是白底）；
+                  行内空格 / 逗号、或者 256 个字连写都认。
+                </p>
+                <p
+                  v-if="gridTouched && !gridParse.ok"
+                  class="err"
+                  data-testid="avatar-grid-invalid"
+                >
+                  ✕ {{ gridParse.reason }}
+                </p>
+                <p v-if="gridError" class="err" data-testid="avatar-grid-error">✕ {{ gridError }}</p>
+                <p v-else-if="gridNotice" class="ok" data-testid="avatar-grid-ok">✔ {{ gridNotice }}</p>
+                <div class="av-acts">
+                  <button
+                    type="button"
+                    class="btn focusable mini"
+                    data-testid="avatar-grid-save"
+                    :disabled="gridBusy || !gridParse.ok"
+                    @click="saveGrid"
+                  >
+                    保存点阵头像
+                  </button>
+                  <button
+                    v-if="myRows"
+                    type="button"
+                    class="btn ghost focusable mini"
+                    data-testid="avatar-grid-clear"
+                    :disabled="gridBusy"
+                    @click="clearGrid"
+                  >
+                    清除点阵头像
+                  </button>
+                </div>
+                <p v-if="form.avatar_url" class="hint" data-testid="avatar-grid-shadow-hint">
+                  你还有一张图片头像，它会盖住点阵：保存点阵时会一并清掉它。
+                </p>
+              </template>
+            </template>
           </div>
         </div>
       </div>
@@ -997,6 +1244,75 @@ onUnmounted(off)
   margin: 0;
 }
 
+/* ── 头像两栏：图片 / 点阵（架构 §67） ────────────────────── */
+
+/* 切换键：两个紧挨的小键，当前那个是实底（与全站的「按下 = 实底」一致） */
+.av-mode {
+  display: flex;
+  gap: 0;
+  align-self: flex-start;
+}
+.av-mode-btn + .av-mode-btn {
+  margin-left: -2px; /* 两个键贴在一起，像一组 */
+}
+/**
+ * 「小的切换键」：比页面里那些动作键矮一档，像一枚开关而不是一颗按钮。
+ *
+ * 选择器必须带上 `.avatar-ops`：本文件自己有一条 `.btn`（等于同分），
+ * 而它在这个文件里**排在我后面** —— 同等特异度下后来者赢，所以光写 `.av-mode-btn`
+ * 是压不住它的（实测高度还是 46px）。
+ */
+.avatar-ops .av-mode-btn {
+  padding: 1px 8px;
+  line-height: 20px;
+}
+.av-mode-btn.is-on {
+  background: var(--blue-500);
+  color: var(--paper);
+}
+
+/* 点阵编辑区：左边预览、右边字符串 */
+.av-grid {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  min-width: 0;
+}
+.av-grid-pv {
+  flex: 0 0 auto;
+}
+.av-text {
+  /* 宽度按十六个等宽字符算：点阵是一张 16×16 的图，框子不必占满整行 */
+  flex: 0 0 auto;
+  width: calc(16ch + 18px);
+  /* 点阵是等宽字符画：必须等宽 + 行高锁死，不然十六行对不齐 */
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  font-size: 12px;
+  line-height: 1.35;
+  letter-spacing: 0.5px;
+  padding: 6px 8px;
+  resize: vertical;
+  color: var(--ink);
+  background: var(--blue-100);
+  border: 2px solid var(--blue-400);
+}
+.av-text:focus {
+  border-color: var(--blue-600);
+  outline: none;
+}
+.av-acts {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+}
+/* 提示里的 `0-7` / `0` 是码表下标，用等宽体标出来 */
+.avatar-ops .hint code {
+  font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+  background: var(--blue-100);
+  border: 1px solid var(--blue-300);
+  padding: 0 3px;
+}
+
 /* ── 动作行 + 反馈 ── */
 .act-row {
   display: flex;
@@ -1098,6 +1414,16 @@ onUnmounted(off)
 
   .avatar-row {
     flex-direction: column;
+  }
+
+  /* 窄屏：预览与字符串上下排（并排的话字符串只剩几个字符宽） */
+  .av-grid {
+    flex-direction: column;
+    width: 100%;
+  }
+
+  .av-text {
+    width: 100%;
   }
 }
 </style>

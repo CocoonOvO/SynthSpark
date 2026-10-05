@@ -31,6 +31,7 @@ import { screenScroller, scrollScreenTop } from '@/scene/screen'
 import { blurTabs, cycleTab, onTabScene } from '@/scene/tabs'
 import { isTransitioning, transitionKind, transitionSeq } from '@/scene/transition'
 import { useAuthStore } from '@/stores/auth'
+import { useAvatarStore } from '@/stores/avatars'
 import { useShellStore } from '@/stores/shell'
 import { useSiteStore } from '@/stores/site'
 import { SCALE } from '@/styles/tokens'
@@ -98,6 +99,7 @@ const route = useRoute()
 const router = useRouter()
 const site = useSiteStore()
 const auth = useAuthStore()
+const avatars = useAvatarStore()
 const shell = useShellStore()
 
 /**
@@ -404,6 +406,10 @@ onMounted(() => {
   // 有缓存令牌时静默校验一次登录态（取样机 App.vue 的 bootstrapAuth()）：
   // token 过期就悄悄登出，网络抖动不动 token —— 判断在 store 里
   auth.bootstrapAuth()
+
+  // icespark 自己那份点阵头像：公开接口，未登录也能显示别人的，所以与登录态无关。
+  // 只拉一次（store 内部缓存）；这条路由在静态部署里不存在，拿不到就是「没有」。
+  void avatars.load()
 
   if (root.value) detachInput = mountInput(root.value)
 

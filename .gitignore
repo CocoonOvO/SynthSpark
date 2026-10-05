@@ -195,6 +195,8 @@ icespark/.eslintcache
 icespark/public/site.config.json
 # 真实登录 e2e 的本地凭据（本机测试账号，不入库；也可以改用环境变量传入）
 icespark/e2e/.credentials.local.json
+# icespark 自己的点阵头像存储（本地文件，不入库；由 icespark/avatar-route.ts 读写，可手改）
+icespark/avatars.local.json
 
 # Vite 的依赖预构建缓存（跑 dev / preview 时自动生成，不入库）
 .vite/

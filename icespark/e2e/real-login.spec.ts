@@ -156,3 +156,62 @@ test('真实登录后登出：菜单回到未登录，本地两把键都清空',
   await page.keyboard.press('Escape')
   await expect(page.locator('[data-testid="pause"]')).toHaveCount(0)
 })
+
+/**
+ * 点阵头像（架构 §67）的**真链路**：写操作要借后端鉴权，这条只有真令牌能验。
+ *
+ * 用例自己收拾现场：先读一份原来的（可能没有），跑完再放回去 ——
+ * 本机那份 `avatars.local.json` 是维护者的手改文件，不该被测试留下脚印。
+ */
+test('真实令牌：点阵头像能存、公开读得到、界面里看得见、能删', async ({ page }) => {
+  await page.goto('/')
+  await booted(page)
+  await realLogin(page)
+
+  const token = await page.evaluate(() => localStorage.getItem('synthspark-token'))
+  expect(token, '登录后本地应当有令牌').toBeTruthy()
+  const me = await page.request.get('/api/auth/me', { headers: { Authorization: `Bearer ${token}` } })
+  const username = ((await me.json()) as { username: string }).username
+  const auth = { Authorization: `Bearer ${token}` }
+  const url = `/avatar/${encodeURIComponent(username)}`
+
+  // 先记下现场（可能 404 = 原来没配过）
+  const before = await page.request.get(url)
+  const beforeRows = before.ok() ? ((await before.json()) as { rows: string[] }).rows : null
+
+  // 下标 6 = blue700(#1B5A7D)：与「名字哈希那张脸」和纯白都不同，画布上一眼能认出来
+  const rows = Array.from({ length: 16 }, () => '6'.repeat(16))
+  const saved = await page.request.post('/avatar', { headers: auth, data: { rows } })
+  expect(saved.status(), '真令牌应当能存').toBe(200)
+  expect(((await saved.json()) as { username: string }).username).toBe(username)
+
+  // 公开读（**不带令牌**）也要读得到 —— 展示别人才是它的主要用途
+  const published = await page.request.get(url)
+  expect(published.status()).toBe(200)
+  expect(((await published.json()) as { rows: string[] }).rows).toEqual(rows)
+
+  // 界面：这个账号没有图片头像，于是默认落在点阵栏、预览就是刚存的那张
+  await page.goto('/profile')
+  await booted(page)
+  await expect(page.locator('[data-testid="profile-form"]')).toBeVisible()
+  await expect(page.locator('[data-testid="avatar-mode-pixels"]')).toHaveAttribute('aria-pressed', 'true')
+  await expect
+    .poll(() =>
+      page.locator('[data-testid="profile-avatar-canvas"]').evaluate((el) => {
+        const d = (el as HTMLCanvasElement).getContext('2d')!.getImageData(0, 0, 1, 1).data
+        return [d[0], d[1], d[2]].join(',')
+      }),
+    )
+    .toBe('27,90,125')
+
+  // 收拾现场：原来有就放回去，原来没有就删掉
+  if (beforeRows) {
+    const restore = await page.request.post('/avatar', { headers: auth, data: { rows: beforeRows } })
+    expect(restore.status()).toBe(200)
+  } else {
+    const removed = await page.request.delete('/avatar', { headers: auth })
+    expect(removed.status()).toBe(200)
+    const gone = await page.request.get(url)
+    expect(gone.status(), '删掉之后公开读应当 404').toBe(404)
+  }
+})

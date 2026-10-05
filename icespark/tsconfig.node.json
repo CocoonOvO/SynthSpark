@@ -1,7 +1,8 @@
-// 构建工具自身（vite.config.ts / eslint.config.ts）的 tsconfig：跑在 Node 里，不要 DOM 类型
+// 构建工具自身（vite.config.ts / eslint.config.ts / avatar-route.ts）的 tsconfig：
+// 跑在 Node 里，不要 DOM 类型
 {
   "extends": "@tsconfig/node24/tsconfig.json",
-  "include": ["vite.config.*", "eslint.config.*", "vitest.config.*"],
+  "include": ["vite.config.*", "eslint.config.*", "vitest.config.*", "avatar-route.*"],
   "compilerOptions": {
     "module": "preserve",
     "moduleResolution": "bundler",

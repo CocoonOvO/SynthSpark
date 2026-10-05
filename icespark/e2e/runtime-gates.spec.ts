@@ -200,11 +200,20 @@ test('A · 运行期资源请求全部落在本站：整段旅程零外站域、
   // ③ 前端只猜 `/api/`：所有**后端调用**（fetch/xhr）的路径名都以 `/api/` 开头。
   //    静态资源要排掉 —— `public/site.config.json` 也是用 `fetch()` 读的站内文件，
   //    它走的是 Vite 静态服务而不是后端（样机同一条门也是这么排的）。
+  //    另有一条**写着理由的**例外：icespark 自己也有一条不走 `/api` 的路由 ——
+  //    点阵头像 `/avatar`（架构 §67）。它由 dev / preview 服务器提供，**不是后端调用**；
+  //    这道门要拦的是「前端偷偷猜了一个后端路径」，不是「前端有自己的路由」。
+  //    这份清单必须短：加一条就得在这里写清它为什么不是后端。
+  const OWN_ROUTES = ['/avatar']
   const STATIC_ASSET = /\.(js|mjs|css|map|json|woff2?|ttf|otf|png|jpe?g|gif|svg|ico|webp)(\?|$)/i
   const apiCalls = requests.filter(
     (r) => (r.type === 'fetch' || r.type === 'xhr') && !STATIC_ASSET.test(new URL(r.url).pathname),
   )
-  const strayApi = apiCalls.filter((r) => !new URL(r.url).pathname.startsWith('/api/'))
+  const strayApi = apiCalls.filter((r) => {
+    const path = new URL(r.url).pathname
+    if (path.startsWith('/api/')) return false
+    return !OWN_ROUTES.some((route) => path === route || path.startsWith(`${route}/`))
+  })
   expect(strayApi.map(describe), '有后端调用绕开了 /api/ 前缀').toEqual([])
   // 补一条同义的正向检查：这些后端调用**确实**在打 `/api/`（免得筛子太密把门筛空）
   expect(apiCalls.some((r) => new URL(r.url).pathname.startsWith('/api/'))).toBe(true)

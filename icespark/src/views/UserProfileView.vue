@@ -64,12 +64,14 @@ import { coverOk, markCoverFailed } from '@/scene/cover'
 import { canGoBack, goArticle, goBack, goTab } from '@/scene/nav'
 import { scrollScreenTop } from '@/scene/screen'
 import PixelAvatar from '@/signal/PixelAvatar.vue'
+import { useAvatarStore } from '@/stores/avatars'
 import { ACTIVE_PALETTE, PALETTES, avatarPalette } from '@/styles/tokens'
 import { usePageTitle } from '@/frame/documentMeta'
 
 /** 头像调色板按当前配色方案现算（与列表页 / 文章页同一处改法，加主题时不用改这里） */
 const AVATAR_PALETTE = avatarPalette(PALETTES[ACTIVE_PALETTE])
 
+const avatars = useAvatarStore()
 const { clock, stop } = useStatusBar()
 const route = useRoute()
 
@@ -330,6 +332,7 @@ onUnmounted(off)
       <PixelAvatar
         class="profile-avatar"
         :src="user?.avatar_url ?? null"
+        :rows="avatars.rowsFor(user?.username || username)"
         :name="user?.username || username"
         :size="16"
         :display="72"

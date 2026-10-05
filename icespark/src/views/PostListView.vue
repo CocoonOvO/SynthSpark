@@ -38,6 +38,7 @@ import { goPosts, goArticle } from '@/scene/nav'
 import { useFocusGroup, spatialIndex } from '@/input/focus'
 import { playSfx } from '@/input/sfx'
 import { pageSize, motionEnabled } from '@/config/prefs'
+import { useAvatarStore } from '@/stores/avatars'
 import { useContentStore } from '@/stores/content'
 import { shortDate, postKey } from '@/api/format'
 import type { PostListItem } from '@/api/types'
@@ -56,6 +57,8 @@ const AVATAR_PALETTE = avatarPalette(PALETTES[ACTIVE_PALETTE])
 const { clock, stop } = useStatusBar()
 const route = useRoute()
 const content = useContentStore()
+// 点阵头像（icespark 自己那份）：按作者名查，没有就让 PixelAvatar 落到名字哈希那张脸
+const avatars = useAvatarStore()
 
 const COLS = 2
 
@@ -549,6 +552,7 @@ const rangeText = computed(() => {
           <div class="card-foot px">
             <PixelAvatar
               :src="p.author_avatar"
+              :rows="avatars.rowsFor(p.author_name)"
               :name="p.author_name"
               :size="16"
               :display="24"

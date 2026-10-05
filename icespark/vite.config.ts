@@ -1,8 +1,10 @@
 import { execFileSync } from 'node:child_process'
 import { fileURLToPath, URL } from 'node:url'
 
-import { defineConfig, loadEnv } from 'vite'
+import { defineConfig, loadEnv, type Plugin } from 'vite'
 import vue from '@vitejs/plugin-vue'
+
+import { createAvatarRoute } from './avatar-route'
 
 /**
  * icespark 独立前端的构建配置。
@@ -51,6 +53,36 @@ function icesparkAssets() {
   }
 }
 
+/**
+ * icespark 自己的点阵头像路由（架构 §67）。
+ *
+ * **它挂的是 `/avatar`，不是 `/api/avatar`** —— `/api` 已经被代理整条打给后端了，
+ * 这条路由属于前端自己，混进去既容易被代理吞掉，也说不清归属。
+ *
+ * 只在 dev 与 preview 服务器里存在：部署若只是「nginx 发 dist + 反代 /api」，
+ * 这条路由就没有了，前端会退到「后端头像 → 名字回退」（`stores/avatars.ts` 里
+ * 拿不到就永久标记 unavailable）。这一点在架构 §67 里写明了。
+ */
+function icesparkAvatarRoute(apiTarget: string): Plugin {
+  // 存储落在 icespark/avatars.local.json：本地文件、已 gitignore、可手改
+  const file = fileURLToPath(new URL('./avatars.local.json', import.meta.url))
+  const middleware = createAvatarRoute({ file, apiTarget })
+
+  return {
+    name: 'icespark-avatar-route',
+
+    // 直接 use（而不是 return 一个函数）：Vite 的 configureServer 先于内置中间件执行，
+    // 而内置的 SPA 回退会把不认识的路径换成 index.html —— 顺序反了，这条路由就永远轮不到。
+    configureServer(server) {
+      server.middlewares.use(middleware)
+    },
+
+    configurePreviewServer(server) {
+      server.middlewares.use(middleware)
+    },
+  }
+}
+
 export default defineConfig(({ mode }) => {
   const env = loadEnv(mode, process.cwd(), '')
 
@@ -58,7 +90,7 @@ export default defineConfig(({ mode }) => {
   const apiTarget = env.VITE_API_URL || 'http://localhost:8002'
 
   return {
-    plugins: [vue(), icesparkAssets()],
+    plugins: [vue(), icesparkAssets(), icesparkAvatarRoute(apiTarget)],
 
     resolve: {
       alias: {
