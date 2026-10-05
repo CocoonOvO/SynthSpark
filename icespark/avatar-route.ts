@@ -16,6 +16,8 @@
  *   `GET    /avatar/<username>`  公开，返回某一个（给单点查询 / 排查用）
  *   `POST   /avatar`            需要 `Authorization: Bearer <令牌>`，体是 `{ rows }`
  *   `DELETE /avatar`            同上，删掉自己的那一条
+ *   `GET    /avatar/skill.md`   公开，**英文纯文本**的用法说明（同目录 `avatar-skill.md`）——
+ *                              给 Agent 看的：它读到这一段就知道怎么读写点阵头像
  *
  * 写操作**借后端鉴权**：拿令牌去 `${apiTarget}/api/auth/me` 换出用户身份，换不到就 401。
  * 这样「谁能写」这条判断永远只有后端一个来源，前端这份文件不需要自己维护账号体系，
@@ -24,6 +26,7 @@
 import { mkdir, readFile, rename, writeFile } from 'node:fs/promises'
 import type { IncomingMessage, ServerResponse } from 'node:http'
 import { dirname } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { GRID_COLS, GRID_ROWS, normalizeGrid, parseGridInput, type AvatarRows } from './src/signal/pixel-grid'
 
@@ -83,19 +86,46 @@ export async function readAvatarFile(file: string): Promise<AvatarStoreFile> {
   return { version: AVATAR_FILE_VERSION, avatars: clean }
 }
 
-/** 写文件：先写临时文件再 rename（避免半个文件），并且串行化，免得两次保存互相覆盖 */
-let writeChain: Promise<void> = Promise.resolve()
+/** 写文件：先写临时文件再 rename（避免半个文件） */
+async function writeNow(file: string, data: AvatarStoreFile): Promise<void> {
+  const payload = JSON.stringify({ _说明: FILE_NOTE, ...data }, null, 2) + '\n'
+  await mkdir(dirname(file), { recursive: true })
+  const tmp = `${file}.tmp`
+  await writeFile(tmp, payload, 'utf8')
+  await rename(tmp, file)
+}
 
 export function writeAvatarFile(file: string, data: AvatarStoreFile): Promise<void> {
-  const payload = JSON.stringify({ _说明: FILE_NOTE, ...data }, null, 2) + '\n'
-  const task = async () => {
-    await mkdir(dirname(file), { recursive: true })
-    const tmp = `${file}.tmp`
-    await writeFile(tmp, payload, 'utf8')
-    await rename(tmp, file)
+  return writeNow(file, data)
+}
+
+/** 写操作的队列：同一个进程里的写按到达顺序排队 */
+let writeChain: Promise<unknown> = Promise.resolve()
+
+/**
+ * **读-改-写整段串行化**。
+ *
+ * 只把"写"排进队列是不够的：两个请求各自先读（都读到同一份旧数据）、再各自写，
+ * 后写的那个会**丢掉**前一个刚存进去的人（实测丢过一条）。
+ * 所以排队的必须是整段：读 → 改 → 写，一次只让一个请求走完。
+ */
+export function mutateAvatarFile<T>(
+  file: string,
+  mutate: (data: AvatarStoreFile) => T | Promise<T>,
+): Promise<T> {
+  const run = async (): Promise<T> => {
+    const data = await readAvatarFile(file)
+    const result = await mutate(data)
+    await writeNow(file, data)
+    return result
   }
-  writeChain = writeChain.then(task, task)
-  return writeChain
+  const next = writeChain.then(run, run)
+  // 队列自己不能被异常带停：错误交给本次调用方，下一个人照常排队
+  writeChain = next.then(
+    () => undefined,
+    () => undefined,
+  )
+  return next
 }
 
 /** 用令牌去后端换身份；换不到返回 null */
@@ -145,6 +175,11 @@ function readJsonBody(req: IncomingMessage): Promise<unknown> {
   })
 }
 
+/** 记账一行：这条路由是本机文件，改了什么打到服务器控制台，排查时不用猜 */
+function log(message: string): void {
+  console.log(`[点阵头像] ${message}`)
+}
+
 function sendJson(res: ServerResponse, status: number, payload: unknown): void {
   const body = JSON.stringify(payload)
   res.statusCode = status
@@ -152,6 +187,19 @@ function sendJson(res: ServerResponse, status: number, payload: unknown): void {
   // 本地存储、随时会变：不要任何缓存（客户端自己拿 store 缓存一次）
   res.setHeader('Cache-Control', 'no-store')
   res.end(body)
+}
+
+/**
+ * 给 Agent 看的那份说明（`avatar-skill.md`，与这个文件同目录）。
+ * 读一次就缓存住；文件被人删了就明确报错，而不是给一段空文本。
+ */
+const SKILL_FILE = fileURLToPath(new URL('./avatar-skill.md', import.meta.url))
+let skillCache: string | null = null
+
+async function readSkill(): Promise<string> {
+  if (skillCache !== null) return skillCache
+  skillCache = await readFile(SKILL_FILE, 'utf8')
+  return skillCache
 }
 
 export interface AvatarRouteOptions {
@@ -191,6 +239,15 @@ export function createAvatarRoute(options: AvatarRouteOptions) {
         const data = await readAvatarFile(file)
         return sendJson(res, 200, { version: data.version, avatars: data.avatars })
       }
+      // 必须在「按用户名取一条」之前：否则 `skill.md` 会被当成一个用户名去查
+      if (method === 'GET' && /^skill\.md$/i.test(rest)) {
+        const text = await readSkill()
+        res.statusCode = 200
+        res.setHeader('Content-Type', 'text/plain; charset=utf-8')
+        res.setHeader('Cache-Control', 'no-store')
+        res.end(text)
+        return
+      }
       if (method === 'GET' && rest !== '') {
         const username = decodeURIComponent(rest)
         const data = await readAvatarFile(file)
@@ -206,12 +263,13 @@ export function createAvatarRoute(options: AvatarRouteOptions) {
         const who = await verifyToken(fetchImpl, apiTarget, token)
         if (!who) return sendJson(res, 401, { detail: '令牌无效或已过期' })
 
-        const data = await readAvatarFile(file)
-
         if (method === 'DELETE') {
-          const existed = who.username in data.avatars
-          delete data.avatars[who.username]
-          await writeAvatarFile(file, data)
+          const existed = await mutateAvatarFile(file, (data) => {
+            const had = who.username in data.avatars
+            delete data.avatars[who.username]
+            return had
+          })
+          log(`DELETE ${who.username}（原来${existed ? '有' : '没有'}）`)
           return sendJson(res, 200, { username: who.username, removed: existed })
         }
 
@@ -233,8 +291,10 @@ export function createAvatarRoute(options: AvatarRouteOptions) {
           ...(who.userId ? { userId: who.userId } : {}),
           updatedAt: new Date().toISOString(),
         }
-        data.avatars[who.username] = record
-        await writeAvatarFile(file, data)
+        await mutateAvatarFile(file, (data) => {
+          data.avatars[who.username] = record
+        })
+        log(`POST ${who.username}（${GRID_ROWS}×${GRID_COLS} 已保存）`)
         return sendJson(res, 200, { username: who.username, ...record })
       }
 

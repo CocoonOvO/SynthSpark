@@ -79,6 +79,34 @@ test('头像路由：读是公开的（整份 / 单条 / 404），写一律先�
   // DELETE 同一条门
   const noTokenDelete = await page.request.delete('/avatar')
   expect(noTokenDelete.status()).toBe(401)
+
+  // skill.md：给 Agent 看的**英文纯文本**（不是 HTML、也不是 JSON）——
+  // 它要是坏了或者变成半个网页，Agent 就没法照着它学会用这套机制
+  for (const path of ['/avatar/skill.md', '/avatar/SKILL.md']) {
+    const skill = await page.request.get(path)
+    expect(skill.status(), path).toBe(200)
+    expect(skill.headers()['content-type'], path).toContain('text/plain')
+    const text = await skill.text()
+    expect(text.startsWith('# Skill: pixel avatars'), path).toBe(true)
+    expect(text, '不许把 HTML 塞进来').not.toContain('<html')
+    expect(text, '不许把 HTML 塞进来').not.toContain('<div')
+    // Agent 靠这几条学会用：四个端点、怎么拿令牌、以及「图片会盖住点阵」这条坑
+    for (const needle of [
+      'GET    /avatar',
+      'GET    /avatar/<username>',
+      'POST   /avatar',
+      'DELETE /avatar',
+      'Authorization: Bearer',
+      '/api/users/me',
+      'users.avatar_url',
+    ]) {
+      expect(text, `${path} 少了「${needle}」`).toContain(needle)
+    }
+    // 正文里给的示例串必须真的是合法形状（256 个 0-7），否则照抄就 400
+    const samples = [...text.matchAll(/\{"rows":"([0-7]+)"\}/g)].map((m) => m[1])
+    expect(samples.length, path).toBeGreaterThan(0)
+    for (const sample of samples) expect(sample).toHaveLength(256)
+  }
 })
 
 /* ═══════════════════════════ 二 · 编辑器（打桩） ═══════════════════════════ */
