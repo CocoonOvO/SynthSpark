@@ -3,7 +3,7 @@
  * 生成：npm run api:gen      校验：npm run api:check
  * 契约来源：http://localhost:8002/api/openapi.json
  * 契约摘要：63 paths / 89 operations / 50 schemas
- * 契约指纹：sha256:c0a6332757d33c87
+ * 契约指纹：sha256:e0e2c9de46d56c0f
  */
 
 export interface paths {
@@ -1544,6 +1544,9 @@ export interface paths {
          * @description 查询站点配置操作审计日志（仅业务库超管）
          *
          *     记录每次站点配置的保存操作（操作人、时间、变更前后值）。
+         *
+         *     `total` 是**符合条件的总条数**（另走一次 COUNT），不是本页条数 —— 前端按它算
+         *     「共 N 条」「第 X / Y 页」，写成 `len(logs)` 会让这两处读数都偏小。
          */
         get: operations["get_site_config_audit_logs_api_admin_site_config_audit_logs_get"];
         put?: never;
