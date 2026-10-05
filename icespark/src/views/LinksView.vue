@@ -24,11 +24,13 @@
 import { computed, onMounted, onUnmounted } from 'vue'
 
 import type { Link } from '@/api/types'
+import ImageFrame from '@/frame/ImageFrame.vue'
 import { spatialIndex, useFocusGroup } from '@/input/focus'
 import { onPad } from '@/input/pad'
 import { playSfx } from '@/input/sfx'
 import SceneHead from '@/machine/SceneHead.vue'
 import { useStatusBar } from '@/scene/clock'
+import { coverOk, markCoverFailed } from '@/scene/cover'
 import { scrollScreenTop } from '@/scene/screen'
 import { focusTabs, switchTab, TAB_IDS } from '@/scene/tabs'
 import { useContentStore } from '@/stores/content'
@@ -43,6 +45,17 @@ const COLS = 2
  */
 const links = computed(() => content.links)
 const gridFocus = useFocusGroup()
+
+/**
+ * 有没有封面（用户：关联页的链接要能配封面图）。
+ *
+ * 判断与失败缓存跟文章列表 / 首页 / 文章页共用 `scene/cover.ts`：
+ * `coverOk` 会记住那些加载失败的地址 —— 坏图只试一次，之后就当没有封面，
+ * 卡片直接回到"纯文字"那版版式，而不是反复请求再闪一块空画框。
+ */
+function hasCover(l: Link): boolean {
+  return coverOk(l.cover_image)
+}
 
 onMounted(() => {
   scrollScreenTop()
@@ -132,6 +145,15 @@ function plate(i: number) {
         @click.prevent="clickCard(l, i)"
       >
         <span class="plate px">{{ plate(i) }}</span>
+        <!-- 有封面：左图右文（与文章列表卡片同一版式语言；没有封面就不留空图片位） -->
+        <span v-if="hasCover(l)" class="card-cover">
+          <ImageFrame
+            :src="l.cover_image"
+            :alt="l.name"
+            ratio="3 / 2"
+            @error="markCoverFailed(l.cover_image)"
+          />
+        </span>
         <span class="card-main">
           <span class="card-name">{{ l.name }}</span>
           <!-- 契约的 ExternalLink 没有 description 字段（样机自造的字段），
@@ -224,6 +246,14 @@ function plate(i: number) {
   border: 2px solid var(--blue-500);
   color: var(--blue-700);
   font-size: 24px;
+}
+
+.card-cover {
+  /* 比文章卡片窄一档：链接卡文字少，图太宽会把一屏压成两张卡 */
+  flex: 0 0 200px;
+  min-width: 0;
+  /* 画框自己保持 3:2，不跟着文字列拉伸 */
+  align-self: flex-start;
 }
 
 .card-main {

@@ -62,6 +62,7 @@ import { computed, nextTick, onMounted, onUnmounted, reactive, ref, watch } from
 
 import { ApiError } from '@/api/client'
 import { createLink, deleteLink, fetchLinks, updateLink, type LinkPayload } from '@/api/links'
+import { uploadImage } from '@/api/upload'
 import type { Link } from '@/api/types'
 import { spatialIndex, useFocusGroup } from '@/input/focus'
 import { focusShellRoot } from '@/input'
@@ -145,6 +146,42 @@ const form = reactive({ name: '', url: '', cover: '', sort: '0' })
 const editingId = ref<string | null>(null)
 const saving = ref(false)
 const formError = ref('')
+/**
+ * 配图上传（用户：外链要能设封面图，旧前端就有）。
+ *
+ * 走的是写作页那条通道 `POST /api/upload/image`（登录用户），返回的 `url` 是站内路径，
+ * 直接写进 `cover_image` 即可 —— 与手填 URL 是同一个字段、同一份校验，
+ * 所以"上传"只是省得自己找图床，不是另开一条数据通路。
+ */
+const coverInput = ref<HTMLInputElement | null>(null)
+const coverBusy = ref(false)
+
+function pickCover(): void {
+  coverInput.value?.click()
+}
+
+async function onCoverChange(event: Event): Promise<void> {
+  const input = event.target as HTMLInputElement
+  const file = input.files?.[0]
+  // 清掉 value：同一个文件连选两次也要能再次触发 change
+  input.value = ''
+  if (!file) return
+  coverBusy.value = true
+  formError.value = ''
+  try {
+    const up = await uploadImage(file)
+    form.cover = up.url
+  } catch (err) {
+    // 类型 / 体积 / 网络三类失败都由 `uploadImage` 抛人话，这里照贴不改写
+    formError.value = err instanceof Error ? err.message : '配图上传失败'
+  } finally {
+    coverBusy.value = false
+  }
+}
+
+function clearCover(): void {
+  form.cover = ''
+}
 const formNote = ref('')
 /** 列表区的一条结果 / 失败提示（删除用；保存的提示在表单里） */
 const actionError = ref('')
@@ -531,20 +568,57 @@ function plate(i: number): string {
             />
           </label>
 
-          <label class="field">
-            <span class="field-cap">配图</span>
-            <input
-              v-model="form.cover"
-              class="input"
-              data-testid="link-cover"
-              type="text"
-              name="cover_image"
-              maxlength="500"
-              spellcheck="false"
-              placeholder="可空，图片 URL"
-              @focus="onFieldFocus"
+          <div class="field">
+            <label class="field-cap" for="link-cover-input">配图</label>
+            <div class="cover-row">
+              <input
+                id="link-cover-input"
+                v-model="form.cover"
+                class="input"
+                data-testid="link-cover"
+                type="text"
+                name="cover_image"
+                maxlength="500"
+                spellcheck="false"
+                placeholder="可空：图片 URL，或点右边上传"
+                @focus="onFieldFocus"
+              />
+              <button
+                type="button"
+                class="btn focusable"
+                data-testid="link-cover-pick"
+                :disabled="coverBusy"
+                @click="pickCover"
+              >
+                {{ coverBusy ? '上传中…' : '上传' }}
+              </button>
+              <button
+                v-if="form.cover"
+                type="button"
+                class="btn focusable"
+                data-testid="link-cover-clear"
+                @click="clearCover"
+              >
+                移除
+              </button>
+              <!-- 真身藏起来（display:none 不进 Tab 序），点上面那颗按钮代它触发 -->
+              <input
+                ref="coverInput"
+                class="cover-file"
+                data-testid="link-cover-file"
+                type="file"
+                accept="image/*"
+                @change="onCoverChange"
+              />
+            </div>
+            <img
+              v-if="form.cover"
+              class="cover-thumb"
+              data-testid="link-cover-thumb"
+              :src="form.cover"
+              alt="配图预览"
             />
-          </label>
+          </div>
 
           <label class="field">
             <span class="field-cap">排序</span>
@@ -794,6 +868,26 @@ function plate(i: number): string {
   background: var(--paper);
   border: var(--border-frame) solid var(--blue-400);
   padding: 6px 8px;
+}
+
+.cover-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.cover-file {
+  display: none;
+}
+
+.cover-thumb {
+  display: block;
+  margin-top: 8px;
+  width: 180px;
+  aspect-ratio: 3 / 2;
+  object-fit: cover;
+  border: 3px solid var(--blue-400);
+  background: var(--blue-100);
 }
 
 .input-sort {

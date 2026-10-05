@@ -3,7 +3,7 @@ import { expect, test, type Page } from '@playwright/test'
 
 import { scanViolations } from './a11y-known'
 
-import { booted } from './helpers'
+import { booted, press } from './helpers'
 
 /**
  * P5 外链管理页（`/admin/links`）的用例（架构 §23.4 口径）。
@@ -488,4 +488,108 @@ test('外链管理：h1 层级正确，axe 无新增违规', async ({ page }) =>
 
   // 放行清单只有一份：`e2e/a11y-known.ts`（文件头写清了三条放行的理由与补偿物）
   expect(scanViolations(report).violations).toEqual([])
+})
+
+/* ────────────── 用户反馈：外链要能配封面图（旧前端就有这个功能） ────────────── */
+
+/** 1×1 透明 PNG：给"有封面"那条用例当图片应答（不然真去请求会 404，画框会自己消失） */
+const TINY_PNG = Buffer.from(
+  'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==',
+  'base64',
+)
+
+test('关联页：接口给了封面就画出来（像素画框），没给就不留空图片位', async ({ page }) => {
+  await stubApi(page, {
+    onGet: () => ({
+      status: 200,
+      body: [
+        { ...LINKS[0], cover_image: '/api/download/u-1/images/cover.png' },
+        { ...LINKS[1], cover_image: null },
+      ],
+    }),
+  })
+  // 图片本体也要打桩：不然请求落到 dev server 上拿到 HTML，img 解码失败、画框会自己撤掉
+  await page.route('**/api/download/**', (route) =>
+    route.fulfill({ status: 200, contentType: 'image/png', body: TINY_PNG }),
+  )
+
+  await page.goto('/links')
+  await booted(page)
+
+  const cards = page.locator('[data-testid="link-card"]')
+  await expect(cards).toHaveCount(2)
+  // 有封面那张：卡片里出现画框，src 就是接口给的那个地址
+  await expect(cards.nth(0).locator('[data-testid="img-frame"]')).toBeVisible()
+  await expect(cards.nth(0).locator('img')).toHaveAttribute(
+    'src',
+    '/api/download/u-1/images/cover.png',
+  )
+  // 没封面那张：连画框都不渲染（口径与文章列表一致 —— 不留空图片位）
+  await expect(cards.nth(1).locator('[data-testid="img-frame"]')).toHaveCount(0)
+})
+
+test('关联页：封面挂了不反复重试 —— 图失败一次就退回纯文字版式', async ({ page }) => {
+  await stubApi(page, {
+    onGet: () => ({
+      status: 200,
+      body: [{ ...LINKS[0], cover_image: '/no-such-cover.png' }],
+    }),
+  })
+  await page.goto('/links')
+  await booted(page)
+
+  const card = page.locator('[data-testid="link-card"]').first()
+  // 加载失败 → ImageFrame 自己撤掉，`scene/cover.ts` 的失败缓存记住这个地址
+  await expect(card.locator('[data-testid="img-frame"]')).toHaveCount(0)
+
+  // 离开再回来：失败缓存还在内存里，所以依然不为它画框（不会每次都重试/闪一下）
+  await page.click('[data-testid="tab-posts"]')
+  await expect(page).toHaveURL(/\/posts$/)
+  await press(page, 'q')
+  await expect(page).toHaveURL(/\/links$/)
+  await expect(page.locator('[data-testid="img-frame"]')).toHaveCount(0)
+})
+
+test('外链管理：配图可上传（/api/upload/image）、可移除，保存时进 cover_image', async ({
+  page,
+}) => {
+  const recorder = await stubApi(page)
+  await page.route('**/api/upload/image', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({ filename: 'cover.png', url: '/api/download/u-1/images/cover.png' }),
+    }),
+  )
+  await page.route('**/api/download/**', (route) =>
+    route.fulfill({ status: 200, contentType: 'image/png', body: TINY_PNG }),
+  )
+
+  await page.goto('/admin/links')
+  await booted(page)
+
+  await page.fill('[data-testid="link-name"]', '带封面的外链')
+  await page.fill('[data-testid="link-url"]', 'https://example.org/')
+  // 隐藏的 file 输入直接喂文件（不必去点系统选择框；那颗"上传"按钮只是代它 click）
+  await page.setInputFiles('[data-testid="link-cover-file"]', {
+    name: 'cover.png',
+    mimeType: 'image/png',
+    buffer: TINY_PNG,
+  })
+
+  // 上传回来的站内路径写进输入框，并给出缩略预览
+  await expect(page.locator('[data-testid="link-cover"]')).toHaveValue(
+    '/api/download/u-1/images/cover.png',
+  )
+  await expect(page.locator('[data-testid="link-cover-thumb"]')).toBeVisible()
+
+  await page.click('[data-testid="link-save"]')
+  await expect.poll(() => recorder.writes.length).toBeGreaterThan(0)
+  const body = recorder.writes[0]!.body as { cover_image?: string | null }
+  expect(body.cover_image, '保存时配图进 cover_image').toBe('/api/download/u-1/images/cover.png')
+
+  // 移除：字段清空、预览消失（保存时就是 null）
+  await page.click('[data-testid="link-cover-clear"]')
+  await expect(page.locator('[data-testid="link-cover"]')).toHaveValue('')
+  await expect(page.locator('[data-testid="link-cover-thumb"]')).toHaveCount(0)
 })

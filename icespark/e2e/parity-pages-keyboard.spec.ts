@@ -425,8 +425,9 @@ test('纯键盘：外链管理页 ↓ 到卡片、回车编辑、Tab 到保存�
   await page.keyboard.type('示例站点 v2')
 
   // Tab 一路到「保存修改」再回车（表单里 Tab 交还浏览器，见视图文件头）：
-  // 名称 →(1) 链接 →(2) 配图 →(3) 排序 →(4) 保存
-  for (let i = 0; i < 4; i++) await page.keyboard.press('Tab')
+  // 名称 →(1) 链接 →(2) 配图 →(3) 配图的「上传」→(4) 排序 →(5) 保存
+  //（「上传」是配图新加的按钮，键盘照样走得到；配图为空时「移除」不渲染）
+  for (let i = 0; i < 5; i++) await page.keyboard.press('Tab')
   await expect(page.locator('[data-testid="link-save"]')).toBeFocused()
   await page.keyboard.press('Enter')
 
