@@ -4213,3 +4213,106 @@ C 不做键盘路径。用户选 **A**。
 **验收**：`npm run check` 八段 **EXIT=0**；`npx playwright test`（chromium + preview）**239 passed / 0 failed**。
 （顺带：`src/api/schema.d.ts` 与重启后跑着的后端对不上 —— 后端 `d3344348` 给审计接口补了 `total` 的说明文字，
 旧 schema 是那份文字之前生成的。已 `npm run api:gen` 重新生成并提交，`api:check` 重新 PASS。）
+
+## 66. canvas（点阵）头像：后端支持的方案（2026-10-05，**方案待裁决，尚未实施**）
+
+分支 `feat/canvas-avatar`。本节只记方案与取舍，代码一行没动。
+
+### 66.1 现状（先量清楚，再谈方案）
+
+| 环节 | 事实 |
+| --- | --- |
+| 画脸 | [`src/signal/PixelAvatar.vue`](../icespark/src/signal/PixelAvatar.vue) —— **全站唯一**画头像的地方 |
+| 有图 | `drawImage` 硬降采样到 16×16（关平滑）+ 逐像素就近量化到 8 色调色板（`avatarPalette()`） |
+| 无图 | `drawFallback()`：`hashHue(name)`（`h*31+c % 997`）→ 每格取 `(h >> ((x+y)%12)) & 1`、左右镜像、中间挖 4 行铺面罩带、点两只固定眼睛 |
+| 用它的页面 | `ProfileView`、`PostListView`、`PostDetailView`（评论作者）、`UserProfileView` —— 四处都传 `:src` + `:name` |
+| 后端 | `POST /api/upload/avatar`：content-type 白名单 `{jpeg,png,gif,webp}` + ≤10MB + **原样落盘** `uploads/avatars/<user_id>/avatar_xxxx.png`（删旧）+ 写 `users.avatar_url`；`GET /api/download/{user_id}/{file_type}/{filename}` 公开读 |
+| 后端**没有**图像处理 | 依赖里没有 Pillow 等；docstring 那句「自动裁剪/压缩」是空话 —— 这条要顺手改（见 66.5） |
+| 用户 / Agent 现在能设头像吗 | 能：`PUT /api/users/me` 直接收 `avatar_url` 字符串；`SKILL.md` 第 46 行就是这么教远端 Agent 的（`POST /upload/avatar` → 拿 url → 填 `avatar_url`） |
+| 有没有别的地方需要「服务端画出来的头像」 | 现在没有。`og_image` 是**每篇文章自己填的 URL 字符串**（`app/seo/models.py`），后端不生成任何图 |
+| 存 JSON 的先例 | `users.agent_config` 在 PG 里就是 **`JSONB`**（SQLite 那边是 `TEXT`），同一张表同一个套路 |
+
+**问题的实质**：要让「自己造的这张脸」成为一等公民，得先定**后端存什么**。
+
+### 66.2 三条路
+
+**A. 以 PNG 为准（服务端只存图）** —— 浏览器画完 `toBlob('image/png')` 走现有上传，后端存一张 16×16 PNG。
+
+- 好处：后端一行 art 代码都不用写；零漂移；改动最小。
+- 代价：① 存完**不可再编辑**（只剩像素，参数没了）；② 远端 Agent 想设头像得先生成 PNG（能，但别扭：它得自带一套画法）；③ 用户以后想改一处（比如给脸加顶帽子）只能重画重传；④ **没法规校验** —— 同一个接口既能收 16×16 点阵也能收 4K 照片，"这是不是 canvas 头像"判不出来。
+
+**B. 以 spec 为准（后端存参数，前端渲染）** —— **本文推荐**
+
+- 好处：① 脸永远可再编辑；② **远端 Agent 直接 POST 一份 JSON 就能给自己安排一张脸**（不需要 canvas、不需要图片）；③ 库里只占几十字节；④ 顺带解决 A 的第 ④ 条 —— 参数要**逐字段枚举校验**，垃圾进不来；⑤ 将来改画法有 `v` 兜着，老脸不会被悄悄改掉。
+- 代价：① 后端必须持有一份**部件词表**（校验的依据），于是词表成了前后端共同契约 —— 这正是"给后端加支持"的实质内容；② 服务端自己渲染不出这张脸（不引 Pillow、不在 Python 里重写画法）⇒ 不用 JS 的消费者（og:image、邮件）拿不到图 —— 但**今天没有这种消费者**（见 66.1 末行），不算损失。
+
+**C. 两样都存（spec 为真 + PNG 快照）** —— 前端一次上传 spec 与渲染好的 PNG。
+
+- 好处：要图的地方直接拿图（将来 og:image 好接）。
+- 代价：多一份**会漂移的真相**：改画法之后旧快照与新渲染不一致，还得写"以谁为准"的判定与重建逻辑。**今天不值得**：前端本来就会渲染，要图的地方一个也没有。将来真需要再按 66.6 加服务端渲染。
+
+### 66.3 推荐方案的形状（B）
+
+**数据模型**
+
+- `users.avatar_spec`（PG `JSONB` / SQLite `TEXT`，可空，与 `agent_config` 同套路）。
+- 语义钉死：`avatar_spec` 非空 ⇒ 用自造脸（**spec 优先**）；否则 `avatar_url` 非空 ⇒ 用照片；都没有 ⇒ 名字哈希回退（现行为）。
+- spec 形状（**版本化；渲染结果只由 `parts` 决定**）：
+
+  ```json
+  { "v": 1, "seed": "北极苔原", "parts": {
+      "shape": "round", "tone": "b500", "grain": "dots", "visor": "band",
+      "eyes": "moon", "mouth": "smile", "gear": "flower", "mark": "none" } }
+  ```
+
+  `seed` 只服务于「重掷随机」的可复现，**渲染不看它** —— 否则「随机出来的脸」和「存下来的脸」会不一致。
+
+**接口**（鉴权照旧：登录用户改自己的）
+
+| 方法 | 路径 | 作用 |
+| --- | --- | --- |
+| `GET` | `/api/avatar/vocabulary` | 公开可缓存：`{v, parts:{shape:[…], tone:[…], …}}`。前端生成器**从它取词**，后端校验**用它同一份常量** ⇒ 两边不可能各写一套枚举而漂移 |
+| `PUT` | `/api/users/me/avatar/spec` | body = spec；校验 + 归一化后入库；返回 `{avatar_spec, avatar_url}` |
+| `DELETE` | `/api/users/me/avatar/spec` | 清空 spec，退回 照片 / 名字回退 |
+| `POST` | `/api/upload/avatar` | **不动**（照片那条路照旧） |
+
+**校验（服务端自己判，不信前端）**
+
+1. `v` 必须是受支持版本（现在只有 1）；
+2. 每个部件必须落在词表内；**缺省字段用后端默认补全**（归一化后入库 —— 同义写法/缺字段不能导致两次渲染不一样）；
+3. **未知字段丢弃而不是拒绝**（将来加部件时，老客户端不会当场炸）；
+4. 序列化后 ≤1KB，超了 400；
+5. 非法一律 400 + 中文说明。
+
+**调色板归谁**：**词表归后端，调色板留前端**。后端只存 `tone: "b500"` 这类**语义名**，一个色值都不存 —— 将来调色板要动（比如加深一档），数据不用迁移。（这条也要你点头。）
+
+### 66.4 前端配套（这批任务的另一半，同样先对交互再动手）
+
+- 把 `drawFallback` 拆成纯函数模块 `src/signal/resident-face.ts`（`spec → 16×16 像素`），`PixelAvatar` 改成三级：`spec → src → 名字回退`；四处调用点各加一个 `:spec` 入参。
+- 新页面（**样机里没有，按规矩要先和你对交互**）：部件选择（分组行 × 部件）、实时 16×16 预览、重掷、「保存 / 还原」。键盘等价沿用写作台那套几何导航（`src/input/spatial-nav.ts` 已经在了）。
+- `npm run api:gen` 重生成 `src/api/schema.d.ts`（多出 vocabulary 模型与 spec 字段），`api:check` 跟着重跑。
+
+### 66.5 顺手要改的一条既有事实
+
+`POST /api/upload/avatar` 的 docstring 写着「建议尺寸 200x200 / 自动裁剪/压缩」，**实际什么都没做**。
+要么真做（引 Pillow 缩放另存），要么把那句话删掉。**倾向删掉**：10MB 上限 + 前端量化已经够用，
+为省几 KB 引一个图像库、给上传路径加一道 CPU 活儿，不划算。这条要不要一起做，由你定。
+
+### 66.6 明确不做 / 留给将来
+
+- **服务端不渲染像素**：不引 Pillow、不在 Python 里重写一遍画法（两份实现必然漂移）。
+- **不存 PNG 快照**（同 C 的取舍）。
+- 将来真要 `og:image` 之类的服务端产出时再走这条：Python 侧按 v1 契约实现 → **以 66.7 的冻结哈希当金标准**，对不上就不许上。
+
+### 66.7 验收口径（实施时）
+
+- 后端 `tests/test_avatar_spec.py`：词表接口形状、合法 spec 落库、非法部件 400、未知字段被丢弃、缺字段被补全、删除后回退、改别人的 403、未登录 401；SQLite 适配器同步补列（它本来就残缺，但建表必须跟着改）。
+- 前端纯函数单测：同一 spec 两次渲染逐像素一致；**v1 对 20 个固定 spec 的输出哈希写死** —— 将来谁改画法，用例立刻红。这是「老脸不变」的机器保证。
+- `npm run check` 八段 EXIT=0；`npx playwright test` 全绿（新页面按 parity 口径进 `pages-inventory.ts`）。
+
+### 66.8 需要维护者裁的四件事
+
+1. **存 spec（B）还是存 PNG（A）？** 我推荐 B。
+2. **spec 与照片同时存在时谁赢？** 我推荐 spec 优先（否则会出现「我明明存了脸，还显示老照片」）。
+3. **独立端点 `PUT /users/me/avatar/spec`，还是并进 `PUT /users/me`？** 我推荐独立端点（校验集中，不与通用更新耦合）。
+4. **部件词表放后端、调色板留前端**，同意吗？以及 66.5 那条 docstring 是删是说？
