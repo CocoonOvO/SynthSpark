@@ -394,9 +394,29 @@ test('写作页：纯键盘 —— Tab 出正文到插入条、Enter 插入记�
   // 而焦点在可编辑目标里时面板键要加 Shift 才响 —— 先 Tab 出正文，和上面 N 那一步同一条路。
   await press(page, 'Tab')
   await expect(page.locator('[data-tool="bold"]')).toBeFocused()
+  // 光标与鼠标共用一份（划过就选中它），而 Playwright 的鼠标还停在页面中间 ——
+  // 面板弹出来正好落在指针底下，浏览器会给它补一次 mouseenter，起点就不由 `navStartKey` 说了算。
+  // 把指针挪到角落（遮罩上，不是任何一格），起点才是键盘用户看到的那一个。
+  await page.mouse.move(2, 2)
   await page.keyboard.press('m')
   const meta = page.locator('[data-testid="write-panel-meta"]')
   await expect(meta).toBeVisible()
+  // 标签建议是异步拉的（`GET /api/tags`），晚一步出现会把下面几段整体往下推 ——
+  // 不等它渲染完就按方向键，走法会随"建议到没到"而变。先等它稳定。
+  await expect(meta.locator('[data-testid="write-tag-suggest-草图"]')).toBeVisible()
+  // 光标起点是**标签输入框**（面板里第一件事通常是加标签 / 换封面），→ 走到「加」；
+  // ↓ 再依次穿过封面、分组归属，到「文章操作」那三颗（次序由屏幕上的位置决定）
+  await expect(meta.locator('[data-testid="write-tag-input"]')).toHaveClass(/is-focused/)
+  await page.keyboard.press('ArrowRight')
+  await expect(meta.locator('[data-testid="write-tag-add"]')).toHaveClass(/is-focused/)
+  // ↓ 先落到输入框正下方的标签建议（它比封面那一节离得更近），再往下才是封面 → 分组 → 操作
+  await page.keyboard.press('ArrowDown')
+  await expect(meta.locator('[data-testid="write-tag-suggest-排版"]')).toHaveClass(/is-focused/)
+  await page.keyboard.press('ArrowDown')
+  await expect(meta.locator('[data-testid="write-cover-pick"]')).toHaveClass(/is-focused/)
+  await page.keyboard.press('ArrowDown')
+  await expect(meta.locator('[data-testid="write-group-select"]')).toHaveClass(/is-focused/)
+  await page.keyboard.press('ArrowDown')
   await expect(meta.locator('[data-testid="write-act-0"]')).toHaveClass(/is-focused/)
   await page.keyboard.press('ArrowRight')
   await expect(meta.locator('[data-testid="write-act-1"]')).toHaveClass(/is-focused/)
@@ -1116,4 +1136,137 @@ test('写作页：资料面板里只用 Tab 就能在各个栏位之间走', asy
   // 关键栏位确实走得到（**输入类栏位**是这轮反馈的重点：以前键盘根本够不到）
   expect(seen).toContain('write-tag-input')
   expect(seen).toContain('write-group-select')
+})
+
+test('写作页：文稿面板打开时先对齐当前这篇（分组 + 文章/草稿），光标落在它身上', async ({
+  page,
+}) => {
+  await openWrite(page)
+  // 装一篇已发布的（在「技术」分组下）
+  await page.goto('/write/pub-one')
+  await page.waitForSelector('[data-testid="write-title"]')
+  await expect(page.locator('[data-testid="write-title"]')).toHaveValue('已发布一篇')
+
+  const panel = page.locator('[data-testid="write-panel-docs"]')
+  await page.click('[data-testid="write-open-docs"]')
+  await expect(panel).toBeVisible()
+  // 打开即对齐：分组是它自己的那一组，页签是它自己的状态，光标落在它身上
+  await expect(panel.locator('[data-testid="write-group-g-1"]')).toHaveClass(/on/)
+  await expect(panel.locator('[data-testid="write-tab-published"]')).toHaveClass(/on/)
+  await expect(panel.locator('[data-testid="write-doc-p-pub"]')).toHaveClass(/is-focused/)
+
+  // 把过滤器拨到别处（全部 + 草稿），关掉再开 —— 又要回到「当前这篇」的口径上。
+  // 这是这条用例的要害：以前面板记着上一次的过滤器，刚写的那篇常常当场找不到。
+  await panel.locator('[data-testid="write-group-all"]').click()
+  await panel.locator('[data-testid="write-tab-draft"]').click()
+  await expect(panel.locator('[data-testid="write-group-g-1"]')).not.toHaveClass(/on/)
+  await expect(panel.locator('[data-testid="write-tab-published"]')).not.toHaveClass(/on/)
+  await page.keyboard.press('Escape')
+  await expect(panel).toHaveCount(0)
+
+  await page.click('[data-testid="write-open-docs"]')
+  await expect(panel).toBeVisible()
+  await expect(panel.locator('[data-testid="write-group-g-1"]')).toHaveClass(/on/)
+  await expect(panel.locator('[data-testid="write-tab-published"]')).toHaveClass(/on/)
+  await expect(panel.locator('[data-testid="write-doc-p-pub"]')).toHaveClass(/is-focused/)
+
+  // 草稿那一篇同理：打开面板时页签应当停在「草稿」，光标落在这一篇上
+  await page.keyboard.press('Escape')
+  await page.goto('/write/draft-one')
+  await page.waitForSelector('[data-testid="write-title"]')
+  await page.click('[data-testid="write-open-docs"]')
+  await expect(panel.locator('[data-testid="write-tab-draft"]')).toHaveClass(/on/)
+  await expect(panel.locator('[data-testid="write-doc-p-draft"]')).toHaveClass(/is-focused/)
+})
+
+test('写作页：文稿面板里方向键 / WASD 能走出篇目、到页签与分组（按视觉位置）', async ({
+  page,
+}) => {
+  await openWrite(page)
+  await page.mouse.move(2, 2)
+  await page.click('[data-testid="write-open-docs"]')
+  const panel = page.locator('[data-testid="write-panel-docs"]')
+  await expect(panel).toBeVisible()
+  // 新稿（没有当前文章）→ 光标从「＋ 新建文章」起步
+  await expect(panel.locator('[data-testid="write-doc-new"]')).toHaveClass(/is-focused/)
+
+  // ↓ 进篇目列表；↑ 回到列表头上那一格「＋ 新建文章」
+  await page.keyboard.press('ArrowDown')
+  await expect(panel.locator('[data-testid="write-doc-p-pub"]')).toHaveClass(/is-focused/)
+  await page.keyboard.press('ArrowUp')
+  await expect(panel.locator('[data-testid="write-doc-new"]')).toHaveClass(/is-focused/)
+  // 再 ↑：紧挨着列表的是**页签行**（不是页头的关闭按钮，也不是更往上的分组行）；
+  // `w` 与 ↑ 同义，再往上一层才是分组行
+  await page.keyboard.press('ArrowUp')
+  await expect(panel.locator('[data-testid="write-tab-published"]')).toHaveClass(/is-focused/)
+  await page.keyboard.press('w')
+  await expect(panel.locator('[data-testid="write-group-all"]')).toHaveClass(/is-focused/)
+
+  // 同一行里 ← → 按视觉顺序走（`d` 与 → 同义）
+  await page.keyboard.press('d')
+  await expect(panel.locator('[data-testid="write-group-g-1"]')).toHaveClass(/is-focused/)
+  await page.keyboard.press('ArrowRight')
+  await expect(panel.locator('[data-testid="write-group-g-2"]')).toHaveClass(/is-focused/)
+
+  // 回车真的把这一格按下去：切到「随笔」分组 —— 它没有已发布的文章，列表当场空掉
+  await page.keyboard.press('Enter')
+  await expect(panel.locator('[data-testid="write-group-g-2"]')).toHaveClass(/on/)
+  await expect(panel.locator('[data-testid="write-doc-p-pub"]')).toHaveCount(0)
+  await expect(panel.locator('[data-testid="write-doc-new"]')).toBeVisible()
+
+  // `s`（↓）回到页签行 —— 从「随笔」这一格往下，正下方是它对应列上的「草稿」页签
+  await page.keyboard.press('s')
+  await expect(panel.locator('[data-testid="write-tab-draft"]')).toHaveClass(/is-focused/)
+  await page.keyboard.press('s')
+  await expect(panel.locator('[data-testid="write-doc-new"]')).toHaveClass(/is-focused/)
+})
+
+test('写作页：资料面板里方向键 / WASD 在标签、封面、分组、操作之间走，回车真的触发', async ({
+  page,
+}) => {
+  const recorder = await openWrite(page)
+  // 装一篇带标签的草稿：标签行里才有可以走过去的 ✕
+  await page.goto('/write/draft-one')
+  await page.waitForSelector('[data-testid="write-title"]')
+  await page.mouse.move(2, 2)
+  await page.click('[data-testid="write-open-meta"]')
+  const meta = page.locator('[data-testid="write-panel-meta"]')
+  await expect(meta).toBeVisible()
+  await expect(meta.locator('[data-testid="write-tag-suggest-草图"]')).toBeVisible()
+
+  // 起点：标签输入框
+  await expect(meta.locator('[data-testid="write-tag-input"]')).toHaveClass(/is-focused/)
+  // ← 走到左侧那颗「移除标签」——标签行里它在输入框左边
+  await page.keyboard.press('ArrowLeft')
+  await expect(meta.locator('[data-testid="write-tag-remove-像素"]')).toHaveClass(/is-focused/)
+  // `d`（→）回来，再 → 到「加」
+  await page.keyboard.press('d')
+  await expect(meta.locator('[data-testid="write-tag-input"]')).toHaveClass(/is-focused/)
+  await page.keyboard.press('d')
+  await expect(meta.locator('[data-testid="write-tag-add"]')).toHaveClass(/is-focused/)
+
+  // `s`（↓）落到输入框正下方的标签建议，再往下依次是 封面 → 分组归属 → 文章操作
+  await page.keyboard.press('s')
+  await expect(meta.locator('[data-testid="write-tag-suggest-排版"]')).toHaveClass(/is-focused/)
+  await page.keyboard.press('s')
+  await expect(meta.locator('[data-testid="write-cover-pick"]')).toHaveClass(/is-focused/)
+  await page.keyboard.press('s')
+  await expect(meta.locator('[data-testid="write-group-select"]')).toHaveClass(/is-focused/)
+  await page.keyboard.press('s')
+  await expect(meta.locator('[data-testid="write-act-0"]')).toHaveClass(/is-focused/)
+  // `w`（↑）回到分组那一格，`s` 再下来 —— 上下都要走得通
+  await page.keyboard.press('w')
+  await expect(meta.locator('[data-testid="write-group-select"]')).toHaveClass(/is-focused/)
+  await page.keyboard.press('s')
+  await expect(meta.locator('[data-testid="write-act-0"]')).toHaveClass(/is-focused/)
+  await page.keyboard.press('ArrowRight')
+  await expect(meta.locator('[data-testid="write-act-1"]')).toHaveClass(/is-focused/)
+
+  // 回车真的把这一格按下去：「复制」会另存一篇草稿（POST 一次），面板随之关闭
+  await page.keyboard.press('Enter')
+  await expect(meta).toHaveCount(0)
+  await expect.poll(() => recorder.writes.length).toBeGreaterThan(0)
+  const copy = recorder.writes[recorder.writes.length - 1]!
+  expect(copy).toMatchObject({ method: 'POST', path: '/api/posts/' })
+  expect((copy.body as Record<string, unknown>).status).toBe('draft')
 })

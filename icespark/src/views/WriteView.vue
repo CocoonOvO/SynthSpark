@@ -52,6 +52,7 @@ import { isImageFile, MAX_IMAGE_BYTES, uploadImage } from '@/api/upload'
 import { focusShellRoot } from '@/input'
 import { spatialIndex, useFocusGroup } from '@/input/focus'
 import { onPad, type PadAction } from '@/input/pad'
+import { navBoxes, nearestBox, stepNav, type NavDirection } from '@/input/spatial-nav'
 import { pageModalOpen } from '@/input/scopes'
 import { playSfx } from '@/input/sfx'
 import PixelDialog from '@/machine/PixelDialog.vue'
@@ -715,9 +716,19 @@ const previewBody = ref<HTMLElement | null>(null)
 function openPanel(which: Panel): void {
   playSfx('confirm')
   panel.value = which
-  // 焦点环回到第一格：上一次开面板留下的索引可能已经越界（列表被过滤短了）
-  if (which === 'docs') docsFocus.set(0, true)
-  if (which === 'meta') metaFocus.set(0, true)
+  if (which === 'docs') {
+    /**
+     * 用户反馈第 1 条：面板要**先对齐到当前这篇**。
+     *
+     * 之前打开面板永远是「全部 + 文章」，刚写的那篇草稿（在别的分组、或挂在草稿页签下）
+     * 当场找不着，得自己先切分组再切页签。现在按当前稿子的分组与状态把过滤器摆好 ——
+     * 光标也跟着落到那一篇上（`navStartKey`）。
+     */
+    if (postId.value) {
+      activeGroupId.value = postGroupId.value ?? ''
+      docsTab.value = status.value === 'draft' ? 'draft' : 'published'
+    }
+  }
   if (which === 'meta') void loadTags()
   if (which === 'preview') {
     // 预览面板的焦点**不**收回外壳：它是只读的滚动容器，原生焦点落在它身上，
@@ -729,7 +740,12 @@ function openPanel(which: Panel): void {
   // 不 `dropNativeFocus()`（那会送到外壳根节点，Tab 随即被模态规则吞掉），
   // 而是落在面板容器上 —— 面板本身没有可见的焦点环（它不是 `.focusable`，CSS 里也压掉了 outline），
   // 屏幕上仍然只有自绘的那一个光标；同时 Tab 的焦点陷阱因此生效。
-  void nextTick(() => sheetEl.value?.focus())
+  void nextTick(() => {
+    sheetEl.value?.focus()
+    // 光标也要有个起点：不设的话第一下方向键只能落到"第一格"（那是页头的关闭按钮），
+    // 用户得先走一趟才到得了正文区域。起点口径见 `navStartKey`。
+    if (which === 'docs' || which === 'meta') setNavKey(which, navStartKey(which))
+  })
 }
 
 /**
@@ -853,16 +869,135 @@ function moveByLayout(a: PadAction): boolean {
  */
 const sheetEl = ref<HTMLElement | null>(null)
 
-const docsFocus = useFocusGroup({ initial: 0 })
-const metaFocus = useFocusGroup({ initial: 0 })
+/**
+ * 面板里的光标 —— 一份"当前停在哪一格"的 key（对应 DOM 上的 `data-nav`）。
+ *
+ * 用户反馈第 2 / 3 条：方向键（含 WASD）要能按**视觉关系**在整个面板里走 ——
+ * 文稿面板从篇目走到分组行 / 页签行，资料面板在标签、封面、分组、操作之间走。
+ * 所以光标不再是"某个列表里的第几格"，而是面板内任意一格；走法由
+ * `input/spatial-nav.ts` 量真实盒子决定（换行的芯片排、三段不同结构都吃得下）。
+ */
+const docsNav = ref<string | null>(null)
+const metaNav = ref<string | null>(null)
+
 const confirmFocus = useFocusGroup({ initial: 0 })
 
-/** 文稿面板的焦点环：第 0 格是「新建文章」，之后是当前分组的篇目 */
-const docsRingCount = computed(() => docsInGroup.value.length + 1)
-
-/** 资料面板的焦点环：重命名 / 复制 / 删除（新稿上这三件事无处可做） */
+/** 资料面板的动作芯片：重命名 / 复制 / 删除（新稿上这三件事无处可做） */
 const META_ACTS = ['重命名', '复制', '删除'] as const
-const META_BUTTONS = META_ACTS.length
+
+/** 当前面板的光标 key（资料 / 文稿各一份） */
+function navKeyOf(which: Panel): string | null {
+  return which === 'docs' ? docsNav.value : metaNav.value
+}
+
+function setNavKey(which: Panel, key: string | null): void {
+  if (which === 'docs') docsNav.value = key
+  else if (which === 'meta') metaNav.value = key
+}
+
+/**
+ * 当前开着的那块面板的光标。模板里所有 `is-focused` 都读它 ——
+ * 面板是二选一渲染的，一份光标就够（两份 ref 只是为了让"切回来还记得原来停在哪"）。
+ */
+const activeNav = computed(() => (panel.value === 'meta' ? metaNav.value : docsNav.value))
+
+/**
+ * 鼠标划过某一格：**移动同一个光标**（不是另开一套 hover 高亮，见 §33 的输入等价性）。
+ * 面板里没有"光标"概念的元件（列表条目、标签芯片）也照这条走 —— 鼠标划过就选中它。
+ */
+function hoverNav(key: string): void {
+  if (panel.value === 'docs' || panel.value === 'meta') setNavKey(panel.value, key)
+}
+
+/**
+ * 标签建议芯片的划过：两个光标一起走 ——
+ * `tagCursor` 是**输入框自己**的高亮（在输入框里按 ↑↓ / 回车的用的是它），
+ * `hoverNav` 是面板的自绘光标。不一起走就会出现"高亮在这一枚、回车收了另一枚"。
+ * （Vue 的模板表达式一行只能一句，所以这两件事必须收进一个函数。）
+ */
+function hoverTagSuggest(index: number, name: string): void {
+  tagCursor.value = index
+  hoverNav(`tagsug:${name}`)
+}
+
+/** 面板里某格对应的真实元素（按 key 找，不走 CSS 选择器转义，标签名里带什么字符都不怕） */
+function navElement(which: Panel, key: string | null): HTMLElement | null {
+  if (!key || !sheetEl.value) return null
+  for (const el of sheetEl.value.querySelectorAll<HTMLElement>('[data-nav]')) {
+    if (el.dataset.nav === key) return el
+  }
+  return null
+}
+
+/**
+ * 这一次方向键该从哪一格起算。
+ *
+ * 优先看**原生焦点**：Tab / Shift+Tab 把焦点落在面板里某一格上时，光标跟着它走 ——
+ * 不然会出现"手在 A 格、高亮在 B 格"，接着按方向键就跳得莫名其妙。
+ */
+function navOrigin(which: Panel): string | null {
+  const el = document.activeElement as HTMLElement | null
+  if (el && sheetEl.value?.contains(el) && el.dataset.nav) return el.dataset.nav
+  return navKeyOf(which)
+}
+
+/** 开面板时光标落在哪一格：优先"当前这篇"，其次标了 `data-nav-start` 的那一格，再其次第一格 */
+function navStartKey(which: Panel): string | null {
+  const container = sheetEl.value
+  if (!container) return null
+  if (which === 'docs' && postId.value) {
+    const mine = navElement(which, `doc:${postId.value}`)
+    if (mine) return mine.dataset.nav ?? null
+  }
+  const marked = container.querySelector<HTMLElement>('[data-nav-start]')
+  if (marked?.dataset.nav) return marked.dataset.nav
+  return container.querySelector<HTMLElement>('[data-nav]')?.dataset.nav ?? null
+}
+
+/** 方向键：按视觉位置走一格；走不动返回 false（调用方据此把按键还给浏览器） */
+function moveNav(which: Panel, dir: NavDirection): boolean {
+  const next = stepNav(sheetEl.value, navOrigin(which), dir)
+  if (!next || next === navOrigin(which)) return false
+  setNavKey(which, next)
+  return true
+}
+
+/**
+ * 回车：**点**当前那一格。
+ *
+ * 用「点它」而不是再写一份"按 key 派发"的分发表：面板里每一格的动作只有一处实现（模板上的
+ * `@click`），键盘与鼠标因此不可能走岔 —— 这正是全站输入等价性要的那种结构。
+ * `<select>` 例外：点它不会展开下拉，改为把原生焦点交给它，之后方向键由浏览器原生处理。
+ */
+function activateNavKey(which: Panel): boolean {
+  const el = navElement(which, navOrigin(which))
+  if (!el) return false
+  if (el instanceof HTMLSelectElement) {
+    el.focus()
+    return true
+  }
+  // 先记下这一格**现在**在哪：有些格子点完就没了（标签建议加上了、标签上的 ✕ 擦掉了那一枚），
+  // 光标得留在原地附近，不能掉回面板第一格（那是页头的关闭按钮）。
+  const key = el.dataset.nav ?? null
+  const box = el.getBoundingClientRect()
+  el.click()
+  void nextTick(() => {
+    if (key && navElement(which, key)) return
+    if (!sheetEl.value) return
+    const boxes = navBoxes(sheetEl.value).filter((item) => item.key !== key)
+    setNavKey(
+      which,
+      nearestBox(boxes, {
+        key: key ?? '',
+        left: box.left,
+        top: box.top,
+        right: box.right,
+        bottom: box.bottom,
+      }),
+    )
+  })
+  return true
+}
 
 function dropNativeFocus(): void {
   const el = document.activeElement as HTMLElement | null
@@ -905,25 +1040,7 @@ function openDoc(post: PostListItem): void {
   pushWrite(`/write/${encodeURIComponent(postKey(post))}`)
 }
 
-function runDocsAct(): boolean {
-  const i = docsFocus.index.value
-  if (i === 0) {
-    newDoc()
-    return true
-  }
-  const post = docsInGroup.value[i - 1]
-  if (!post) return false
-  openDoc(post)
-  return true
-}
-
-function runMetaAct(): boolean {
-  if (!postId.value) return false
-  runMetaByIndex(metaFocus.index.value)
-  return true
-}
-
-/** 「文章操作」那一行三颗按钮的唯一派发点（键盘走 `runMetaAct`，鼠标走模板 @click） */
+/** 「文章操作」那一行三颗按钮的唯一派发点（模板 @click 与键盘的"点它"都走这里） */
 function runMetaByIndex(i: number): void {
   if (!postId.value) return
   const act = META_ACTS[i]
@@ -1018,8 +1135,7 @@ function panelPad(a: PadAction, which: Panel): boolean {
 
   if (a === 'confirm') {
     if (nativeOwnsEnter()) return false
-    if (which === 'docs') return runDocsAct()
-    if (which === 'meta') return runMetaAct()
+    if (which === 'docs' || which === 'meta') return activateNavKey(which)
     return false
   }
 
@@ -1030,18 +1146,7 @@ function panelPad(a: PadAction, which: Panel): boolean {
     if (which === 'preview') return scrollPreview(a)
     // 方向键一动：把焦点收回**面板容器**（不是外壳根节点，理由同上——留在面板里 Tab 才走得通）
     void nextTick(() => sheetEl.value?.focus())
-    if (which === 'docs') {
-      const next = spatialIndex(docsFocus.index.value, a, 1, docsRingCount.value)
-      if (next === null) return false
-      docsFocus.set(next)
-      return true
-    }
-    if (which === 'meta') {
-      const next = spatialIndex(metaFocus.index.value, a, META_BUTTONS, META_BUTTONS)
-      if (next === null) return false
-      metaFocus.set(next)
-      return true
-    }
+    if (which === 'docs' || which === 'meta') return moveNav(which, a)
     // 预览在上面已经返回；这里兜底（新增面板时别漏掉焦点口径）
     return false
   }
@@ -1307,7 +1412,15 @@ onUnmounted(() => {
       >
         <header class="sheet-head">
           <h2 class="sheet-title">{{ PANEL_TITLE[panel] }}</h2>
-          <button type="button" class="bar-btn" data-testid="write-panel-close" @click="closePanel()">
+          <button
+            type="button"
+            class="bar-btn focusable"
+            :class="{ 'is-focused': activeNav === 'close' }"
+            data-nav="close"
+            data-testid="write-panel-close"
+            @mouseenter="hoverNav('close')"
+            @click="closePanel()"
+          >
             ✕ 关闭
           </button>
         </header>
@@ -1317,9 +1430,11 @@ onUnmounted(() => {
           <div class="sheet-row">
             <button
               type="button"
-              class="chip"
-              :class="{ on: activeGroupId === '' }"
+              class="chip focusable"
+              :class="{ on: activeGroupId === '', 'is-focused': activeNav === 'grp:all' }"
+              data-nav="grp:all"
               data-testid="write-group-all"
+              @mouseenter="hoverNav('grp:all')"
               @click="activeGroupId = ''"
             >
               全部
@@ -1328,17 +1443,25 @@ onUnmounted(() => {
               v-for="g in groups"
               :key="g.id"
               type="button"
-              class="chip"
-              :class="{ on: g.id === activeGroupId }"
+              class="chip focusable"
+              :class="{
+                on: g.id === activeGroupId,
+                'is-focused': activeNav === `grp:${g.id}`,
+              }"
+              :data-nav="`grp:${g.id}`"
               :data-testid="`write-group-${g.id}`"
+              @mouseenter="hoverNav(`grp:${g.id}`)"
               @click="activeGroupId = g.id"
             >
               {{ g.name }}
             </button>
             <button
               type="button"
-              class="chip is-add"
+              class="chip is-add focusable"
+              :class="{ 'is-focused': activeNav === 'grp:new' }"
+              data-nav="grp:new"
               data-testid="write-group-new"
+              @mouseenter="hoverNav('grp:new')"
               @click="newGroupOpen = !newGroupOpen"
             >
               ＋ 新建分组
@@ -1348,14 +1471,24 @@ onUnmounted(() => {
           <div v-if="newGroupOpen" class="sheet-row">
             <input
               v-model="newGroupName"
-              class="field px"
+              class="field px focusable"
+              :class="{ 'is-focused': activeNav === 'grp:name' }"
               type="text"
               placeholder="分组名"
               aria-label="新分组名"
+              data-nav="grp:name"
               data-testid="write-group-name"
               @keydown.enter.prevent="runCreateGroup()"
             />
-            <button type="button" class="chip" data-testid="write-group-create" @click="runCreateGroup()">
+            <button
+              type="button"
+              class="chip focusable"
+              :class="{ 'is-focused': activeNav === 'grp:create' }"
+              data-nav="grp:create"
+              data-testid="write-group-create"
+              @mouseenter="hoverNav('grp:create')"
+              @click="runCreateGroup()"
+            >
               建
             </button>
           </div>
@@ -1364,18 +1497,25 @@ onUnmounted(() => {
           <div class="sheet-row">
             <button
               type="button"
-              class="tab"
-              :class="{ on: docsTab === 'published' }"
+              class="tab focusable"
+              :class="{
+                on: docsTab === 'published',
+                'is-focused': activeNav === 'tab:published',
+              }"
+              data-nav="tab:published"
               data-testid="write-tab-published"
+              @mouseenter="hoverNav('tab:published')"
               @click="docsTab = 'published'"
             >
               文章 {{ countIn('published') }}
             </button>
             <button
               type="button"
-              class="tab"
-              :class="{ on: docsTab === 'draft' }"
+              class="tab focusable"
+              :class="{ on: docsTab === 'draft', 'is-focused': activeNav === 'tab:draft' }"
+              data-nav="tab:draft"
               data-testid="write-tab-draft"
+              @mouseenter="hoverNav('tab:draft')"
               @click="docsTab = 'draft'"
             >
               草稿 {{ countIn('draft') }}
@@ -1390,22 +1530,28 @@ onUnmounted(() => {
               <button
                 type="button"
                 class="doc focusable"
-                :class="{ 'is-focused': docsFocus.index.value === 0 }"
+                :class="{ 'is-focused': activeNav === 'new' }"
+                data-nav="new"
+                data-nav-start
                 data-testid="write-doc-new"
+                @mouseenter="hoverNav('new')"
                 @click="newDoc()"
-                @mouseenter="docsFocus.hover(0)"
               >
                 <span class="doc-title">＋ 新建文章</span>
               </button>
             </li>
-            <li v-for="(d, i) in docsInGroup" :key="d.id">
+            <li v-for="d in docsInGroup" :key="d.id">
               <button
                 type="button"
                 class="doc focusable"
-                :class="{ 'is-focused': docsFocus.index.value === i + 1, on: d.id === postId }"
+                :class="{
+                  on: d.id === postId,
+                  'is-focused': activeNav === `doc:${d.id}`,
+                }"
+                :data-nav="`doc:${d.id}`"
                 :data-testid="`write-doc-${d.id}`"
+                @mouseenter="hoverNav(`doc:${d.id}`)"
                 @click="openDoc(d)"
-                @mouseenter="docsFocus.hover(i + 1)"
               >
                 <span class="doc-state" :class="d.status">{{ d.status === 'draft' ? '草' : '发' }}</span>
                 <span class="doc-title">{{ d.title || '无标题' }}</span>
@@ -1427,9 +1573,12 @@ onUnmounted(() => {
                 {{ t }}
                 <button
                   type="button"
-                  class="tag-x"
+                  class="tag-x focusable"
+                  :class="{ 'is-focused': activeNav === `tagrm:${t}` }"
                   :aria-label="`移除标签 ${t}`"
+                  :data-nav="`tagrm:${t}`"
                   :data-testid="`write-tag-remove-${t}`"
+                  @mouseenter="hoverNav(`tagrm:${t}`)"
                   @click="removeTag(t)"
                 >
                   ✕
@@ -1437,17 +1586,30 @@ onUnmounted(() => {
               </span>
               <input
                 v-model="tagInput"
-                class="field px is-small"
+                class="field px is-small focusable"
+                :class="{ 'is-focused': activeNav === 'tag-input' }"
                 type="text"
                 placeholder="加标签…"
                 aria-label="给文章加标签"
+                data-nav="tag-input"
+                data-nav-start
                 data-testid="write-tag-input"
                 @focus="loadTags()"
                 @keydown.enter.prevent="commitTag()"
                 @keydown.down.prevent="moveTagCursor(1)"
                 @keydown.up.prevent="moveTagCursor(-1)"
               />
-              <button type="button" class="chip" data-testid="write-tag-add" @click="commitTag()">加</button>
+              <button
+                type="button"
+                class="chip focusable"
+                :class="{ 'is-focused': activeNav === 'tag-add' }"
+                data-nav="tag-add"
+                data-testid="write-tag-add"
+                @mouseenter="hoverNav('tag-add')"
+                @click="commitTag()"
+              >
+                加
+              </button>
             </div>
 
             <!-- 已有标签的口子：输入框空着时给「常用的几枚」，打字时按包含过滤。
@@ -1458,10 +1620,14 @@ onUnmounted(() => {
                 v-for="(s, i) in tagPicker"
                 :key="s.name"
                 type="button"
-                class="chip"
-                :class="{ on: i === tagCursor }"
+                class="chip focusable"
+                :class="{
+                  on: i === tagCursor,
+                  'is-focused': activeNav === `tagsug:${s.name}`,
+                }"
+                :data-nav="`tagsug:${s.name}`"
                 :data-testid="`write-tag-suggest-${s.name}`"
-                @mouseenter="tagCursor = i"
+                @mouseenter="hoverTagSuggest(i, s.name)"
                 @click="addTag(s.name)"
               >
                 {{ s.name }}<i class="tag-count">{{ s.post_count }}</i>
@@ -1476,11 +1642,28 @@ onUnmounted(() => {
             <h3 class="meta-h">封面</h3>
             <div v-if="cover" class="cover">
               <img :src="cover" alt="封面" class="img-frame" />
-              <button type="button" class="chip" data-testid="write-cover-remove" @click="cover = null">
+              <button
+                type="button"
+                class="chip focusable"
+                :class="{ 'is-focused': activeNav === 'cover:remove' }"
+                data-nav="cover:remove"
+                data-testid="write-cover-remove"
+                @mouseenter="hoverNav('cover:remove')"
+                @click="cover = null"
+              >
                 移除封面
               </button>
             </div>
-            <button v-else type="button" class="chip" data-testid="write-cover-pick" @click="coverInput?.click()">
+            <button
+              v-else
+              type="button"
+              class="chip focusable"
+              :class="{ 'is-focused': activeNav === 'cover:pick' }"
+              data-nav="cover:pick"
+              data-testid="write-cover-pick"
+              @mouseenter="hoverNav('cover:pick')"
+              @click="coverInput?.click()"
+            >
               上传封面
             </button>
           </section>
@@ -1488,10 +1671,13 @@ onUnmounted(() => {
           <section class="meta-block">
             <h3 class="meta-h">分组归属</h3>
             <select
-              class="field px"
+              class="field px focusable"
+              :class="{ 'is-focused': activeNav === 'group:select' }"
               :value="postGroupId ?? ''"
               aria-label="分组归属"
+              data-nav="group:select"
               data-testid="write-group-select"
+              @mouseenter="hoverNav('group:select')"
               @change="moveToGroup(($event.target as HTMLSelectElement).value)"
             >
               <option value="">未分组</option>
@@ -1507,10 +1693,14 @@ onUnmounted(() => {
                 :key="act"
                 type="button"
                 class="chip focusable"
-                :class="{ 'is-focused': metaFocus.index.value === i, 'is-danger': act === '删除' }"
+                :class="{
+                  'is-focused': activeNav === `act:${i}`,
+                  'is-danger': act === '删除',
+                }"
+                :data-nav="`act:${i}`"
                 :disabled="!postId"
                 :data-testid="`write-act-${i}`"
-                @mouseenter="metaFocus.hover(i)"
+                @mouseenter="hoverNav(`act:${i}`)"
                 @click="runMetaByIndex(i)"
               >
                 {{ act }}
