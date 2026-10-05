@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest'
 import {
   GRID_COLS,
   GRID_ROWS,
+  GRID_TOTAL,
   emptyGrid,
   gridToText,
   isValidGrid,
@@ -77,12 +78,36 @@ describe('pixel-grid 解析的宽容与不宽容', () => {
     if (!char.ok) expect(char.reason).toContain('第 2 行第 16 个字符是「8」')
   })
 
-  it('全空 / 空串 → 0 行，报「需要 16 行」', () => {
-    for (const text of ['', '   \n\n']) {
-      const parsed = parseGridInput(text)
-      expect(parsed.ok).toBe(false)
-      if (!parsed.ok) expect(parsed.reason).toContain('现在是 0 行')
-    }
+  it('空输入：一行那种说「几个字符」，多行那种说「几行」', () => {
+    // 页面上的输入框就是一行那种写法，所以这里先按"字符数"报
+    const flat = parseGridInput('')
+    expect(flat.ok).toBe(false)
+    if (!flat.ok) expect(flat.reason).toContain('现在是 0 个')
+
+    const blank = parseGridInput('   \n\n')
+    expect(blank.ok).toBe(false)
+    if (!blank.ok) expect(blank.reason).toContain('现在是 0 行')
+  })
+
+  it('一行输入（256 个字连写）：字符数不对、有非法字符都报得清', () => {
+    const total = GRID_TOTAL
+    expect(total).toBe(GRID_ROWS * GRID_COLS)
+
+    const short = parseGridInput('5'.repeat(240))
+    expect(short.ok).toBe(false)
+    if (!short.ok) expect(short.reason).toContain(`现在是 240 个（刚好 15 行）`)
+
+    const odd = parseGridInput('5'.repeat(250))
+    expect(odd.ok).toBe(false)
+    if (!odd.ok) expect(odd.reason).toContain('现在是 250 个')
+
+    const badChar = parseGridInput('5'.repeat(total - 1) + '8')
+    expect(badChar.ok).toBe(false)
+    if (!badChar.ok) expect(badChar.reason).toContain(`第 ${total} 个字符是「8」`)
+
+    const badEarly = parseGridInput('a' + '5'.repeat(total - 1))
+    expect(badEarly.ok).toBe(false)
+    if (!badEarly.ok) expect(badEarly.reason).toContain('第 1 个字符是「a」')
   })
 })
 

@@ -20,6 +20,8 @@ export const GRID_ROWS = 16
 export const GRID_COLS = 16
 /** 合法字符表：调色板下标 */
 export const GRID_CHARS = '01234567'
+/** 总格子数（= 边长²） */
+export const GRID_TOTAL = GRID_ROWS * GRID_COLS
 /** 单行合法形状 */
 export const ROW_PATTERN = /^[0-7]{16}$/
 
@@ -48,22 +50,49 @@ export function isValidGrid(input: unknown): input is AvatarRows {
   )
 }
 
+/** 把连写的 256 个字符切成十六行 */
+function chunk(flat: string): AvatarRows {
+  const rows: AvatarRows = []
+  for (let i = 0; i < GRID_ROWS; i++) rows.push(flat.slice(i * GRID_COLS, (i + 1) * GRID_COLS))
+  return rows
+}
+
 /**
  * 把用户粘进来的文本解析成行数组。
  *
- * 宽容的地方：行内外的空格、制表符、逗号、以及「一整行 256 字符连写」都接受 ——
- * 从别处复制过来的点阵常常没有换行。
+ * 两种写法都认：
+ *   · **连写**（页面上那个输入框就是这种）：256 个字排成一行；
+ *   · **分行**：十六行各十六个字（行内外的空格、制表符、逗号都会被忽略）。
+ *
  * 不宽容的地方：**绝不悄悄吞掉非法字符**（`8`、字母、少一个格子都要报出来），
  * 否则用户以为自己存了 16×16，实际存了别的形状。
+ * 报错文案跟着输入的形态走 —— 一行输入就说"现在是 N 个字符（刚好 M 行）"，
+ * 多行输入才说"第几行"。
  */
 export function parseGridInput(text: string): GridParseResult {
   const raw = String(text ?? '')
-  // 允许「连写」形态：把所有空白与逗号去掉后正好是边长² 个字符
   const flat = raw.replace(/[\s,]+/g, '')
-  if (flat.length === GRID_ROWS * GRID_COLS && /^[0-7]+$/.test(flat)) {
-    const rows: AvatarRows = []
-    for (let i = 0; i < GRID_ROWS; i++) rows.push(flat.slice(i * GRID_COLS, (i + 1) * GRID_COLS))
-    return { ok: true, rows }
+  const total = GRID_ROWS * GRID_COLS
+
+  // 先看常见的那一种：形状正好、字符也全合法
+  if (flat.length === total && /^[0-7]+$/.test(flat)) return { ok: true, rows: chunk(flat) }
+
+  // 没有换行 = 用户在用"一行 256 个字"这种写法（页面上的输入框就是）
+  if (!/[\r\n]/.test(raw)) {
+    if (flat.length !== total) {
+      const whole = flat.length > 0 && flat.length % GRID_COLS === 0
+      return {
+        ok: false,
+        reason:
+          `需要 ${total} 个字符（${GRID_ROWS} 行 × ${GRID_COLS} 个），现在是 ${flat.length} 个` +
+          (whole ? `（刚好 ${flat.length / GRID_COLS} 行）` : ''),
+      }
+    }
+    const bad = flat.search(/[^0-7]/)
+    return {
+      ok: false,
+      reason: `第 ${bad + 1} 个字符是「${flat[bad]}」，只允许 0-7（调色板下标）`,
+    }
   }
 
   const lines = raw

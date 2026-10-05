@@ -60,7 +60,7 @@ import { useLongText } from '@/scene/longtext'
 import { canGoBack, goBack, goTab } from '@/scene/nav'
 import { scrollScreenTop } from '@/scene/screen'
 import PixelAvatar from '@/signal/PixelAvatar.vue'
-import { emptyGrid, gridToText, parseGridInput, type AvatarRows } from '@/signal/pixel-grid'
+import { GRID_COLS, GRID_ROWS, GRID_TOTAL, emptyGrid, parseGridInput, type AvatarRows } from '@/signal/pixel-grid'
 import { useAuthStore } from '@/stores/auth'
 import { useAvatarStore } from '@/stores/avatars'
 import { ACTIVE_PALETTE, PALETTES, avatarPalette } from '@/styles/tokens'
@@ -301,7 +301,8 @@ watch(
 
 /** 把「已保存的那份」灌进编辑框（没配过就给一张空白画布） */
 function fillGridBox(): void {
-  gridText.value = gridToText(myRows.value ?? emptyGrid())
+  // 字符串就是那张图本身（256 个字连写），一行装得下，不需要十六行框
+  gridText.value = (myRows.value ?? emptyGrid()).join('')
   gridPreview.value = myRows.value ?? emptyGrid()
   gridTouched.value = false
 }
@@ -351,7 +352,7 @@ async function saveGrid(): Promise<void> {
   gridBusy.value = true
   try {
     const username = await avatars.save(parsed.rows)
-    gridText.value = gridToText(parsed.rows)
+    gridText.value = parsed.rows.join('')
     gridTouched.value = false
     if (form.avatar_url) {
       // 图片会盖住点阵：要「切换」就得把图片拿掉，并把这件事说出来
@@ -729,8 +730,8 @@ onUnmounted(off)
             class="avatar-pv"
             aria-hidden="true"
             data-testid="profile-avatar-canvas"
-            :src="form.avatar_url || null"
-            :rows="myRows"
+            :src="avatarMode === 'pixels' ? null : form.avatar_url || null"
+            :rows="avatarMode === 'pixels' ? gridPreview : myRows"
             :name="user?.username || 'account'"
             :size="16"
             :display="64"
@@ -808,32 +809,24 @@ onUnmounted(off)
                 它由 icespark 自己的服务器提供；只用静态托管 dist 的部署里不存在这一条路由。
               </p>
               <template v-else>
-                <div class="av-grid">
-                  <PixelAvatar
-                    class="av-grid-pv"
-                    aria-hidden="true"
-                    data-testid="avatar-grid-preview"
-                    :src="null"
-                    :rows="gridPreview"
-                    :name="myName || 'account'"
-                    :size="16"
-                    :display="96"
-                    :palette="AVATAR_PALETTE"
-                  />
-                  <textarea
-                    ref="gridEl"
-                    v-model="gridText"
-                    class="av-text"
-                    data-testid="avatar-grid-text"
-                    rows="16"
-                    spellcheck="false"
-                    aria-label="点阵头像字符串：十六行，每行十六个 0-7 的字符"
-                    @input="onGridInput"
-                  />
-                </div>
+                <!-- 字符串一行装完（256 个字）：左边那张预览就在跟着它变，所以这里不再放第二个预览 -->
+                <input
+                  id="profile-avatar-grid"
+                  ref="gridEl"
+                  v-model="gridText"
+                  class="input av-text"
+                  data-testid="avatar-grid-text"
+                  type="text"
+                  name="avatar_grid"
+                  spellcheck="false"
+                  autocomplete="off"
+                  :aria-label="`点阵头像字符串：${GRID_TOTAL} 个 0-7 的字符`"
+                  @input="onGridInput"
+                />
                 <p class="hint">
-                  十六行、每行十六个字，字符是调色板下标 <code>0-7</code>（<code>0</code> 是白底）；
-                  行内空格 / 逗号、或者 256 个字连写都认。
+                  {{ GRID_TOTAL }} 个字（每 <code>{{ GRID_COLS }}</code> 个一行，共
+                  <code>{{ GRID_ROWS }}</code> 行），字符是调色板下标 <code>0-7</code>（<code>0</code>
+                  是白底）；带换行 / 空格 / 逗号地粘进来也认。
                 </p>
                 <p
                   v-if="gridTouched && !gridParse.ok"
@@ -1271,34 +1264,12 @@ onUnmounted(off)
   color: var(--paper);
 }
 
-/* 点阵编辑区：左边预览、右边字符串 */
-.av-grid {
-  display: flex;
-  align-items: flex-start;
-  gap: 10px;
-  min-width: 0;
-}
-.av-grid-pv {
-  flex: 0 0 auto;
-}
+/* 点阵字符串：一行装完 256 个字，用等宽体（它就是那张图本身） */
 .av-text {
-  /* 宽度按十六个等宽字符算：点阵是一张 16×16 的图，框子不必占满整行 */
-  flex: 0 0 auto;
-  width: calc(16ch + 18px);
-  /* 点阵是等宽字符画：必须等宽 + 行高锁死，不然十六行对不齐 */
+  width: 100%;
   font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
   font-size: 12px;
-  line-height: 1.35;
   letter-spacing: 0.5px;
-  padding: 6px 8px;
-  resize: vertical;
-  color: var(--ink);
-  background: var(--blue-100);
-  border: 2px solid var(--blue-400);
-}
-.av-text:focus {
-  border-color: var(--blue-600);
-  outline: none;
 }
 .av-acts {
   display: flex;
@@ -1416,14 +1387,5 @@ onUnmounted(off)
     flex-direction: column;
   }
 
-  /* 窄屏：预览与字符串上下排（并排的话字符串只剩几个字符宽） */
-  .av-grid {
-    flex-direction: column;
-    width: 100%;
-  }
-
-  .av-text {
-    width: 100%;
-  }
 }
 </style>

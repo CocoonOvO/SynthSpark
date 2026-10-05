@@ -12,7 +12,8 @@ import { booted } from './helpers'
  *  1. **路由本身**（真请求，不打桩）：公开读得到、单条 404、写操作必须有令牌 ——
  *     无令牌与假令牌都必须 401，这是「写操作借后端鉴权」这条设计的机器保证；
  *  2. **编辑器**（打桩 + 假令牌，照 §23.4 的口径）：两栏切换、非法输入的原因、
- *     保存发 POST、以及「保存点阵会清掉图片头像」这件事真的发生了；
+ *     保存发 POST、以及「保存点阵会清掉图片头像」这件事真的发生了
+ *     （字符串是**一行** 256 个字，点阵栏不另放预览 —— 左边那张预览就跟着它变）；
  *  3. **展示优先级**（图片 → 点阵 → 名字）：同时有两张时图片赢，把图片清掉就看到点阵。
  *
  * 画布读像素是同一套 `PixelAvatar` 的输出：`0` = paper(#FFFFFF)、`5` = blue500(#3D9BD0)，
@@ -203,7 +204,8 @@ test('两栏切换：没有图片头像但有配过点阵时，默认就落在�
   await expect(page.locator('[data-testid="profile-form"]')).toBeVisible()
 
   await expect(page.locator('[data-testid="avatar-mode-pixels"]')).toHaveAttribute('aria-pressed', 'true')
-  await expect(page.locator('[data-testid="avatar-grid-text"]')).toHaveValue(uniform('5').join('\n'))
+  // 字符串是**一行** 256 个字（页面上的写法），不是十六行
+  await expect(page.locator('[data-testid="avatar-grid-text"]')).toHaveValue('5'.repeat(256))
   await expect.poll(() => pixelAt(page, 'profile-avatar-canvas')).toBe(BLUE500)
 
   // 切回图片栏：文件框在，点阵编辑框不在
@@ -230,10 +232,10 @@ test('点阵栏：非法输入给得出原因、保存发 POST、并把会盖住
   await page.click('[data-testid="avatar-mode-pixels"]')
   await expect(page.locator('[data-testid="avatar-grid-shadow-hint"]')).toBeVisible()
 
-  // 少一行：保存键禁用，而且**立刻**把原因说出来（不是点了才骂）
-  await page.fill('[data-testid="avatar-grid-text"]', uniform('5').slice(0, 15).join('\n'))
+  // 少了一行（240 个字）：保存键禁用，而且**立刻**把原因说出来（不是点了才骂）
+  await page.fill('[data-testid="avatar-grid-text"]', '5'.repeat(240))
   await expect(page.locator('[data-testid="avatar-grid-save"]')).toBeDisabled()
-  await expect(page.locator('[data-testid="avatar-grid-invalid"]')).toContainText('15 行')
+  await expect(page.locator('[data-testid="avatar-grid-invalid"]')).toContainText('刚好 15 行')
   expect(stub.posts).toEqual([]) // 一个请求都没发
 
   // 合法（连写 256 字也认）：保存 → 发 POST + 清掉图片头像
@@ -283,7 +285,7 @@ test('点阵栏：键盘也能走完（Tab 到切换键、回车切栏、编辑�
   await page.locator('[data-testid="avatar-grid-text"]').fill('')
   await page.locator('[data-testid="avatar-grid-text"]').type('5'.repeat(16))
   await expect(page.locator('[data-testid="avatar-grid-text"]')).toHaveValue('5'.repeat(16))
-  await expect(page.locator('[data-testid="avatar-grid-invalid"]')).toContainText('需要 16 行')
+  await expect(page.locator('[data-testid="avatar-grid-invalid"]')).toContainText('需要 256 个字符')
 
   // axe：点阵那一栏的 DOM 也要干净
   const violations = scanViolations(await new AxeBuilder({ page }).analyze()).violations
