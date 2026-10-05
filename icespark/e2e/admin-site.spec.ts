@@ -630,6 +630,14 @@ test('站点设置：关于页段换成专用编辑器 —— 条目增删改上
   await expect(rows.nth(0).locator('[data-testid="about-key"]')).toHaveValue('站点')
   await expect(rows.nth(0).locator('[data-testid="about-value"]')).toHaveValue('E2E')
 
+  // 行尾那三颗是**图标方块**（曾经是三个宽按钮「↑ ↓ 删」，把四个输入框挤成窄缝）：
+  // 名字得由 aria-label 交代清楚 —— 屏幕阅读器读「▴」是读不出意思的
+  await expect(rows.nth(0).locator('[data-testid="about-up"]')).toHaveAttribute('aria-label', /上移/)
+  await expect(rows.nth(0).locator('[data-testid="about-down"]')).toHaveAttribute('aria-label', /下移/)
+  await expect(rows.nth(0).locator('[data-testid="about-del"]')).toHaveAttribute('aria-label', /删除/)
+  // 每条前面有编号铭牌（第几条一眼看得出）
+  await expect(rows.nth(0).locator('.about-idx')).toHaveText('01')
+
   // 图标（1–2 字符）与链接都可选，同一条上一起改
   await rows.nth(0).locator('[data-testid="about-icon"]').fill('◆')
   await rows.nth(0).locator('[data-testid="about-link"]').fill('/links')

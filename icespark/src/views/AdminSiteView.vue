@@ -1086,13 +1086,17 @@ watch(
               data-testid="about-editor"
             >
               <h3 class="about-cap">页头条目</h3>
-              <p class="hint">名字 + 值；图标（1–2 个字符）与链接都可留空，上下移调顺序。</p>
+              <p class="hint">
+                名字 + 值；图标（1–2 个字符）与链接都可留空。行尾 <b>▴ ▾</b> 调顺序、
+                <b>✕</b> 删掉这一条。
+              </p>
               <div
                 v-for="(f, i) in aboutFacts"
                 :key="`${i}-${f.key}`"
                 class="about-row"
                 data-testid="about-row"
               >
+                <span class="about-idx px" aria-hidden="true">{{ String(i + 1).padStart(2, '0') }}</span>
                 <input
                   class="input about-icon"
                   data-testid="about-icon"
@@ -1100,55 +1104,79 @@ watch(
                   maxlength="2"
                   placeholder="图标"
                   spellcheck="false"
+                  :aria-label="`第 ${i + 1} 条的图标`"
                   @input="setFact(i, 'icon', $event)"
                 />
                 <input
-                  class="input"
+                  class="input about-key"
                   data-testid="about-key"
                   :value="f.key"
                   placeholder="名字"
                   spellcheck="false"
+                  :aria-label="`第 ${i + 1} 条的名字`"
                   @input="setFact(i, 'key', $event)"
                 />
                 <input
-                  class="input"
+                  class="input about-value"
                   data-testid="about-value"
                   :value="f.value"
                   placeholder="值"
                   spellcheck="false"
+                  :aria-label="`第 ${i + 1} 条的值`"
                   @input="setFact(i, 'value', $event)"
                 />
                 <input
-                  class="input"
+                  class="input about-link"
                   data-testid="about-link"
                   :value="f.link ?? ''"
                   placeholder="链接（可空）"
                   spellcheck="false"
+                  :aria-label="`第 ${i + 1} 条的链接`"
                   @input="setFact(i, 'link', $event)"
                 />
-                <button
-                  type="button"
-                  class="btn focusable"
-                  data-testid="about-up"
-                  :disabled="i === 0"
-                  @click="moveFact(i, -1)"
-                >
-                  ↑
-                </button>
-                <button
-                  type="button"
-                  class="btn focusable"
-                  data-testid="about-down"
-                  :disabled="i === aboutFacts.length - 1"
-                  @click="moveFact(i, 1)"
-                >
-                  ↓
-                </button>
-                <button type="button" class="btn focusable" data-testid="about-del" @click="delFact(i)">
-                  删
-                </button>
+                <!-- 行尾一簇：两个方向一个删除。用 26×26 的方块而不是三个宽按钮 ——
+                     之前「↑ ↓ 删」占掉半行，四个输入框被挤成窄缝，看上去一团乱 -->
+                <span class="about-acts">
+                  <button
+                    type="button"
+                    class="act-btn focusable"
+                    data-testid="about-up"
+                    :disabled="i === 0"
+                    :aria-label="`把第 ${i + 1} 条上移`"
+                    title="上移"
+                    @click="moveFact(i, -1)"
+                  >
+                    ▴
+                  </button>
+                  <button
+                    type="button"
+                    class="act-btn focusable"
+                    data-testid="about-down"
+                    :disabled="i === aboutFacts.length - 1"
+                    :aria-label="`把第 ${i + 1} 条下移`"
+                    title="下移"
+                    @click="moveFact(i, 1)"
+                  >
+                    ▾
+                  </button>
+                  <button
+                    type="button"
+                    class="act-btn is-danger focusable"
+                    data-testid="about-del"
+                    :aria-label="`删除第 ${i + 1} 条`"
+                    title="删除这一条"
+                    @click="delFact(i)"
+                  >
+                    ✕
+                  </button>
+                </span>
               </div>
-              <button type="button" class="btn focusable" data-testid="about-add" @click="addFact">
+              <button
+                type="button"
+                class="btn focusable mini"
+                data-testid="about-add"
+                @click="addFact"
+              >
                 ＋ 加一条
               </button>
 
@@ -1596,14 +1624,67 @@ watch(
 }
 
 .about-row {
-  display: flex;
-  align-items: center;
+  /* 一格一条：编号 + 图标 + 名字 + 值 + 链接 + 行尾三个方块。
+     用栅格而不是 flex —— 每条的行内列宽一致，几行排下来是齐的（flex 会随内容长短参差）。 */
+  display: grid;
+  grid-template-columns: 30px 46px minmax(0, 0.9fr) minmax(0, 1.1fr) minmax(0, 1.3fr) auto;
   gap: 6px;
+  align-items: center;
+  background: var(--paper);
+  border: 2px solid var(--blue-200);
+  padding: 6px 8px;
+}
+
+/* 正在这一条上打字时，边框亮起来 —— 一屏好几条，得看得出光标在哪一条 */
+.about-row:focus-within {
+  border-color: var(--blue-500);
+}
+
+.about-idx {
+  display: grid;
+  place-items: center;
+  height: 26px;
+  background: var(--blue-100);
+  border: 2px solid var(--blue-300);
+  color: var(--blue-700);
+  font-size: 11px;
 }
 
 .about-icon {
-  flex: 0 0 56px;
   text-align: center;
+}
+
+.about-acts {
+  display: flex;
+  gap: 4px;
+}
+
+.act-btn {
+  font: inherit;
+  font-size: 12px;
+  line-height: 1;
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  background: var(--paper);
+  color: var(--blue-700);
+  border: 2px solid var(--blue-400);
+  cursor: pointer;
+}
+
+.act-btn:hover:not(:disabled) {
+  background: var(--blue-200);
+}
+
+.act-btn:disabled {
+  opacity: 0.35;
+  cursor: default;
+}
+
+.act-btn.is-danger {
+  color: var(--spark);
+  border-color: var(--spark);
 }
 
 .about-body-edit {
@@ -1629,6 +1710,43 @@ watch(
 @media (max-width: 1100px) {
   .about-body-edit {
     grid-template-columns: minmax(0, 1fr);
+  }
+}
+
+/* 面板窄下来之后，六个格子挤在一行会变成一条缝：拆成两行（显式区域摆位，不靠 nth-of-type 猜） */
+@media (max-width: 900px) {
+  .about-row {
+    grid-template-columns: 30px 46px minmax(0, 1fr) minmax(0, 1fr) auto;
+    grid-template-areas:
+      'idx icon key   key  acts'
+      'idx icon value link acts';
+    row-gap: 6px;
+  }
+
+  .about-idx {
+    grid-area: idx;
+    height: 100%;
+  }
+
+  .about-icon {
+    grid-area: icon;
+  }
+
+  .about-key {
+    grid-area: key;
+  }
+
+  .about-value {
+    grid-area: value;
+  }
+
+  .about-link {
+    grid-area: link;
+  }
+
+  .about-acts {
+    grid-area: acts;
+    flex-direction: column;
   }
 }
 
