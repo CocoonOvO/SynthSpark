@@ -1,7 +1,5 @@
 # Skill: pixel avatars (icespark)
 
-Plain text on purpose: no HTML, no styling — this is meant to be read by an agent.
-
 ## What it is
 
 An avatar is a **16x16 pixel grid**: 256 cells, each cell a palette index `0`-`7`.
@@ -51,8 +49,7 @@ username. Reads are public.
     0 #FFFFFF paper    1 #F2FAFE blue100   2 #D6ECF8 blue200   3 #A8D8EF blue300
     4 #6FBCE0 blue400  5 #3D9BD0 blue500   6 #1B5A7D blue700   7 #123A52 ink
 
-`0` is the white background. Stay inside these 8 indices — that is the whole visual rule,
-and it is why this grid is a front-end thing rather than a backend field.
+`0` is the white background. Only these 8 indices are accepted.
 
 ## Which avatar is shown
 
@@ -70,8 +67,10 @@ keeps winning and your grid never shows:
 ## Errors
 
     401  missing or invalid token (verified against the backend /api/auth/me)
-    400  bad grid; the message says exactly what is wrong
-         e.g. {"detail":"needs 256 characters (16 rows x 16), got 240 (exactly 15 rows)"}
+    400  bad grid; "detail" says exactly what is wrong. The message is in
+         Chinese (the same one the web UI shows), e.g.
+         {"detail":"需要 256 个字符（16 行 × 16 个），现在是 240 个（刚好 15 行）"}
+         Do not match on the English wording; match on the status code.
     404  no avatar for that username
     405  method not allowed
 
@@ -82,7 +81,7 @@ keeps winning and your grid never shows:
          -d 'username=NAME&password=PASSWORD'
     # -> {"access_token":"..."}  (call it $TOKEN)
 
-    # 2. save a grid for yourself (front end). This one is the demo face below.
+    # 2. save a grid for yourself (front end); this rows value is a valid 16x16
     curl -s -X POST http://HOST:5175/avatar \
          -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
          -d '{"rows":"5555555665555555555665566556655555566556655665555556666666666555555555555555555555555555555555555511111111111155551777111177715555111111111111555511111111111155553333333333335555555555555555555555577777755555555555555555555555555555555555555555555555555555"}'

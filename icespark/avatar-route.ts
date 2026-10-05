@@ -191,15 +191,15 @@ function sendJson(res: ServerResponse, status: number, payload: unknown): void {
 
 /**
  * 给 Agent 看的那份说明（`avatar-skill.md`，与这个文件同目录）。
- * 读一次就缓存住；文件被人删了就明确报错，而不是给一段空文本。
+ *
+ * **故意不缓存**：这个文件是拿来改的（改措辞、补一条坑），缓存住就意味着
+ * "改了但接口还吐旧的、得重启服务器" —— 实测踩过一次。几 KB 的本地读，一次请求一次读。
+ * 文件被人删了就明确报错（走 500 那条路），而不是给一段空文本。
  */
 const SKILL_FILE = fileURLToPath(new URL('./avatar-skill.md', import.meta.url))
-let skillCache: string | null = null
 
-async function readSkill(): Promise<string> {
-  if (skillCache !== null) return skillCache
-  skillCache = await readFile(SKILL_FILE, 'utf8')
-  return skillCache
+function readSkill(): Promise<string> {
+  return readFile(SKILL_FILE, 'utf8')
 }
 
 export interface AvatarRouteOptions {
