@@ -146,7 +146,7 @@ Python 依赖用 **uv 管理**（`backend/pyproject.toml`），增删依赖改 p
 - 本仓库**不包含任何部署配置**：反向代理、进程管理、容器编排均由部署环境自行提供，仓库内没有对应文件。
 - 部署涉及两部分：后端服务（默认 8002）与前端静态产物。**旧前端**是 `cd frontend && npm run build` 产出的 `dist/`；**新前端（icespark）**是 `cd icespark && npm run build` 产出的 `dist/`（同样需要「未知路径回退到 index.html」，它用 history 模式的真路由）。当前线上跑的是哪一份由部署方决定。
 - 请求如何分流由部署方的路由规则决定：后端提供 `/api/*` 与根路径 `/skill.md`（**该路径不带 `/api` 前缀**），其余页面与静态资源来自 `dist/`。
-- **新前端另有一条自己的路由 `/avatar`（点阵头像，不带 `/api`）**：它由 `icespark/vite.config.ts` 挂到 dev / preview 两个服务器上（实现见 `icespark/avatar-route.ts`），数据落在**不入库**的 `icespark/avatars.local.json`。在"纯静态托管 `dist/`"的部署里这条路由**不存在**，前端会静默退化（展示回到「后端图片头像 → 名字回退」那一档，个人页给一句人话）—— 要用点阵头像，部署得跑 `vite preview` 或等价的 node 服务。口径与取舍见 `design/icespark-ARCHITECTURE.md` §67。
+- **新前端另有一条自己的路由 `/avatar`（点阵头像，不带 `/api`）**：它由 `icespark/vite.config.ts` 挂到 dev / preview 两个服务器上（实现见 `icespark/avatar-route.ts`），数据落在**不入库**的 `icespark/avatars.local.json`；`GET /avatar/skill.md` 返回一份**英文纯文本**的用法说明（源文件 `icespark/avatar-skill.md`），是 Agent 学这套机制的入口。在"纯静态托管 `dist/`"的部署里这条路由**不存在**，前端会静默退化（展示回到「后端图片头像 → 名字回退」那一档，个人页给一句人话）—— 要用点阵头像，部署得跑 `vite preview` 或等价的 node 服务。口径与取舍见 `design/icespark-ARCHITECTURE.md` §67。
 - 具体配置以部署环境的实际情况为准，本文档不做约定、也不提供配置示例。
 
 ## 10. 故障排查
