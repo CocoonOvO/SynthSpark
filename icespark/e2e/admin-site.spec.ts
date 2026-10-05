@@ -73,7 +73,13 @@ function fixture() {
       body: '## E2E 正文\n\n这是一段用于用例的正文。',
       techStack: { subtitle: '栈', categories: [{ title: '后端', items: ['FastAPI'] }] },
     },
-    custom: { note: '契约之外的段要原样保留', list: [1, 2, 3] },
+    custom: {
+      note: '契约之外的段要原样保留',
+      list: [1, 2, 3],
+      // 文档型（`kind === 'area'`）的例子：about 段改走专用编辑器之后，
+      // 「带展开图标的长文框」这条用例挪到这个契约之外的段上来验
+      notes: '## 自定义段的长文\n\n这是一段用于用例的正文。',
+    },
   }
 }
 
@@ -536,11 +542,12 @@ test('长文本编辑：文档型字段（带换行的那一格）与整段 JSON
   await expect(page.locator('[data-field="site.description"] input')).toBeVisible()
   await expect(page.locator('[data-testid="admin-site-expand"]')).toHaveCount(0)
 
-  // ── 切到 about 段：`about.body` 带换行（`kind === 'area'`），框里有图标 ──
-  await page.locator('[data-testid="admin-site-segment"][data-segment="about"]').click()
-  const body = page.locator('[data-field="about.body"] textarea')
+  // ── 切到「自定义段」：`custom.notes` 带换行（`kind === 'area'`），框里有图标 ──
+  //（about 段现在走专用编辑器，不再有 JSON/长文框 —— 见本文件末尾那条新用例）
+  await page.locator('[data-testid="admin-site-segment"][data-segment="custom"]').click()
+  const body = page.locator('[data-field="custom.notes"] textarea')
   await expect(body).toBeVisible()
-  const icon = page.locator('[data-testid="admin-site-expand"][data-key="body"]')
+  const icon = page.locator('[data-testid="admin-site-expand"][data-key="notes"]')
   await expect(icon).toHaveCount(1)
   // 「在框里」不是形容词：图标落在那一格文本框的盒子内部（右上角）
   const box = (await body.boundingBox())!
@@ -549,8 +556,8 @@ test('长文本编辑：文档型字段（带换行的那一格）与整段 JSON
   expect(spot.y).toBeGreaterThan(box.y)
   expect(spot.x + spot.width).toBeLessThanOrEqual(box.x + box.width)
   expect(spot.y + spot.height).toBeLessThanOrEqual(box.y + box.height)
-  // 同一段里的单行字段（标题）没有图标
-  await expect(page.locator('[data-key="title"]')).toHaveCount(0)
+  // 同一段里的单行字段没有图标
+  await expect(page.locator('[data-key="note"]')).toHaveCount(0)
 
   // 入口一：F2
   await body.focus()
@@ -566,7 +573,7 @@ test('长文本编辑：文档型字段（带换行的那一格）与整段 JSON
 
   // 写够 80 字以上：这一页按内容判「是不是文档型」（带换行或超长），
   // 写太短它自己会变回单行输入框 —— 那是既有口径，不是这个功能的毛病
-  const longBody = `改过的关于页正文。${'这是用来撑长度的正文。'.repeat(12)}`
+  const longBody = `改过的自定义段正文。${'这是用来撑长度的正文。'.repeat(12)}`
   await area.fill(longBody)
   await page.locator('[data-testid="long-text-save"]').click()
   await expect(dialog).toHaveCount(0)
@@ -574,27 +581,129 @@ test('长文本编辑：文档型字段（带换行的那一格）与整段 JSON
   // 焦点还给原来那一格
   await expect(body).toBeFocused()
   // 同一份数据：整段 JSON 立刻跟着变（页面没有第二份草稿）
-  await expect(json).toHaveValue(/改过的关于页正文。这是用来撑长度的正文/)
+  await expect(json).toHaveValue(/改过的自定义段正文。这是用来撑长度的正文/)
 
   // ── 整段 JSON 也有图标，且是等宽 / 多行 ──
   await page.locator('[data-testid="admin-site-json-expand"]').click()
   await expect(dialog).toBeVisible()
   await expect(page.locator('[data-testid="long-text-area"].mono')).toHaveCount(1)
-  await area.fill('{\n  "badge": "ABOUT2",\n  "body": "整段改过的正文"\n}')
+  await area.fill('{\n  "note": "改过的说明",\n  "notes": "整段改过的正文"\n}')
   await page.keyboard.press('Control+Enter')
   await expect(dialog).toHaveCount(0)
   await expect(json).toHaveValue(/整段改过的正文/)
-  // 整段写回是真的：字段列表按新的 JSON 重算
-  await expect(page.locator('[data-field="about.badge"] input')).toHaveValue('ABOUT2')
-  await expect(page.locator('[data-field="about.title"]')).toHaveCount(0)
+  // 整段写回是真的：字段列表按新的 JSON 重算 —— `note` 换成了新值，原来的 `list` 没了
+  await expect(page.locator('[data-field="custom.note"] input')).toHaveValue('改过的说明')
+  await expect(page.locator('[data-field="custom.list"]')).toHaveCount(0)
 
   // ── ESC 丢弃：整段 JSON 一个字符都没改 ──
   await page.locator('[data-testid="admin-site-json-expand"]').click()
-  await area.fill('{ "body": "这一份不算数" }')
+  await area.fill('{ "notes": "这一份不算数" }')
   await page.keyboard.press('Escape')
   await expect(dialog).toHaveCount(0)
   await expect(json).toHaveValue(/整段改过的正文/)
   await expect(json).not.toHaveValue(/这一份不算数/)
 
   expect(errors).toEqual([])
+})
+
+test('站点设置：关于页段换成专用编辑器 —— 条目增删改上下移 + 正文即写即预览', async ({ page }) => {
+  const config = fixture()
+  await loggedIn(page, true)
+  const stub = await stubAdminSite(page, { get: { status: 200, body: config } })
+  const errors = pageErrors(page)
+
+  await page.goto('/admin/site')
+  await booted(page)
+  await page.locator('[data-testid="admin-site-segment"][data-segment="about"]').click()
+
+  const editor = page.locator('[data-testid="about-editor"]')
+  await expect(editor).toBeVisible()
+  // 旧前端那四个字段（badge / title / desc / techStack）在这一段上不再作为输入框暴露：
+  // 关于页根本不渲染它们 ——「配了没反应」的根子就在这里。
+  await expect(page.locator('[data-field^="about."]')).toHaveCount(0)
+  // 整段 JSON 兜底面**留着**（每一段都有）：契约里配置段就是自由 JSON，
+  // 专用编辑器不能把这一段锁死；只是不该再有人被推到那里去改正文。
+  await expect(page.locator('[data-testid="admin-site-json"]')).toHaveValue(/"facts"/)
+
+  const rows = page.locator('[data-testid="about-row"]')
+  await expect(rows).toHaveCount(1)
+  await expect(rows.nth(0).locator('[data-testid="about-key"]')).toHaveValue('站点')
+  await expect(rows.nth(0).locator('[data-testid="about-value"]')).toHaveValue('E2E')
+
+  // 图标（1–2 字符）与链接都可选，同一条上一起改
+  await rows.nth(0).locator('[data-testid="about-icon"]').fill('◆')
+  await rows.nth(0).locator('[data-testid="about-link"]').fill('/links')
+
+  // 加一条：名字 / 值 / 绝对链接
+  await page.locator('[data-testid="about-add"]').click()
+  await expect(rows).toHaveCount(2)
+  await rows.nth(1).locator('[data-testid="about-key"]').fill('GitHub')
+  await rows.nth(1).locator('[data-testid="about-value"]').fill('仓库')
+  await rows.nth(1).locator('[data-testid="about-link"]').fill('https://example.com/repo')
+
+  // 上下移：把新加的那条挪到最前
+  await rows.nth(1).locator('[data-testid="about-up"]').click()
+  await expect(rows.nth(0).locator('[data-testid="about-key"]')).toHaveValue('GitHub')
+  await expect(rows.nth(1).locator('[data-testid="about-key"]')).toHaveValue('站点')
+  // 到头的那两个按钮是**禁用**的（不是点了没反应）
+  await expect(rows.nth(0).locator('[data-testid="about-up"]')).toBeDisabled()
+  await expect(rows.nth(1).locator('[data-testid="about-down"]')).toBeDisabled()
+
+  // 键盘等效（硬要求）：焦点落在按钮上时回车归浏览器（`nativeOwnsEnter` 那条规矩），
+  // 真能加一条 —— 而不是「按了回车毫无反应」
+  await page.locator('[data-testid="about-add"]').focus()
+  await page.keyboard.press('Enter')
+  await expect(rows).toHaveCount(3)
+  // 加出来的这条清掉，后面的断言按原来两条走
+  await rows.nth(2).locator('[data-testid="about-del"]').click()
+  await expect(rows).toHaveCount(2)
+
+  // 正文：左边写，右边用同一个渲染器立刻出结果
+  await page.locator('[data-testid="about-body"]').fill('## 改过的正文\n\n这一段是新写的。')
+  const preview = page.locator('[data-testid="about-preview"]')
+  await expect(preview).toContainText('改过的正文')
+  await expect(preview).toContainText('这一段是新写的。')
+
+  // 删一条：删掉排在第二的「站点」（它带着图标与站内链接）
+  await rows.nth(1).locator('[data-testid="about-del"]').click()
+  await expect(rows).toHaveCount(1)
+
+  await page.locator('[data-testid="admin-site-save"]').click()
+  await expect(page.locator('[data-testid="admin-site-saved"]')).toContainText('刷新页面后生效')
+
+  expect(stub.puts).toHaveLength(1)
+  const payload = stub.puts[0] ?? {}
+  // 条目按屏幕上的顺序写回去；没填的可选键不塞空串
+  expect(pick(payload, 'about.facts')).toEqual([
+    { key: 'GitHub', value: '仓库', link: 'https://example.com/repo' },
+  ])
+  expect(pick(payload, 'about.body')).toBe('## 改过的正文\n\n这一段是新写的。')
+  // 没暴露的那四个旧键**一个都不能丢**（「留库里、不暴露」= 保存时原样带回去）
+  expect(pick(payload, 'about.badge')).toBe('ABOUT')
+  expect(pick(payload, 'about.title')).toBe('关于')
+  expect(pick(payload, 'about.desc')).toBe('E2E 关于描述')
+  expect(pick(payload, 'about.techStack')).toEqual(config.about.techStack)
+  // 契约之外的段一如既往
+  expect(pick(payload, 'custom')).toEqual(config.custom)
+
+  expect(errors).toEqual([])
+})
+
+test('站点设置：关于段不是对象时回落通用编辑器（专用编辑器不把这一段锁死）', async ({ page }) => {
+  await loggedIn(page, true)
+  await stubAdminSite(page, {
+    get: { status: 200, body: { ...fixture(), about: '这一段被写成了字符串' } },
+  })
+
+  await page.goto('/admin/site')
+  await booted(page)
+  await page.locator('[data-testid="admin-site-segment"][data-segment="about"]').click()
+
+  // 契约里配置段就是自由 JSON：形状不是对象时给不出条目行与正文框，
+  // 这时必须有退路 —— 整段 JSON 框照样在，管理员能自己把形状改回来
+  await expect(page.locator('[data-testid="about-editor"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="admin-site-json"]')).toHaveValue(
+    /这一段被写成了字符串/,
+  )
+  await expect(page.locator('[data-testid="admin-site-field"]')).toHaveCount(0)
 })

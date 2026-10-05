@@ -639,3 +639,63 @@ test('纯键盘：公开用户页回车进作者的文章（零指针事件）',
 
   await expectNoPointer(page)
 })
+
+test('纯键盘：关于页 F 把光标送进条目组 + 方向键 + 回车进站内页（零指针事件）', async ({
+  page,
+}) => {
+  await installPointerRecorder(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('synthspark-icespark-sound-prompt', '1')
+  })
+  // 与鼠标那条对称：三条条目，只有带 `link` 的两条可聚焦（没链接的是纯文本）
+  await page.route('**/api/site-config', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        about: {
+          facts: [
+            { key: '站点', value: '没有链接的条目' },
+            { key: '文章', value: '去文章页', icon: '◆', link: '/posts' },
+            { key: '外链', value: '站外入口', link: 'https://example.com/' },
+          ],
+        },
+      }),
+    }),
+  )
+
+  await page.goto('/about')
+  await booted(page)
+
+  // 普通条目不可聚焦：键盘用户不该在一个点不动的东西上停一站
+  await expect(page.locator('.screen-inner .focusable')).toHaveCount(2)
+  // 一开始光标不在条目上（方向键归滚动）
+  await expect(page.locator('.screen-inner .facts .is-focused')).toHaveCount(0)
+
+  // F：光标落到第一条**带链接**的条目（第一条没链接，直接跳过它）
+  await page.keyboard.press('f')
+  const focused = page.locator('.screen-inner .facts .is-focused')
+  await expect(focused).toHaveCount(1)
+  await expect(focused).toHaveAttribute('href', '/posts')
+
+  // 方向键走到第二条（外链），再走回来
+  await page.keyboard.press('ArrowRight')
+  await expect(focused).toHaveAttribute('href', 'https://example.com/')
+  await page.keyboard.press('ArrowLeft')
+  await expect(focused).toHaveAttribute('href', '/posts')
+
+  // 再按一次 F：光标收回，方向键回到滚动（`↑` 不该再动光标）
+  await page.keyboard.press('f')
+  await expect(page.locator('.screen-inner .facts .is-focused')).toHaveCount(0)
+  await page.keyboard.press('ArrowUp')
+  await expect(page.locator('.screen-inner .facts .is-focused')).toHaveCount(0)
+
+  // 重新进组，回车打开站内那条：页内切换（外链那条会开新标签页，所以只按站内这条）
+  await page.keyboard.press('f')
+  await expect(focused).toHaveAttribute('href', '/posts')
+  await page.keyboard.press('Enter')
+  await expect(page).toHaveURL(/\/posts$/)
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'posts')
+
+  await expectNoPointer(page)
+})

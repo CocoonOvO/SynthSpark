@@ -597,3 +597,60 @@ test('纯鼠标：公开用户页点作者的文章卡进详情（零键盘）',
 
   await expectNoKeys(page)
 })
+
+test('纯鼠标：关于页点条目链接跳站内页（零键盘）', async ({ page }) => {
+  await installRecorder(page)
+  await page.addInitScript(() => {
+    localStorage.setItem('synthspark-icespark-sound-prompt', '1')
+  })
+  // 条目可带图标与链接（用户裁决 2026-10-04），这里给三条：普通条目 / 站内链接 / 绝对链接。
+  // 站内那条必须是**页内切换**：`<a href="/posts">` 的默认行为是整页刷新，会丢掉过渡与音效，
+  // 也让这条旅程名不副实（下面用一个落在 window 上的记号来证明没刷新）。
+  await page.route('**/api/site-config', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify({
+        about: {
+          facts: [
+            { key: '站点', value: '没有链接的条目' },
+            { key: '文章', value: '去文章页', icon: '◆', link: '/posts' },
+            { key: '外链', value: '站外入口', link: 'https://example.com/' },
+          ],
+        },
+      }),
+    }),
+  )
+
+  await page.goto('/about')
+  await booted(page)
+
+  // 没链接的那条是 `div`（不假造链接），带链接的两条是真 `<a href>` —— 语义 DOM 的要求
+  await expect(page.locator('[data-testid="about-fact"]')).toHaveCount(3)
+  await expect(page.locator('div[data-testid="about-fact"]')).toHaveCount(1)
+  await expect(page.locator('a[data-testid="about-fact"]')).toHaveCount(2)
+
+  const internal = page.locator('a[data-testid="about-fact"][href="/posts"]')
+  const external = page.locator('a[data-testid="about-fact"][href="https://example.com/"]')
+  // 站内链接不新开标签页；绝对链接新开且带 `noopener`
+  await expect(internal).not.toHaveAttribute('target', '_blank')
+  await expect(external).toHaveAttribute('target', '_blank')
+  await expect(external).toHaveAttribute('rel', 'noopener')
+
+  // 图标真的上了屏（1–2 个字符的像素标记）
+  await expect(page.locator('[data-testid="about-fact-icon"]')).toHaveText('◆')
+
+  // 落一个"这一趟没有整页刷新"的记号：整页刷新会把它清掉
+  await page.evaluate(() => {
+    ;(window as unknown as { __sameDocument: boolean }).__sameDocument = true
+  })
+  await page.click('a[data-testid="about-fact"][href="/posts"]')
+  await expect(page).toHaveURL(/\/posts$/)
+  await expect(page.locator('.app')).toHaveAttribute('data-scene', 'posts')
+  expect(
+    await page.evaluate(() => (window as unknown as { __sameDocument?: boolean }).__sameDocument),
+    '站内条目链接把整页刷新了：页内切换才是全站口径',
+  ).toBe(true)
+
+  await expectNoKeys(page)
+})

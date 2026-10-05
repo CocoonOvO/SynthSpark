@@ -32,11 +32,8 @@ export const PAGES: PageCoverage[] = [
   { path: '/links', mouse: '关联页点卡片进站内页', keyboard: '关联页方向键选卡' },
   {
     path: '/about',
-    mouse: null,
-    keyboard: null,
-    reason:
-      '关于页按设计**没有任何可交互元素**（样机即如此：纯正文 + 要点块，a11y 里那条例外区域就是它），' +
-      '所以「点得动 / 键盘走得通」无从谈起；它的可读性由 a11y-audit 的滚动键盘路径与像素门守着',
+    mouse: '关于页点条目链接跳站内页',
+    keyboard: '关于页 F 把光标送进条目组',
   },
 
   // ── 用户侧补充页 ──

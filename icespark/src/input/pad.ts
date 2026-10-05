@@ -42,6 +42,15 @@ export type PadAction =
   | 'focusTag'
   /** 聚焦点赞·评论栏：L */
   | 'focusLike'
+  /**
+   * 聚焦关于页的条目组：F（只在 `/about` 上有人监听）
+   *
+   * 为什么关于页需要一个专用键而不是 TAB：`/about` 是四个标签页之一，
+   * TAB 在标签页上是「切页」（`App.vue` 的全局分派，样机定稿），焦点永远到不了条目上 ——
+   * 于是「纯键盘打不开条目链接」，输入等价性当场破（用户裁决 2026-10-05）。
+   * 语义与 `focusLike` / `focusGroup` / `focusTag` 一致：把共享光标送进一组内容。
+   */
+  | 'focusFact'
   /** 存草稿：`Shift+S`（写作页；Ctrl/⌘+S 由编辑框自己接，两条并存） */
   | 'saveDraft'
   /** 发布：`Shift+P`（写作页） */
@@ -175,6 +184,7 @@ const KEYMAP: Record<string, PadAction> = {
   g: 'focusGroup',
   t: 'focusTag',
   l: 'focusLike',
+  f: 'focusFact',
   u: 'toTop',
   // 写作页专用（P6）：N 文稿 / M 资料 / V 预览。三个字母此前都空着，不动既有键位
   n: 'panelDocs',

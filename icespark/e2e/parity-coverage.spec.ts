@@ -74,15 +74,25 @@ test('逐页 parity 清单：两种输入方式都没覆盖的页，原因里要
   expect(vague).toEqual([])
 })
 
-test('清单里唯一一条「设计上没有可交互元素」的页，真的没有（否则那句话就过期了）', async ({
-  page,
-}) => {
-  // `/about` 在清单里是唯一两种输入方式都写 `null` 的一页，理由是「按设计没有可交互元素」。
-  // 这句理由必须**可被验证**：哪天有人往关于页加了一颗按钮，这里会红，
-  // 于是那句理由要么改成真缺口、要么补上键鼠两条旅程。
+test('关于页：可交互的条目恰好是带链接的那些（不依赖本机配置）', async ({ page }) => {
+  // 关于页不再是「一定没有可交互元素」的页面：条目可带链接（用户裁决 2026-10-04）。
+  // 这一条不假设本机配没配链接，只钉两件事：
+  //   ① `.facts` 里的 `<a>` 与 `.focusable` 一一对应 —— 「有链接 → 键盘走得到」不许漏；
+  //   ② 页面里没有凭空多出来的按钮（样机这一页本来就只有正文与要点块）。
+  // 真链接到底跳不跳，由 parity 的两条旅程（纯鼠标 / 纯键盘）打桩验，那里不依赖本机数据。
   await page.goto('/about')
   await expect(page.locator('.app')).not.toHaveAttribute('data-scene', 'boot')
-  // 只数屏幕内：标签栏在 `.screen-inner` 外面，是外壳的
-  await expect(page.locator('.screen-inner .focusable')).toHaveCount(0)
-  await expect(page.locator('.screen-inner button, .screen-inner a[href]')).toHaveCount(0)
+
+  const linked = page.locator('.screen-inner .facts a')
+  const focusable = page.locator('.screen-inner .facts .focusable')
+  const linkedCount = await linked.count()
+  expect(await focusable.count(), '带链接的条目与可聚焦条目的数目必须一致').toBe(linkedCount)
+
+  // 每一条链接都有真实的 href（不是靠 click 处理器装出来的假链接）
+  for (let i = 0; i < linkedCount; i += 1) {
+    const href = await linked.nth(i).getAttribute('href')
+    expect(href, `第 ${i + 1} 条条目链接没有 href`).toBeTruthy()
+  }
+
+  await expect(page.locator('.screen-inner button')).toHaveCount(0)
 })

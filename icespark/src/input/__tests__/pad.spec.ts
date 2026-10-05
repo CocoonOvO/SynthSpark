@@ -78,6 +78,7 @@ describe('resolvePadAction：按键 → 动作', () => {
     expect(resolvePadAction(key('g'))).toBe('focusGroup')
     expect(resolvePadAction(key('t'))).toBe('focusTag')
     expect(resolvePadAction(key('l'))).toBe('focusLike')
+    expect(resolvePadAction(key('f'))).toBe('focusFact')
     expect(resolvePadAction(key('u'))).toBe('toTop')
   })
 
@@ -249,6 +250,7 @@ describe('dispatchPadAction：两趟派发与消费语义', () => {
       'focusGroup',
       'focusTag',
       'focusLike',
+      'focusFact',
       'toTop',
     ]
     for (const action of actions) expect(dispatchPadAction(action)).toBe(false)

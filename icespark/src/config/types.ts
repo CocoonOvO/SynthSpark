@@ -120,6 +120,16 @@ export interface AboutTechCategory {
 export interface AboutFact {
   key: string
   value: string
+  /**
+   * 可选图标：一个**短记号**（1–2 个字符/符号）。
+   * 限制成短记号是因为像素字体按 12px 设计，放大后笔画会糊（见 ImageFrame 的踩坑记录）。
+   */
+  icon?: string
+  /**
+   * 可选链接：填了就整条变成可点、可聚焦的条目。
+   * 站内路径（`/` 开头）在当前页里跳，绝对地址开新页 —— 与关联页同一套判断。
+   */
+  link?: string
 }
 
 /**

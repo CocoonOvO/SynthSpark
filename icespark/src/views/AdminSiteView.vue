@@ -64,6 +64,7 @@ import { onPad, type PadAction } from '@/input/pad'
 import { playSfx } from '@/input/sfx'
 import ExpandGlyph from '@/machine/ExpandGlyph.vue'
 import SceneHead from '@/machine/SceneHead.vue'
+import MarkdownBody from '@/signal/MarkdownBody.vue'
 import TextEditorDialog from '@/machine/TextEditorDialog.vue'
 import { useStatusBar } from '@/scene/clock'
 import { useLongText } from '@/scene/longtext'
@@ -307,6 +308,88 @@ function hydrate(raw: Record<string, unknown>, keepActive = false): void {
   activeKey.value =
     keepActive && segments.value.includes(previous) ? previous : (segments.value[0] ?? '')
   segFocus.set(Math.max(0, segments.value.indexOf(activeKey.value)), true)
+}
+
+/**
+ * 关于页专用编辑器（用户裁决 2026-10-04）。
+ *
+ * 为什么要有它：关于页实际只渲染两件事 —— `about.facts`（条目）+ `about.body`（markdown），
+ * 而通用编辑器把 `facts`/`body` 当成"嵌套值"丢进**整段 JSON textarea**（改正文要在 JSON 里转义换行），
+ * 同时把 `badge`/`title`/`desc`/`techStack`（旧前端字段、新页不渲染）摆成输入框 —— 于是"配了没反应"。
+ *
+ * 现在这一段换成：**条目行编辑**（图标 / 名字 / 值 / 链接，可增删、可上下移）+ **markdown 正文**，
+ * 并且**不含**上面那四个旧字段。保存语义不变：整段 JSON 回写，所以不在这里暴露的键原样带回去。
+ */
+interface AboutRow {
+  key: string
+  value: string
+  icon?: string
+  link?: string
+}
+
+const aboutObj = computed<Record<string, unknown> | null>(() => {
+  const current = parsed.value.about
+  const value = current?.ok ? current.value : null
+  return value && typeof value === 'object' && !Array.isArray(value)
+    ? (value as Record<string, unknown>)
+    : null
+})
+
+const aboutFacts = computed<AboutRow[]>(() => {
+  const list = aboutObj.value?.facts
+  return Array.isArray(list) ? (list as AboutRow[]) : []
+})
+
+const aboutBody = computed<string>(() =>
+  typeof aboutObj.value?.body === 'string' ? (aboutObj.value.body as string) : '',
+)
+
+/** 把这一段的 JSON 重写回去（只动 facts / body，其余键原样） */
+function writeAbout(patch: { facts?: AboutRow[]; body?: string }): void {
+  const obj = aboutObj.value
+  if (!obj) return
+  const next: Record<string, unknown> = { ...obj }
+  if (patch.facts) next.facts = patch.facts
+  if (patch.body !== undefined) next.body = patch.body
+  texts.value = { ...texts.value, about: JSON.stringify(next, null, 2) }
+}
+
+function rowValue(event: Event): string {
+  return (event.target as HTMLInputElement | HTMLTextAreaElement).value
+}
+
+function setFact(index: number, field: 'key' | 'value' | 'icon' | 'link', event: Event): void {
+  const text = rowValue(event)
+  const list = aboutFacts.value.map((row, i) => {
+    if (i !== index) return row
+    const next: AboutRow = { ...row, [field]: text }
+    // 图标 / 链接留空就把键去掉（免得存一堆空串进后台配置）
+    if ((field === 'icon' || field === 'link') && !text.trim()) delete next[field]
+    return next
+  })
+  writeAbout({ facts: list })
+}
+
+/** 上移 / 下移（用户要的第 3 条） */
+function moveFact(index: number, delta: -1 | 1): void {
+  const list = [...aboutFacts.value]
+  const target = index + delta
+  if (target < 0 || target >= list.length) return
+  const [row] = list.splice(index, 1)
+  list.splice(target, 0, row!)
+  writeAbout({ facts: list })
+}
+
+function addFact(): void {
+  writeAbout({ facts: [...aboutFacts.value, { key: '新条目', value: '' }] })
+}
+
+function delFact(index: number): void {
+  writeAbout({ facts: aboutFacts.value.filter((_, i) => i !== index) })
+}
+
+function setBody(event: Event): void {
+  writeAbout({ body: rowValue(event) })
 }
 
 /** 逐段解析结果（每次文本变动重算；段都很小，够快） */
@@ -994,7 +1077,98 @@ watch(
             <!-- 段内顶层字符串字段：带中文标签的原生输入框（Tab 在字段间走）。
                  文档型的那一种（`area`）框内右上角带展开图标，按 F2 也能开；
                  单行字段不加 —— 这一栏本来就窄，只有写长文才需要换画布 -->
-            <div class="fields">
+            <!-- 关于页：**两件事** —— 条目（可增删改、可上下移）+ markdown 正文。
+                 旧前端的 badge / title / desc / techStack 不在这里暴露（用户裁决：留库里、不暴露），
+                 保存时整段 JSON 回写，它们原样跟着走。 -->
+            <div
+              v-if="activeKey === 'about' && aboutObj"
+              class="about-editor"
+              data-testid="about-editor"
+            >
+              <h3 class="about-cap">页头条目</h3>
+              <p class="hint">名字 + 值；图标（1–2 个字符）与链接都可留空，上下移调顺序。</p>
+              <div
+                v-for="(f, i) in aboutFacts"
+                :key="`${i}-${f.key}`"
+                class="about-row"
+                data-testid="about-row"
+              >
+                <input
+                  class="input about-icon"
+                  data-testid="about-icon"
+                  :value="f.icon ?? ''"
+                  maxlength="2"
+                  placeholder="图标"
+                  spellcheck="false"
+                  @input="setFact(i, 'icon', $event)"
+                />
+                <input
+                  class="input"
+                  data-testid="about-key"
+                  :value="f.key"
+                  placeholder="名字"
+                  spellcheck="false"
+                  @input="setFact(i, 'key', $event)"
+                />
+                <input
+                  class="input"
+                  data-testid="about-value"
+                  :value="f.value"
+                  placeholder="值"
+                  spellcheck="false"
+                  @input="setFact(i, 'value', $event)"
+                />
+                <input
+                  class="input"
+                  data-testid="about-link"
+                  :value="f.link ?? ''"
+                  placeholder="链接（可空）"
+                  spellcheck="false"
+                  @input="setFact(i, 'link', $event)"
+                />
+                <button
+                  type="button"
+                  class="btn focusable"
+                  data-testid="about-up"
+                  :disabled="i === 0"
+                  @click="moveFact(i, -1)"
+                >
+                  ↑
+                </button>
+                <button
+                  type="button"
+                  class="btn focusable"
+                  data-testid="about-down"
+                  :disabled="i === aboutFacts.length - 1"
+                  @click="moveFact(i, 1)"
+                >
+                  ↓
+                </button>
+                <button type="button" class="btn focusable" data-testid="about-del" @click="delFact(i)">
+                  删
+                </button>
+              </div>
+              <button type="button" class="btn focusable" data-testid="about-add" @click="addFact">
+                ＋ 加一条
+              </button>
+
+              <h3 class="about-cap">正文（markdown）</h3>
+              <p class="hint">左边写、右边就是关于页正文渲染出来的样子（同一个渲染器）。</p>
+              <div class="about-body-edit">
+                <textarea
+                  class="input about-md"
+                  data-testid="about-body"
+                  rows="12"
+                  :value="aboutBody"
+                  spellcheck="false"
+                  @input="setBody"
+                ></textarea>
+                <div class="about-preview" data-testid="about-preview">
+                  <MarkdownBody :source="aboutBody" />
+                </div>
+              </div>
+            </div>
+            <div v-else class="fields">
               <div
                 v-for="row in activeFields"
                 :key="row.key"
@@ -1408,6 +1582,56 @@ watch(
 }
 
 /* ── 字段 ── */
+.about-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.about-cap {
+  margin: 6px 0 0;
+  font-family: 'ArkPixel', monospace;
+  font-size: 12px;
+  color: var(--blue-700);
+}
+
+.about-row {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.about-icon {
+  flex: 0 0 56px;
+  text-align: center;
+}
+
+.about-body-edit {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 10px;
+}
+
+.about-md {
+  font-family: 'ArkPixel', monospace;
+  font-size: 12px;
+  line-height: 1.8;
+}
+
+.about-preview {
+  border: 3px solid var(--blue-400);
+  background: var(--paper);
+  padding: 8px;
+  max-height: 320px;
+  overflow: auto;
+}
+
+@media (max-width: 1100px) {
+  .about-body-edit {
+    grid-template-columns: minmax(0, 1fr);
+  }
+}
+
 .fields {
   display: flex;
   flex-direction: column;
