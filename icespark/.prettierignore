@@ -4,6 +4,8 @@ src/api/schema.d.ts
 src/styles/tokens.generated.css
 
 # 构建与测试产物
+# Vite 的依赖预打包缓存（同 eslint 的排除口径）：第三方产物，不该被格式化
+.vite/
 dist/
 node_modules/
 test-results/

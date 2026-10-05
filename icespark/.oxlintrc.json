@@ -7,5 +7,5 @@
   "categories": {
     "correctness": "error"
   },
-  "ignorePatterns": ["dist/**", "src/api/schema.d.ts"]
+  "ignorePatterns": ["dist/**", "src/api/schema.d.ts", ".vite/**"]
 }

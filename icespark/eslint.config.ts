@@ -16,7 +16,17 @@ export default defineConfigWithVueTs(
     files: ['**/*.{vue,ts,mts,tsx}'],
   },
 
-  globalIgnores(['**/dist/**', '**/dist-ssr/**', '**/coverage/**', 'src/api/schema.d.ts']),
+  // `**/.vite/**` 是 Vite 的依赖预打包缓存（dev 一跑就有）：里面是第三方产物，
+  // 不是源码。不排除它，跑过 dev 之后再跑 `npm run check`，eslint 会去 lint
+  // `pinia.js` / `chunk-*.js` 这些预打包文件并报出它们的 `@ts-expect-error` —— 门就成了
+  // 「先跑过 dev 就红」的抽奖。仓库根的 `.gitignore` 已经忽略 `.vite/`，这里与它对齐。
+  globalIgnores([
+    '**/dist/**',
+    '**/dist-ssr/**',
+    '**/coverage/**',
+    '**/.vite/**',
+    'src/api/schema.d.ts',
+  ]),
 
   ...pluginVue.configs['flat/essential'],
   vueTsConfigs.recommended,

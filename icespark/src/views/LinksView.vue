@@ -216,10 +216,14 @@ function plate(i: number) {
 }
 
 .grid {
-  flex: 1;
+  /* 行高按内容走（与文章列表同一条口径，见 `PostListView.vue` 的 `.grid` 注释）。
+     样机写的是 `flex: 1` + `minmax(120px, 1fr)`：行高会被拉到可用高度 —— 条目少的时候
+     两三张卡就摊成 550px 高的大白框（配上封面更明显：200px 的图浮在五百多像素的框里）。
+     样机自己是 3 条示例链接、两行分摊，看不出这个毛病。 */
+  flex: 0 0 auto;
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
-  grid-auto-rows: minmax(120px, 1fr);
+  grid-auto-rows: max-content;
   gap: 12px;
   align-content: start;
 }
@@ -249,9 +253,13 @@ function plate(i: number) {
 }
 
 .card-cover {
-  /* 比文章卡片窄一档：链接卡文字少，图太宽会把一屏压成两张卡 */
-  flex: 0 0 200px;
+  /* 定宽在中等宽度上会出事：两列时一格只有 400 出头，240 的图 + 40 的名牌 + 间隔
+     把文字列挤成一条缝，卡片被顶到 320 高（实测 900 宽下就是这样）。
+     所以改成「按宽度取 38%、上限 260px」：宽屏约 215px（比文章卡片 320 窄一档，
+     链接卡只有名字与地址两行字），窄屏跟着缩，再宽也不会变成一块大图。 */
+  flex: 0 1 38%;
   min-width: 0;
+  max-width: 260px;
   /* 画框自己保持 3:2，不跟着文字列拉伸 */
   align-self: flex-start;
 }
@@ -297,7 +305,16 @@ function plate(i: number) {
 
 @media (max-width: 760px) {
   .grid {
-    grid-template-columns: 1fr;
+    /* `minmax(0, 1fr)` 而不是 `1fr`：后者等于 `minmax(auto, 1fr)`，列宽会被条目的
+       **最小内容宽**顶开 —— 一条长地址就能把单列撑出 25px 横向滚动（实测 420 宽）。
+       宽屏那一条本来就写的是 `minmax(0, 1fr)`，这里与它对齐。 */
+    grid-template-columns: minmax(0, 1fr);
+  }
+
+  .card-cover {
+    /* 单列了：固定 120 比 38% 更稳（38% 在宽屏单列上会又变回一块大图） */
+    flex: 0 0 120px;
+    max-width: none;
   }
 }
 </style>
