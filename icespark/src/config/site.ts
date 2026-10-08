@@ -124,9 +124,26 @@ export async function loadSiteConfig(): Promise<SiteConfigLoadResult> {
 
 /** 页脚状态行的一段 */
 export interface FooterSegment {
+  /** 稳定标识：渲染时当 key（自定义条目会有很多段，光靠 kind 会撞） */
+  id: string
   /** 段类型：窄屏时优先丢掉 slogan（口号可以省，版权与备案不能） */
-  kind: 'copyright' | 'slogan' | 'icp'
+  kind: 'copyright' | 'slogan' | 'icp' | 'item'
   text: string
+}
+
+/**
+ * 生效的备案号。
+ *
+ * `footer.icp` 是正式字段（用户裁决 2026-10-08）；`site.icp` 是旧字段，
+ * 只在 footer 那边为空时兜底 —— 老部署（配置文件或后台里只写过 site.icp）的备案号不会当场消失。
+ * 反过来「在页脚里清空」也真的清空（footer.icp 是空串就不再看 site.icp），
+ * 否则会出现"删了还在"。
+ */
+export function effectiveIcp(config: SiteConfig): string {
+  const fromFooter = typeof config.footer.icp === 'string' ? config.footer.icp.trim() : ''
+  if (fromFooter !== '') return fromFooter
+  const legacy = typeof config.site.icp === 'string' ? config.site.icp.trim() : ''
+  return legacy
 }
 
 /**
@@ -135,19 +152,30 @@ export interface FooterSegment {
  * 拆段而不是拼成一根字符串，是为了让**窄屏**能优先丢掉口号、
  * 保留版权与备案 —— 拼在一起就只能整体省略号，把必要信息也省掉了。
  * 空字段自动跳过（不留下多余的 ` · `）。
+ *
+ * 自定义条目（`footer.items`，用户裁决 2026-10-08）接在备案号后面，顺序即配置顺序；
+ * 空的、非法的条目直接跳过（一份手改坏的配置不该让整行小字消失）。
  */
 export function footerSegments(config: SiteConfig): FooterSegment[] {
   const segments: FooterSegment[] = []
 
   if (config.footer.copyright) {
-    segments.push({ kind: 'copyright', text: `© ${config.footer.copyright}` })
+    segments.push({ id: 'copyright', kind: 'copyright', text: `© ${config.footer.copyright}` })
   }
   if (config.footer.slogan) {
-    segments.push({ kind: 'slogan', text: config.footer.slogan })
+    segments.push({ id: 'slogan', kind: 'slogan', text: config.footer.slogan })
   }
-  if (config.site.icp) {
-    segments.push({ kind: 'icp', text: config.site.icp })
+  const icp = effectiveIcp(config)
+  if (icp !== '') {
+    segments.push({ id: 'icp', kind: 'icp', text: icp })
   }
+
+  const items = Array.isArray(config.footer.items) ? config.footer.items : []
+  items.forEach((item, index) => {
+    const text = typeof item?.text === 'string' ? item.text.trim() : ''
+    if (text === '') return
+    segments.push({ id: `item-${index}`, kind: 'item', text })
+  })
 
   return segments
 }

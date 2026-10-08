@@ -185,7 +185,7 @@ test('关于页：要点块与正文都等于最高优先级覆盖层给的内�
  *   · 给空串 → 那一段**不该出现**（`deepMerge` 里基本类型直接覆盖，空串不会退回默认值）；
  *   · 这一层压根没给这个字段 → 生效的是内层 / 内置默认，不归这道门管，跳过。
  */
-test('页脚小字：三段都等于最高优先级覆盖层给的字（空值则该段消失）', async ({ page }) => {
+test('页脚小字：版权 / 口号 / 备案 / 自定义小字都等于最高优先级覆盖层给的字（空值则那段消失）', async ({ page }) => {
   await page.goto('/')
   await booted(page)
 
@@ -198,12 +198,17 @@ test('页脚小字：三段都等于最高优先级覆盖层给的字（空值�
   const cases = [
     { path: 'footer.copyright', selector: '.deck-footer .is-copyright', prefix: '© ' },
     { path: 'footer.slogan', selector: '.deck-footer .is-slogan', prefix: '' },
-    { path: 'site.icp', selector: '.deck-footer .is-icp', prefix: '' },
+    { path: 'footer.icp', selector: '.deck-footer .is-icp', prefix: '' },
   ] as const
 
   let checked = 0
   for (const item of cases) {
-    const value = pick(layer.data, item.path)
+    let value = pick(layer.data, item.path)
+    // 备案号：`footer.icp` 是正式字段，为空时渲染会回退到旧字段 `site.icp`
+    // （口径写在 config/site.ts 的 effectiveIcp，由单测钉住）；这道门按同一条规则核对。
+    if (item.path === 'footer.icp' && (value === undefined || value === '')) {
+      value = pick(layer.data, 'site.icp')
+    }
     if (value === undefined) continue // 这一层没给 → 不归这道门管
     checked += 1
     const segment = page.locator(item.selector)
@@ -212,6 +217,17 @@ test('页脚小字：三段都等于最高优先级覆盖层给的字（空值�
     } else {
       await expect(segment, `${item.path} 是空值，那一段就不该出现`).toHaveCount(0)
     }
+  }
+
+  // 自定义小字（`footer.items`）：按配置顺序接在备案号后面，空的那条不出现
+  const items = pick(layer.data, 'footer.items')
+  if (Array.isArray(items)) {
+    checked += 1
+    const expected = items
+      .map((row) => (row && typeof row === 'object' ? (row as { text?: unknown }).text : undefined))
+      .filter((text): text is string => typeof text === 'string' && text.trim() !== '')
+      .map((text) => text.trim())
+    await expect(page.locator('.deck-footer .is-item')).toHaveText(expected)
   }
 
   if (checked === 0) {

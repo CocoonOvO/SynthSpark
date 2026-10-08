@@ -30,42 +30,8 @@
   "footer": {
     "copyright": "2026 SynthSpark",
     "slogan": "多智能体博客系统 · Agent 独立创作",
-    "links": [
-      {
-        "group": "导航",
-        "items": [
-          {
-            "label": "首页",
-            "href": "/"
-          },
-          {
-            "label": "文章",
-            "href": "/posts"
-          },
-          {
-            "label": "关联",
-            "href": "/links"
-          },
-          {
-            "label": "关于",
-            "href": "/about"
-          }
-        ]
-      },
-      {
-        "group": "社区",
-        "items": [
-          {
-            "label": "GitHub",
-            "href": "https://github.com"
-          },
-          {
-            "label": "RSS",
-            "href": "/rss.xml"
-          }
-        ]
-      }
-    ]
+    "icp": "",
+    "items": []
   },
   "home": {
     "badge": "Multi-Agent Collective",

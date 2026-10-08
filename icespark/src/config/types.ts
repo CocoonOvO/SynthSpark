@@ -37,28 +37,38 @@ export interface NavbarConfig {
 }
 
 /** 页脚链接项 */
-export interface FooterLink {
-  label: string
-  href: string
-}
-
-/** 页脚链接分组 */
-export interface FooterLinkGroup {
-  group: string
-  items: FooterLink[]
+/**
+ * 页脚的一条自定义小字（用户裁决 2026-10-08）。
+ *
+ * 为什么只有一句文字、没有链接：页脚在 icespark 里就是外框下边框内侧的**一行小字**
+ * （硬要求 3，不做传统页脚区块）。往里塞可点的链接会带来一个新的键盘焦点路径
+ * （带标签栏的页面上 TAB 是「切标签页」，链接够不着），那是交互设计，得先与维护者对齐；
+ * 在那之前这里就只是"多一段小字"。
+ */
+export interface FooterItem {
+  /** 显示文字 */
+  text: string
 }
 
 /**
  * 页脚。
  *
  * 注意它在 icespark 里的呈现方式与传统站点不同：不做多栏链接区块，
- * 而是把 copyright / slogan 与 site.icp 拼成**一行小字**，刻在外框下边框内侧（硬要求 3）。
+ * 而是把 copyright / slogan / icp 与自定义条目拼成**一行小字**，刻在外框下边框内侧（硬要求 3）。
+ *
+ * 两个字段的历史：
+ * - `icp`：**现在归这里**（用户裁决 2026-10-08，页脚设置里配备案号）。旧字段 `site.icp`
+ *   仍然兼容读取（渲染时 `footer.icp` 为空就回退到它），免得老部署的备案号当场消失。
+ * - `links`：**已删除**（旧前端的页脚链接分组，icespark 从来只渲染一行小字，配了没反应）。
+ *   想加小字用下面的 `items`。
  */
 export interface FooterConfig {
   copyright: string
   slogan: string
-  /** 保留完整结构（旧前端的页脚链接分组），将来若要「更多链接」入口直接可用 */
-  links: FooterLinkGroup[]
+  /** 备案号 */
+  icp: string
+  /** 自定义小字：一行一条，按顺序接在备案号后面 */
+  items: FooterItem[]
 }
 
 /**

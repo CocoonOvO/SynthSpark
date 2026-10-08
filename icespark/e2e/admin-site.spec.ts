@@ -284,7 +284,12 @@ test('站点设置：改一处保存，请求体里没动过的段原样还在',
   expect(pick(body, 'site')).toEqual({ ...config.site, name: 'E2E 改过的站点名' })
   // 没动过的段整份原样写回：丢了哪一段就是真丢了
   expect(pick(body, 'navbar')).toEqual(config.navbar)
-  expect(pick(body, 'footer')).toEqual(config.footer)
+  // 例外只有 footer：旧前端的 `links` 在读回来时就被丢掉（用户裁决 2026-10-08 第 3 条
+  // 「为什么里面有个 links 项？还不在配置里？给我移除了」），所以写回去的那份没有它 ——
+  // 这不是丢数据，是那份数据 icespark 从来就不渲染。
+  const footerExpected: Json = { ...config.footer }
+  delete footerExpected.links
+  expect(pick(body, 'footer')).toEqual(footerExpected)
   expect(pick(body, 'home')).toEqual(config.home)
   expect(pick(body, 'about')).toEqual(config.about)
   expect(pick(body, 'custom')).toEqual(config.custom)
@@ -714,4 +719,171 @@ test('站点设置：关于段不是对象时回落通用编辑器（专用编�
     /这一段被写成了字符串/,
   )
   await expect(page.locator('[data-testid="admin-site-field"]')).toHaveCount(0)
+})
+
+/* ══════════════ 用户裁决 2026-10-08：Tab 走段列表、页脚编辑器、关于页防呆 ══════════════ */
+
+test('Tab 在「配置段」与「配置正文」之间来回走（段列表是真按钮）', async ({ page }) => {
+  await loggedIn(page, true)
+  await stubAdminSite(page, { get: { status: 200, body: fixture() } })
+
+  await page.goto('/admin/site')
+  await booted(page)
+  await expect(page.locator('[data-testid="admin-site-ready"]')).toBeVisible()
+
+  // 段列表的顺序就是 Tab 的顺序（夹具六段，含契约之外的 custom）
+  const keys = Object.keys(fixture())
+  await page.locator('[data-testid="admin-site-back"]').focus()
+  const seen: string[] = []
+  for (let i = 0; i < keys.length + 1; i += 1) {
+    await page.keyboard.press('Tab')
+    seen.push(
+      await page.evaluate(() => {
+        const el = document.activeElement as HTMLElement | null
+        return el?.getAttribute('data-segment') ?? el?.getAttribute('data-testid') ?? el?.tagName ?? ''
+      }),
+    )
+  }
+  expect(seen.slice(0, keys.length), 'Tab 应当依次经过每一个段').toEqual(keys)
+  expect(seen[keys.length], '段走完该落进「添加段」那个输入框').toBe('admin-site-new-segment')
+
+  // 再 Tab 两下（添加 → 还原这一段）就进了右列的配置正文
+  await page.keyboard.press('Tab')
+  await page.keyboard.press('Tab')
+  await expect(page.locator('[data-testid="admin-site-restore"]')).toBeFocused()
+
+  // Shift+Tab 能倒回去
+  await page.keyboard.press('Shift+Tab')
+  await expect(page.locator('[data-testid="admin-site-add-segment"]')).toBeFocused()
+
+  // 焦点落在段上时，自绘光标跟着它（键盘与鼠标共用一份状态）
+  await page.locator('[data-testid="admin-site-segment"][data-segment="home"]').focus()
+  await expect(page.locator('[data-testid="admin-site-segment"][data-segment="home"]')).toHaveClass(
+    /is-focused/,
+  )
+
+  // 段按钮上按回车 = 打开这一段（原生激活），并且 Tab 进去时光标跟着它
+  await page.locator('[data-testid="admin-site-segment"][data-segment="home"]').focus()
+  await expect(page.locator('[data-testid="admin-site-segment"][data-segment="home"]')).toHaveClass(
+    /is-focused/,
+  )
+  await page.keyboard.press('Enter')
+  await expect(
+    page.locator('[data-testid="admin-site-segment-panel"]'),
+  ).toHaveAttribute('data-segment', 'home')
+})
+
+test('页脚段：备案号与自定义小字可增删，旧前端的 links 被丢掉', async ({ page }) => {
+  const config = fixture() // 夹具里带着 `footer.links`，正好用来验"读回来就丢掉"
+  await loggedIn(page, true)
+  const stub = await stubAdminSite(page, { get: { status: 200, body: config } })
+
+  await page.goto('/admin/site')
+  await booted(page)
+  await page.click('[data-testid="admin-site-segment"][data-segment="footer"]')
+
+  // 结构化编辑器在，三个单行字段就是这一段 JSON 的视图
+  await expect(page.locator('[data-testid="footer-editor"]')).toBeVisible()
+  await expect(page.locator('[data-testid="footer-copyright"]')).toHaveValue('2026 E2E')
+  await expect(page.locator('[data-testid="footer-slogan"]')).toHaveValue('E2E 口号')
+
+  // 旧字段 site.icp 还在生效时要说清（夹具里是空串，所以这里不该出现提示）
+  await expect(page.locator('[data-testid="footer-icp-legacy"]')).toHaveCount(0)
+
+  // `links` 已经在读回来时被丢掉：JSON 里不该再有它，items 也还没有（于是给一句"点加一条"）
+  const json = page.locator('[data-testid="admin-site-json"]')
+  await expect(json).not.toHaveValue(/links/)
+  await expect(page.locator('[data-testid="footer-items-missing"]')).toBeVisible()
+
+  // 填备案号 + 加两条小字 + 把第二条上移
+  await page.fill('[data-testid="footer-icp"]', '京ICP备00000000号')
+  await page.click('[data-testid="footer-item-add"]')
+  await page.click('[data-testid="footer-item-add"]')
+  await expect(page.locator('[data-testid="footer-item"]')).toHaveCount(2)
+  await page.locator('[data-testid="footer-item-text"]').nth(0).fill('第一句')
+  await page.locator('[data-testid="footer-item-text"]').nth(1).fill('第二句')
+  await page.locator('[data-testid="footer-item-up"]').nth(1).click()
+  await expect(page.locator('[data-testid="footer-item-text"]').nth(0)).toHaveValue('第二句')
+
+  await page.click('[data-testid="admin-site-save"]')
+  await expect.poll(() => stub.puts.length).toBe(1)
+  expect(pick(stub.puts[0], 'footer.icp')).toBe('京ICP备00000000号')
+  expect(pick(stub.puts[0], 'footer.items')).toEqual([{ text: '第二句' }, { text: '第一句' }])
+  const footer = pick(stub.puts[0], 'footer')
+  expect(
+    typeof footer === 'object' && footer !== null && 'links' in footer,
+    '旧前端的 links 不该再被写回去',
+  ).toBe(false)
+  // 整份 PUT：没动过的段原样还在
+  expect(stub.puts[0]?.custom).toEqual(config.custom)
+
+  // 删掉一条也要写回 JSON
+  await page.locator('[data-testid="footer-item-del"]').nth(0).click()
+  await page.click('[data-testid="admin-site-save"]')
+  await expect.poll(() => stub.puts.length).toBe(2)
+  expect(pick(stub.puts[1], 'footer.items')).toEqual([{ text: '第一句' }])
+})
+
+test('关于页：条目与正文取的是这一段 JSON；缺 facts / body 时说清而不是空着', async ({ page }) => {
+  await loggedIn(page, true)
+  await stubAdminSite(page, { get: { status: 200, body: fixture() } })
+
+  await page.goto('/admin/site')
+  await booted(page)
+  await page.click('[data-testid="admin-site-segment"][data-segment="about"]')
+
+  // 夹具里有一条 facts 与一段正文：编辑器必须把它们显示出来（"设置页没连上配置"的反面）
+  await expect(page.locator('[data-testid="about-row"]')).toHaveCount(1)
+  await expect(page.locator('[data-testid="about-key"]').first()).toHaveValue('站点')
+  await expect(page.locator('[data-testid="about-body"]')).toHaveValue(/E2E 正文/)
+  await expect(page.locator('[data-testid="about-facts-missing"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="about-body-missing"]')).toHaveCount(0)
+})
+
+test('关于页：这一段里没有 facts / body 时给出"点一下就建起来"的提示', async ({ page }) => {
+  const config = fixture()
+  // 旧配置的形状：只有 badge / title / desc / techStack
+  const about = config.about as Record<string, unknown>
+  delete about.facts
+  delete about.body
+
+  await loggedIn(page, true)
+  await stubAdminSite(page, { get: { status: 200, body: config } })
+
+  await page.goto('/admin/site')
+  await booted(page)
+  await page.click(`[data-testid="admin-site-segment"][data-segment="about"]`)
+
+  await expect(page.locator('[data-testid="about-editor"]')).toBeVisible()
+  await expect(page.locator('[data-testid="about-row"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="about-facts-missing"]')).toBeVisible()
+  await expect(page.locator('[data-testid="about-body-missing"]')).toBeVisible()
+
+  // 点「加一条」就把 facts 数组建起来（不用去 JSON 里手写）
+  await page.click('[data-testid="about-add"]')
+  await expect(page.locator('[data-testid="about-row"]')).toHaveCount(1)
+  await expect(page.locator('[data-testid="about-facts-missing"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="admin-site-json"]')).toHaveValue(/"facts"/)
+})
+
+test('关于页：这一段 JSON 不合法时，说清编辑器为什么收起', async ({ page }) => {
+  await loggedIn(page, true)
+  await stubAdminSite(page, { get: { status: 200, body: fixture() } })
+
+  await page.goto('/admin/site')
+  await booted(page)
+  await page.click('[data-testid="admin-site-segment"][data-segment="about"]')
+  await expect(page.locator('[data-testid="about-editor"]')).toBeVisible()
+
+  // 在 JSON 框里把它敲坏（接口返回的东西一定会被 stringify 成合法 JSON，只有手改才坏得掉）
+  await page.fill('[data-testid="admin-site-json"]', '{ "facts": [, }')
+
+  await expect(page.locator('[data-testid="admin-site-json-error"]')).toBeVisible()
+  await expect(page.locator('[data-testid="about-editor"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="about-editor-unavailable"]')).toBeVisible()
+
+  // 改回合法：编辑器回来、提示消失
+  await page.fill('[data-testid="admin-site-json"]', '{ "facts": [], "body": "" }')
+  await expect(page.locator('[data-testid="about-editor"]')).toBeVisible()
+  await expect(page.locator('[data-testid="about-editor-unavailable"]')).toHaveCount(0)
 })

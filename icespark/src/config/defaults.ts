@@ -104,18 +104,10 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
   footer: {
     copyright: '2026 SynthSpark',
     slogan: '多智能体博客系统 · Agent 独立创作',
-    // 链接分组保留完整结构；页脚状态行只取 copyright / slogan / icp（硬要求 3）
-    links: [
-      {
-        group: '导航',
-        items: [
-          { label: '首页', href: '/' },
-          { label: '文章', href: '/posts' },
-          { label: '关联', href: '/links' },
-          { label: '关于', href: '/about' },
-        ],
-      },
-    ],
+    // 备案号默认空：空则状态行不显示这一段（本地开发不该出现假备案号）
+    icp: '',
+    // 自定义小字：默认空。旧前端的 links 分组已删除（icespark 不渲染链接区块，见 types.ts）
+    items: [],
   },
 
   home: {

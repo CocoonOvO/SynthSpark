@@ -489,11 +489,18 @@ onUnmounted(() => {
         </b>
       </span>
 
-      <!-- 必要小字：版权 · 口号 · 备案（**在软键左侧**）。空字段整段省略（不留下孤零零的 ` · `） -->
+      <!-- 必要小字：版权 · 口号 · 备案 · 自定义小字（**在软键左侧**）。
+           空字段整段省略（不留下孤零零的 ` · `）；自定义条目接在最后，顺序即配置顺序 -->
       <p class="deck-footer" data-testid="deck-footer">
-        <template v-for="(segment, index) in site.footerParts" :key="segment.kind">
+        <template v-for="(segment, index) in site.footerParts" :key="segment.id">
           <span v-if="index > 0" class="deck-dot" aria-hidden="true">·</span>
-          <span class="deck-seg" :class="`is-${segment.kind}`">{{ segment.text }}</span>
+          <!-- 自定义小字与版权/口号/备案同一行、同一套排版（硬要求 3：只刻一行小字，不做页脚区块） -->
+          <span
+            class="deck-seg"
+            :class="`is-${segment.kind}`"
+            :data-deck-seg="segment.kind"
+            >{{ segment.text }}</span
+          >
         </template>
       </p>
 
@@ -722,10 +729,13 @@ onUnmounted(() => {
   color: var(--ink-faint);
 }
 
-/* 窄屏优先丢口号：版权与备案是必要信息，口号不是 */
+/* 窄屏优先丢口号与自定义小字：版权与备案是必要信息，那两样不是。
+   丢的顺序是「口号 → 自定义条目」，所以条目排在口号后面一起被压掉 */
 @media (max-width: 900px) {
   .deck-seg.is-slogan,
-  .deck-seg.is-slogan + .deck-dot {
+  .deck-seg.is-slogan + .deck-dot,
+  .deck-seg.is-item,
+  .deck-seg.is-item + .deck-dot {
     display: none;
   }
 }

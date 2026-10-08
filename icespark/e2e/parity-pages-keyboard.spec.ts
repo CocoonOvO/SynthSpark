@@ -487,9 +487,16 @@ test('纯键盘：站点设置页 ↓/ENTER 换段、Tab 进字段改一处、Ta
   )
 
   // 从段列表进字段：管理页的表单把 Tab 交还浏览器，所以是**原生 Tab 遍历**。
-  // 实测顺序（navbar 段）：返回 → 新段名 → 加段 → 还原该段 → **该段第一个字段** → 段 JSON → 展开 → **保存**
-  for (let i = 0; i < 5; i += 1) await page.keyboard.press('Tab')
+  // 实测顺序（navbar 段）：返回 → **全部段（每段一个真按钮，2026-10-08 起 Tab 走得到）**
+  // → 新段名 → 加段 → 还原该段 → **该段第一个字段** → 段 JSON → 展开 → **保存**。
+  // 逐步数到那个字段，而不是写死"按 5 下" —— 段数会随配置变，写死就是把用例焊在夹具上。
   const field = page.locator('[data-field="navbar.logo"] input')
+  let reached = false
+  for (let i = 0; i < 20 && !reached; i += 1) {
+    await page.keyboard.press('Tab')
+    reached = await field.evaluate((el) => el === document.activeElement)
+  }
+  expect(reached, '纯 Tab 应该能走到该段的第一个字段').toBe(true)
   await expect(field).toBeFocused()
   await page.keyboard.press('ControlOrMeta+a')
   await page.keyboard.type('键盘导航名')

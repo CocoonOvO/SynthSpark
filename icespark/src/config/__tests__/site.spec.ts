@@ -58,6 +58,12 @@ describe('deepMerge：三级配置合并的语义', () => {
 })
 
 describe('footerSegments：页脚状态行（硬要求 3）', () => {
+  /** 造一份页脚配置（只覆盖关心的那几个字段） */
+  const withFooter = (patch: Partial<typeof DEFAULT_SITE_CONFIG.footer>) => ({
+    ...DEFAULT_SITE_CONFIG,
+    footer: { ...DEFAULT_SITE_CONFIG.footer, ...patch },
+  })
+
   it('默认配置下给出 版权 / 口号 两段，顺序固定', () => {
     const segments = footerSegments(DEFAULT_SITE_CONFIG)
     expect(segments.map((segment) => segment.kind)).toEqual(['copyright', 'slogan'])
@@ -65,28 +71,66 @@ describe('footerSegments：页脚状态行（硬要求 3）', () => {
   })
 
   it('备案号为空时整段省略，不留下多余的段落', () => {
-    const segments = footerSegments({
-      ...DEFAULT_SITE_CONFIG,
-      site: { ...DEFAULT_SITE_CONFIG.site, icp: '' },
-    })
+    const segments = footerSegments(withFooter({ icp: '' }))
     expect(segments.some((segment) => segment.kind === 'icp')).toBe(false)
     expect(segments).toHaveLength(2)
   })
 
-  it('备案号有值时排在最后', () => {
-    const segments = footerSegments({
-      ...DEFAULT_SITE_CONFIG,
-      site: { ...DEFAULT_SITE_CONFIG.site, icp: '京ICP备00000000号' },
-    })
+  it('备案号取 footer.icp（用户裁决 2026-10-08），排在版权与口号之后', () => {
+    const segments = footerSegments(withFooter({ icp: '京ICP备00000000号' }))
     expect(segments.map((segment) => segment.kind)).toEqual(['copyright', 'slogan', 'icp'])
     expect(segments[segments.length - 1]?.text).toBe('京ICP备00000000号')
+  })
+
+  it('footer.icp 为空时回退到旧字段 site.icp（老部署的备案号不会当场消失）', () => {
+    const segments = footerSegments({
+      ...DEFAULT_SITE_CONFIG,
+      site: { ...DEFAULT_SITE_CONFIG.site, icp: '旧字段里的备案号' },
+    })
+    expect(segments.map((segment) => segment.kind)).toEqual(['copyright', 'slogan', 'icp'])
+    expect(segments[2]?.text).toBe('旧字段里的备案号')
+  })
+
+  it('两个字段都有时以 footer.icp 为准（清空页脚那个才算真清空）', () => {
+    const segments = footerSegments({
+      ...withFooter({ icp: '新的备案号' }),
+      site: { ...DEFAULT_SITE_CONFIG.site, icp: '旧字段里的备案号' },
+    })
+    expect(segments[2]?.text).toBe('新的备案号')
+
+    const cleared = footerSegments({
+      ...withFooter({ icp: '' }),
+      site: { ...DEFAULT_SITE_CONFIG.site, icp: '' },
+    })
+    expect(cleared.some((segment) => segment.kind === 'icp')).toBe(false)
+  })
+
+  it('自定义小字按配置顺序接在最后，空的那条跳过', () => {
+    const segments = footerSegments(
+      withFooter({ icp: '京ICP备1号', items: [{ text: '第一句' }, { text: '' }, { text: '第二句' }] }),
+    )
+    expect(segments.map((segment) => segment.kind)).toEqual([
+      'copyright',
+      'slogan',
+      'icp',
+      'item',
+      'item',
+    ])
+    expect(segments.slice(3).map((segment) => segment.text)).toEqual(['第一句', '第二句'])
+    // id 必须各不相同：渲染时当 key，撞了会串行
+    expect(new Set(segments.map((segment) => segment.id)).size).toBe(segments.length)
+  })
+
+  it('items 不是数组（手改坏）时当作没有，其余小字照常渲染', () => {
+    const broken = withFooter({ items: 'not-an-array' as unknown as { text: string }[] })
+    expect(footerSegments(broken).map((segment) => segment.kind)).toEqual(['copyright', 'slogan'])
   })
 
   it('全空时返回空数组（状态行不会输出一个孤零零的 ·）', () => {
     const segments = footerSegments({
       ...DEFAULT_SITE_CONFIG,
       site: { ...DEFAULT_SITE_CONFIG.site, icp: '' },
-      footer: { ...DEFAULT_SITE_CONFIG.footer, copyright: '', slogan: '' },
+      footer: { ...DEFAULT_SITE_CONFIG.footer, copyright: '', slogan: '', icp: '', items: [] },
     })
     expect(segments).toEqual([])
   })
@@ -179,7 +223,8 @@ describe('public/site.config.example.json：模板必须与内置默认一致', 
    * 这一条守的是一个很隐蔽的坑：模板文件是**第二级覆盖**，
    * 它一旦和内置默认跑偏，本机 dev / e2e 看到的就不是样机文案了
    * （而且只有改了 defaults.ts 却忘了改模板的人才会撞上）。
-   * 只比「会渲染出来的部分」：footer.links 那种不渲染的结构允许模板里多写一组示例。
+   * 只比「会渲染出来的部分」：页脚的小字（版权 / 口号 / 备案 / 自定义条目）拿 footerSegments 比，
+   * 所以模板里多给几条示例小字也不算跑偏。
    */
   const template = JSON.parse(
     readFileSync(new URL('../../../public/site.config.example.json', import.meta.url), 'utf-8'),
