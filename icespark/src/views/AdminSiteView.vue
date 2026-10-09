@@ -929,6 +929,23 @@ const segFocus = useFocusGroup({ initial: 0 })
 const panelEl = ref<HTMLElement | null>(null)
 const saveEl = ref<HTMLElement | null>(null)
 
+/**
+ * 焦点停在哪一站（`data-stop-key`）。
+ *
+ * 为什么需要它：整行条目是**容器**，外壳那套焦点视觉（`.focusable` + `.is-focused`，
+ * 浅蓝底 + 两侧闪烁方块）靠的就是这个类 —— 光标画在容器上，与卡片 / 芯片 / 关于页条目的
+ * 焦点完全同款。`:focus-visible` 只对"浏览器给的焦点"可靠，方向键是脚本 `.focus()`，
+ * 所以显式绑类，这也是全站既有写法（`pixel.css` 顶部：「只加 .focusable 与 .is-focused，
+ * 禁止自己再写一套焦点样式」）。
+ */
+const focusedStopKey = ref('')
+
+/** 只在**站本身**拿到焦点时算选中：进到行里的输入框后，焦点视觉交回那个输入框自己的描边 */
+function onPanelFocusIn(event: FocusEvent): void {
+  const target = event.target as HTMLElement | null
+  focusedStopKey.value = target?.hasAttribute('data-stop') ? (target.dataset.stopKey ?? '') : ''
+}
+
 /** 焦点在右列里吗（区域本身或它里面的控件都算） */
 function focusInPanel(): boolean {
   const el = document.activeElement as HTMLElement | null
@@ -1348,6 +1365,7 @@ watch(
           :data-segment="activeKey"
           role="group"
           aria-label="配置正文"
+          @focusin="onPanelFocusIn"
         >
           <h2 class="panel-title">
             {{ segmentLabel(activeKey) }}
@@ -1384,7 +1402,9 @@ watch(
               <div
                 v-for="(f, i) in aboutFacts"
                 :key="`${i}-${f.key}`"
-                class="about-row"
+                class="about-row focusable"
+                :class="{ 'is-focused': focusedStopKey === `about-${i}` }"
+                :data-stop-key="`about-${i}`"
                 data-testid="about-row"
                 data-stop
                 tabindex="-1"
@@ -1467,7 +1487,9 @@ watch(
               <button
                 type="button"
                 class="btn focusable mini"
+                :class="{ 'is-focused': focusedStopKey === 'about-add' }"
                 data-testid="about-add"
+                data-stop-key="about-add"
                 data-stop
                 @click="addFact"
               >
@@ -1501,7 +1523,9 @@ watch(
               <div
                 v-for="(item, i) in footerItems"
                 :key="i"
-                class="about-row"
+                class="about-row focusable"
+                :class="{ 'is-focused': focusedStopKey === `footer-${i}` }"
+                :data-stop-key="`footer-${i}`"
                 data-testid="footer-item"
                 data-stop
                 tabindex="-1"
@@ -1556,7 +1580,9 @@ watch(
               <button
                 type="button"
                 class="btn focusable mini"
+                :class="{ 'is-focused': focusedStopKey === 'footer-add' }"
                 data-testid="footer-item-add"
+                data-stop-key="footer-add"
                 data-stop
                 @click="addFooterItem"
               >
@@ -1577,8 +1603,10 @@ watch(
               <div
                 v-for="row in activeFields"
                 :key="row.key"
-                class="field"
+                class="field focusable"
+                :class="{ 'is-focused': focusedStopKey === row.key }"
                 :data-field="`${activeKey}.${row.key}`"
+                :data-stop-key="row.key"
                 data-testid="admin-site-field"
                 data-stop
                 tabindex="-1"
@@ -1639,7 +1667,9 @@ watch(
                 ></textarea>
                 <button
                   class="expand"
+                  :class="{ 'is-focused': focusedStopKey === 'json-expand' }"
                   data-testid="admin-site-json-expand"
+                  data-stop-key="json-expand"
                   data-stop
                   type="button"
                   aria-label="编辑全文：这一段的 JSON"
@@ -1990,7 +2020,10 @@ watch(
 }
 
 /* ── 字段 ── */
-.about-editor {
+/* 两个专用编辑器（关于页 / 页脚）共用同一套版式：条目行、加一条、正文块之间的距离一致。
+   页脚那边漏了这一条，它的「＋ 加一条」就缩成文字宽的小按钮 —— 用户点名要统一 */
+.about-editor,
+.footer-editor {
   display: flex;
   flex-direction: column;
   gap: 8px;
@@ -2018,15 +2051,6 @@ watch(
 /* 页脚一行 = 编号 + 一句文字 + 行尾三颗方块：覆盖关于页那六列（它多的是图标 / 名字 / 链接三格） */
 .footer-editor .about-row {
   grid-template-columns: 30px minmax(0, 1fr) auto;
-}
-
-/* 焦点停在**整行**上（还没进格子）：整行亮起来 —— 一眼看出"选中了这一条"。
-   用 outline 而不是边框，免得亮起来那一下把布局顶动 */
-.about-row:focus,
-.field:focus {
-  outline: 2px solid var(--blue-600);
-  outline-offset: 2px;
-  background: var(--blue-100);
 }
 
 /* 正在这一条上打字时，边框亮起来 —— 一屏好几条，得看得出光标在哪一条 */
@@ -2263,7 +2287,8 @@ watch(
 }
 
 .expand:hover,
-.expand:focus-visible {
+.expand:focus-visible,
+.expand.is-focused {
   background: var(--blue-100);
   border-color: var(--blue-500);
   color: var(--blue-700);
