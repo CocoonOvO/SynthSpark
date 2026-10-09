@@ -773,6 +773,50 @@ test('Tab 在「配置段」与「配置正文」之间来回走（段列表是�
   ).toHaveAttribute('data-segment', 'home')
 })
 
+test('左右键（ad）在「配置段」与「配置正文」之间来回切，上下键在正文里走', async ({ page }) => {
+  await loggedIn(page, true)
+  await stubAdminSite(page, { get: { status: 200, body: fixture() } })
+
+  await page.goto('/admin/site')
+  await booted(page)
+
+  const panel = page.locator('[data-testid="admin-site-segment-panel"]')
+  await expect(page.locator('[data-testid="admin-site-segment"].is-focused')).toHaveAttribute(
+    'data-segment',
+    'site',
+  )
+
+  // d / → 进右列：焦点先落在**区域本身**（不是输入框 —— 输入框里 a/d 是打字，
+  // 焦点一进去就再也按不出「回左列」）
+  await page.keyboard.press('d')
+  await expect(panel).toBeFocused()
+  await expect(panel).toHaveClass(/is-focused/)
+
+  // ↓ 落进右列第一个控件，再 ↑ 退回左列（顶到边就换列）
+  await page.keyboard.press('ArrowDown')
+  await expect(page.locator('[data-testid="admin-site-restore"]')).toBeFocused()
+  await page.keyboard.press('ArrowUp')
+  await expect(page.locator('[data-testid="admin-site-segment"][data-segment="site"]')).toBeFocused()
+
+  // a / ← 从右列回左列；落点是**当前这一段**那颗按钮
+  await page.keyboard.press('ArrowRight')
+  await expect(panel).toBeFocused()
+  await page.keyboard.press('a')
+  await expect(page.locator('[data-testid="admin-site-segment"][data-segment="site"]')).toBeFocused()
+  await expect(page.locator('[data-testid="admin-site-segment"].is-focused')).toHaveAttribute(
+    'data-segment',
+    'site',
+  )
+
+  // 进右列后按 Tab 落进输入框：这时 a/d 就是**打字**，不是换列（全站约定：可编辑目标让开）
+  await page.keyboard.press('d')
+  await page.keyboard.press('Tab') // 还原这一段
+  await page.keyboard.press('Tab') // 该段第一个字段
+  await expect(page.locator('[data-field="site.name"] input')).toBeFocused()
+  await page.keyboard.type('ad')
+  await expect(page.locator('[data-field="site.name"] input')).toHaveValue(/ad$/)
+})
+
 test('页脚段：备案号与自定义小字可增删，旧前端的 links 被丢掉', async ({ page }) => {
   const config = fixture() // 夹具里带着 `footer.links`，正好用来验"读回来就丢掉"
   await loggedIn(page, true)
@@ -787,6 +831,17 @@ test('页脚段：备案号与自定义小字可增删，旧前端的 links 被�
   await expect(page.locator('[data-testid="footer-copyright"]')).toHaveValue('2026 E2E')
   await expect(page.locator('[data-testid="footer-slogan"]')).toHaveValue('E2E 口号')
 
+  // 固定三段走的是**与自定义小字同一套行**（用户裁决 2026-10-09：
+  // 「把备案号等设置做成预设字段，而不是这种离谱的混搭」）：
+  // 同一副边框出行，只是名字是固定的、行尾没有 ▴▾✕
+  await expect(page.locator('[data-testid="footer-preset"]')).toHaveCount(3)
+  await expect(page.locator('[data-testid="footer-preset"]').first()).toHaveClass(
+    /about-row is-preset/,
+  )
+  await expect(
+    page.locator('[data-testid="footer-preset"] [data-testid="footer-item-del"]'),
+  ).toHaveCount(0)
+
   // 旧字段 site.icp 还在生效时要说清（夹具里是空串，所以这里不该出现提示）
   await expect(page.locator('[data-testid="footer-icp-legacy"]')).toHaveCount(0)
 
@@ -794,6 +849,15 @@ test('页脚段：备案号与自定义小字可增删，旧前端的 links 被�
   const json = page.locator('[data-testid="admin-site-json"]')
   await expect(json).not.toHaveValue(/links/)
   await expect(page.locator('[data-testid="footer-items-missing"]')).toBeVisible()
+
+  // 自定义那一行与固定三段是同一套行，但它带 ▴▾✕（加一条看长相，再删掉还回原样）
+  await page.click('[data-testid="footer-item-add"]')
+  await expect(page.locator('[data-testid="footer-item"]').first()).toHaveClass(/about-row/)
+  await expect(page.locator('[data-testid="footer-item"]').first()).not.toHaveClass(/is-preset/)
+  await expect(
+    page.locator('[data-testid="footer-item"] [data-testid="footer-item-del"]'),
+  ).toHaveCount(1)
+  await page.locator('[data-testid="footer-item-del"]').first().click()
 
   // 填备案号 + 加两条小字 + 把第二条上移
   await page.fill('[data-testid="footer-icp"]', '京ICP备00000000号')

@@ -873,9 +873,74 @@ async function save(): Promise<void> {
  * 「还原这一段 / 添加段 / 重试」这几个次要按钮不进这条链：它们按 DOM 顺序由 Tab 走到、
  * 回车交还浏览器原生激活（`nativeOwnsEnter()`），键盘用户一样够得到。
  */
-type Zone = 'back' | 'list' | 'save' | 'reload'
+type Zone = 'back' | 'list' | 'panel' | 'save' | 'reload'
 const zone = ref<Zone>('list')
 const segFocus = useFocusGroup({ initial: 0 })
+
+/**
+ * 右列（配置正文）那一块，以及它的「区域焦点」。
+ *
+ * 为什么要一个区域容器而不是直接把焦点放进第一个输入框：**输入框里按键归浏览器**
+ * （`isEditableTarget`，全站约定），`a` / `←` 会变成光标移动 —— 从正文回左列就再也按不出来了。
+ * 所以 `→` / `d` 先把焦点放在**区域本身**（`tabindex="-1"`，不是可编辑目标），
+ * 这时左右键内核收得到；再按 `↓` / Tab 才落进第一个控件去打字。
+ */
+const panelEl = ref<HTMLElement | null>(null)
+const saveEl = ref<HTMLElement | null>(null)
+const panelFocused = ref(false)
+
+/** 焦点在右列里吗（区域本身或它里面的控件都算） */
+function focusInPanel(): boolean {
+  const el = document.activeElement as HTMLElement | null
+  if (!el || !panelEl.value) return false
+  return el === panelEl.value || panelEl.value.contains(el)
+}
+
+/**
+ * 右列里能被 ↑↓ 依次走到的控件（按 DOM 顺序）。
+ * 排掉：禁用的、`tabindex="-1"` 的、以及看不见的（`offsetParent` 为空）——
+ * 隐藏的控件要是也算一格，方向键就会「按一下什么都不动」。
+ */
+function panelControls(): HTMLElement[] {
+  const panel = panelEl.value
+  if (!panel) return []
+  return [...panel.querySelectorAll<HTMLElement>('a, button, input, textarea, select, [tabindex]')].filter(
+    (el) => !el.hasAttribute('disabled') && el.tabIndex >= 0 && el.offsetParent !== null,
+  )
+}
+
+/** `→` / `d`：从段列表进右列（先把焦点放在区域上，见 `panelEl` 的注释） */
+function enterPanel(): boolean {
+  const panel = panelEl.value
+  if (!panel || panelControls().length === 0) return false
+  panel.focus()
+  zone.value = 'panel'
+  playSfx('move')
+  return true
+}
+
+/** `←` / `a`：从右列回左列，落在**当前这一段**那颗按钮上（看得见焦点在哪） */
+function leavePanel(): boolean {
+  zone.value = 'list'
+  const index = Math.max(0, segments.value.indexOf(activeKey.value))
+  segFocus.set(index)
+  const buttons = document.querySelectorAll<HTMLElement>('[data-testid="admin-site-segment"]')
+  buttons[index]?.focus()
+  playSfx('move')
+  return true
+}
+
+/** 在右列里上下走一格；走到头返回 false（由调用方决定「回左列」还是「去保存」） */
+function moveInPanel(dir: -1 | 1): boolean {
+  const controls = panelControls()
+  if (controls.length === 0) return false
+  const current = controls.indexOf(document.activeElement as HTMLElement)
+  const next = current === -1 ? controls[dir === 1 ? 0 : controls.length - 1] : controls[current + dir]
+  if (!next) return false
+  next.focus()
+  playSfx('move')
+  return true
+}
 
 function isCursor(index: number): boolean {
   return zone.value === 'list' && segFocus.index.value === index
@@ -1019,13 +1084,32 @@ const off = onPad((action) => {
   }
 
   if (action === 'up' || action === 'down') {
+    // 焦点在右列（配置正文）里：↑↓ 先在右列里走，走到头才换列 ——
+    // 否则「在正文里按 ↓」会当场把焦点拽回左列的段列表，看着像焦点被吃掉
+    if (zone.value === 'panel' || focusInPanel()) {
+      if (moveInPanel(action === 'up' ? -1 : 1)) return true
+      if (action === 'up') return leavePanel()
+      zone.value = 'save'
+      saveEl.value?.focus()
+      playSfx('move')
+      return true
+    }
     // 规矩 2：方向键一动就收掉原生焦点
     dropNativeFocus()
     return step(action === 'up' ? -1 : 1)
   }
 
-  // 左右没有相邻项：还给浏览器（原生光标移动 / 横向滚动照旧）
-  if (action === 'left' || action === 'right') return false
+  // 左右 = 两列之间切（用户裁决 2026-10-09：「使用左右键（ad 键）从配置段进入配置正文或者反过来」）
+  if (action === 'right') {
+    if (zone.value === 'list' && !focusInPanel()) return enterPanel()
+    return false
+  }
+  if (action === 'left') {
+    // 焦点已经在输入框里时内核收不到这两个键（那是光标移动），
+    // 但 ESC 失焦之后 zone 仍是 panel —— 所以这里两个条件都认
+    if (zone.value === 'panel' || focusInPanel()) return leavePanel()
+    return false
+  }
 
   // ESC 不消费：全站口径是「P / ESC 打开暂停菜单」，这里不做唯一的例外
   return false
@@ -1187,7 +1271,20 @@ watch(
         </section>
 
         <!-- 右列：当前段的编辑面板 -->
-        <section class="edit-col" data-testid="admin-site-segment-panel" :data-segment="activeKey">
+        <!-- 右列整块是一个**可聚焦区域**（`tabindex="-1"`：不进 Tab 序，只能被 →/d 或脚本聚焦）：
+             `→`/`d` 把它聚焦，`←`/`a` 回左列，`↑`/`↓` 在它内部的控件之间走 -->
+        <section
+          ref="panelEl"
+          class="edit-col focusable"
+          data-testid="admin-site-segment-panel"
+          :data-segment="activeKey"
+          tabindex="-1"
+          role="group"
+          aria-label="配置正文"
+          :class="{ 'is-focused': panelFocused }"
+          @focus="panelFocused = true"
+          @blur="panelFocused = false"
+        >
           <h2 class="panel-title">
             {{ segmentLabel(activeKey) }}
             <span class="panel-key px">（{{ activeKey || '未选择' }}）</span>
@@ -1347,48 +1444,50 @@ watch(
             >
               <h3 class="about-cap">页脚小字</h3>
               <p class="hint">
-                外框下边框内侧的那一行小字，每一屏都在。空着的那一段整段省略（不会留下多余的
-                <b>·</b>）。
+                外框下边框内侧的那一行小字，每一屏都在。按顺序：<b>版权 · 口号 · 备案号 · 自定义小字</b>；
+                空着的那一段整段省略（不会留下多余的 <b>·</b>）。
               </p>
-              <div class="footer-fields">
-                <label class="footer-field" for="footer-copyright">
-                  <span class="field-cap">版权文字</span>
-                  <input
-                    id="footer-copyright"
-                    class="input"
-                    data-testid="footer-copyright"
-                    type="text"
-                    :value="footerText('copyright')"
-                    placeholder="例如 2026 SynthSpark"
-                    spellcheck="false"
-                    @input="onFooterText('copyright', $event)"
-                  />
-                </label>
-                <label class="footer-field" for="footer-slogan">
-                  <span class="field-cap">口号</span>
-                  <input
-                    id="footer-slogan"
-                    class="input"
-                    data-testid="footer-slogan"
-                    type="text"
-                    :value="footerText('slogan')"
-                    spellcheck="false"
-                    @input="onFooterText('slogan', $event)"
-                  />
-                </label>
-                <label class="footer-field" for="footer-icp">
-                  <span class="field-cap">备案号</span>
-                  <input
-                    id="footer-icp"
-                    class="input"
-                    data-testid="footer-icp"
-                    type="text"
-                    :value="footerText('icp')"
-                    placeholder="例如 京ICP备00000000号"
-                    spellcheck="false"
-                    @input="onFooterText('icp', $event)"
-                  />
-                </label>
+              <!-- 固定三段与下面的自定义小字走**同一套行**（同一副边框 / 内边距 / 输入框样式）：
+                   区别只有「名字是固定的、没有 ▴▾✕」。用户裁决 2026-10-09：
+                   「把备案号等设置做成预设字段，而不是这种离谱的混搭」—— 两套长相是上一版的错 -->
+              <div class="about-row is-preset" data-testid="footer-preset">
+                <span class="footer-name px">版权文字</span>
+                <input
+                  id="footer-copyright"
+                  class="input"
+                  data-testid="footer-copyright"
+                  type="text"
+                  :value="footerText('copyright')"
+                  placeholder="例如 2026 SynthSpark"
+                  spellcheck="false"
+                  @input="onFooterText('copyright', $event)"
+                />
+              </div>
+              <div class="about-row is-preset" data-testid="footer-preset">
+                <span class="footer-name px">口号</span>
+                <input
+                  id="footer-slogan"
+                  class="input"
+                  data-testid="footer-slogan"
+                  type="text"
+                  :value="footerText('slogan')"
+                  placeholder="一句话，可留空"
+                  spellcheck="false"
+                  @input="onFooterText('slogan', $event)"
+                />
+              </div>
+              <div class="about-row is-preset" data-testid="footer-preset">
+                <span class="footer-name px">备案号</span>
+                <input
+                  id="footer-icp"
+                  class="input"
+                  data-testid="footer-icp"
+                  type="text"
+                  :value="footerText('icp')"
+                  placeholder="例如 京ICP备00000000号"
+                  spellcheck="false"
+                  @input="onFooterText('icp', $event)"
+                />
               </div>
               <!-- 旧字段还在生效时说清：不然会看到"框里是空的、页脚上却有字" -->
               <p v-if="footerUsesLegacyIcp" class="hint" data-testid="footer-icp-legacy">
@@ -1597,6 +1696,7 @@ watch(
           </p>
         </div>
         <button
+          ref="saveEl"
           class="btn focusable"
           data-testid="admin-site-save"
           type="button"
@@ -1921,24 +2021,26 @@ watch(
   padding: 6px 8px;
 }
 
-/* 页脚那一套：三个单行字段（版权 / 口号 / 备案号）排成一块，窄屏自动换行 */
-.footer-fields {
-  display: grid;
-  grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-  gap: 8px 12px;
-}
-
-.footer-field {
-  display: flex;
-  flex-direction: column;
-  gap: 4px;
-  min-width: 0;
-}
-
 /* 自定义小字一行只有「编号 + 一句文字 + 行尾三颗方块」：
    覆盖关于页那六列（它多的是图标 / 名字 / 链接三格） */
 .footer-editor .about-row {
   grid-template-columns: 30px minmax(0, 1fr) auto;
+}
+
+/* 固定三段的「名字牌」：与编号铭牌同一副长相，只是宽一点装得下四个字 */
+.footer-editor .about-row.is-preset {
+  grid-template-columns: 76px minmax(0, 1fr);
+}
+
+.footer-name {
+  display: grid;
+  place-items: center;
+  height: 26px;
+  padding: 0 4px;
+  background: var(--blue-100);
+  border: 2px solid var(--blue-300);
+  color: var(--blue-700);
+  font-size: 11px;
 }
 
 /* 正在这一条上打字时，边框亮起来 —— 一屏好几条，得看得出光标在哪一条 */
@@ -2021,10 +2123,14 @@ watch(
 
 /* 面板窄下来之后，六个格子挤在一行会变成一条缝：拆成两行（显式区域摆位，不靠 nth-of-type 猜） */
 @media (max-width: 900px) {
-  /* 页脚那条只有三格，不要套关于页的两行区域（套上会空出两格） */
+  /* 页脚的行不要套关于页的两行区域（套上会空出两格）：自定义小字三格、预设行两格 */
   .footer-editor .about-row {
     grid-template-columns: 30px minmax(0, 1fr) auto;
     grid-template-areas: none;
+  }
+
+  .footer-editor .about-row.is-preset {
+    grid-template-columns: 76px minmax(0, 1fr);
   }
 
   .about-row {
