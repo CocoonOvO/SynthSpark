@@ -17,8 +17,11 @@ export interface SiteMeta {
   title: string
   /** 站点描述（meta description 用） */
   description: string
-  /** 备案号，为空则页脚状态行不显示这一段 */
-  icp: string
+  /**
+   * @deprecated 备案号已归页脚（`footer.items` 里的一条）。
+   * 这里只作过渡期兜底读取（`config/site.ts` 的 `footerTexts`），别再写新值。
+   */
+  icp?: string
   /** 站点 logo 图片地址，为空则用文字 logo */
   logo: string
 }
@@ -38,36 +41,39 @@ export interface NavbarConfig {
 
 /** 页脚链接项 */
 /**
- * 页脚的一条自定义小字（用户裁决 2026-10-08）。
+ * 页脚的一条小字（用户裁决 2026-10-09）。
  *
- * 为什么只有一句文字、没有链接：页脚在 icespark 里就是外框下边框内侧的**一行小字**
- * （硬要求 3，不做传统页脚区块）。往里塞可点的链接会带来一个新的键盘焦点路径
- * （带标签栏的页面上 TAB 是「切标签页」，链接够不着），那是交互设计，得先与维护者对齐；
- * 在那之前这里就只是"多一段小字"。
+ * 页脚在 icespark 里就是外框下边框内侧的**一行小字**（硬要求 3，不做传统页脚区块），
+ * 这一行由一份**条目列表**拼出来：`footer.items` 就是那份列表，`text` 是**逐字渲染**的原文
+ * （不做前缀包装 —— 「所见即所得」，改什么就是什么）。
+ *
+ * 没有链接字段：往这一行塞可点的链接要额外定"键盘怎么进那一行"（带标签栏的页面上 TAB 是切标签页），
+ * 那是交互设计，得先与维护者对齐。
  */
 export interface FooterItem {
-  /** 显示文字 */
+  /** 显示文字（逐字渲染） */
   text: string
 }
 
 /**
  * 页脚。
  *
- * 注意它在 icespark 里的呈现方式与传统站点不同：不做多栏链接区块，
- * 而是把 copyright / slogan / icp 与自定义条目拼成**一行小字**，刻在外框下边框内侧（硬要求 3）。
+ * **唯一致力于渲染的是 `items`**：版权 / 口号 / 备案号与用户自己加的条目**是同一种东西** ——
+ * 一份有序列表里的条目，都能改、都能删、都能挪（内置默认给的就是那三条"预设条目"）。
  *
- * 两个字段的历史：
- * - `icp`：**现在归这里**（用户裁决 2026-10-08，页脚设置里配备案号）。旧字段 `site.icp`
- *   仍然兼容读取（渲染时 `footer.icp` 为空就回退到它），免得老部署的备案号当场消失。
- * - `links`：**已删除**（旧前端的页脚链接分组，icespark 从来只渲染一行小字，配了没反应）。
- *   想加小字用下面的 `items`。
+ * 下面三个旧字段是**过渡期兜底**（旧前端与老配置的形状）：
+ * `items` 一条都没写时才拿它们拼出这一行，编辑器一打开就迁进 `items` 并删掉它们。
+ * 别再往它们里写新东西。
+ *
+ * @deprecated 用 `items`
  */
-export interface FooterConfig {
-  copyright: string
-  slogan: string
-  /** 备案号 */
-  icp: string
-  /** 自定义小字：一行一条，按顺序接在备案号后面 */
+export interface FooterLegacy {
+  copyright?: string
+  slogan?: string
+  icp?: string
+}
+
+export interface FooterConfig extends FooterLegacy {
   items: FooterItem[]
 }
 

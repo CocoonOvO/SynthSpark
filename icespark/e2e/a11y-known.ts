@@ -9,10 +9,12 @@ import type { AxeResults, NodeResult, Result } from 'axe-core'
  * 也不要「顺手放宽」**。
  *
  * ── 放行一：底栏小字的对比度（color-contrast） ──
- * 样机定稿里 `.deck` 就是淡色小字：版权 / 口号用 `--ink-soft`、数据源标记用 `--blue-600`，
+ * 样机定稿里 `.deck` 就是淡色小字：站点小字用 `--ink-soft`、数据源标记用 `--blue-600`，
  * 用户明确要求保持这个样式。实测小字 3.32:1、数据源 4.24:1，低于 WCAG AA 的 4.5:1。
- * 放行范围**只有这四处节点**（`.deck-src` / `.is-copyright` / `.is-slogan` / `.is-icp`），
- * 页面上新增的任何对比度问题照样拦下来。
+ * 放行范围是**底栏那一行小字本身**（`.deck-seg`，条目由 `footer.items` 决定、逐条渲染）
+ * 与数据源标记，页面上新增的任何对比度问题照样拦下来。
+ * 2026-10-09 之前这里按「版权 / 口号 / 备案」三个类名逐个放行；页脚改成一份条目列表后
+ * 只剩一个 `deck-seg`（条目内容由配置决定，没法再按语义分节点）。
  *
  * ── 放行二：卡片标题跳一级（heading-order） ──
  * 样机里只有文章页有 `h1`（`<h1 class="doc-title">`）；首页 / 列表 / 关联 / 关于的「页面名」
@@ -29,7 +31,7 @@ import type { AxeResults, NodeResult, Result } from 'axe-core'
  * 不给 `.screen-inner` 加 `tabindex="0"` 的理由：那会让每一页的第一个 Tab 落点变成整块屏幕，
  * 直接改掉样机冻结的「TAB 按 DOM 顺序遍历」口径（§25.1 / §32.3 刚守过它）。
  */
-export const KNOWN_CONTRAST_TARGETS = ['.deck-src', '.is-copyright', '.is-slogan', '.is-icp']
+export const KNOWN_CONTRAST_TARGETS = ['.deck-src', '.deck-seg']
 
 /** 已知的标题跳级节点：样机的卡片标题就是 h3，外壳补的 h1 与它差了一级 */
 export const KNOWN_HEADING_TARGETS = ['.post-title', '.card-title']

@@ -124,60 +124,44 @@ export async function loadSiteConfig(): Promise<SiteConfigLoadResult> {
 
 /** 页脚状态行的一段 */
 export interface FooterSegment {
-  /** 稳定标识：渲染时当 key（自定义条目会有很多段，光靠 kind 会撞） */
+  /** 稳定标识：渲染时当 key（条目是用户排的，光靠序号也能撞，干脆用序号加前缀） */
   id: string
-  /** 段类型：窄屏时优先丢掉 slogan（口号可以省，版权与备案不能） */
-  kind: 'copyright' | 'slogan' | 'icp' | 'item'
+  /** 逐字渲染的原文 */
   text: string
 }
 
 /**
- * 生效的备案号。
+ * 页脚那一行小字到底写什么（用户裁决 2026-10-09：页脚就是一份**条目列表**）。
  *
- * `footer.icp` 是正式字段（用户裁决 2026-10-08）；`site.icp` 是旧字段，
- * 只在 footer 那边为空时兜底 —— 老部署（配置文件或后台里只写过 site.icp）的备案号不会当场消失。
- * 反过来「在页脚里清空」也真的清空（footer.icp 是空串就不再看 site.icp），
- * 否则会出现"删了还在"。
+ * `footer.items` 是唯一来源：逐字取 `text`，空文本与坏形状跳过（手改坏的配置不该让整行消失）。
+ * 一条都没有时用**旧字段兜底**（`copyright` / `slogan` / `icp`，其中备案号还兼容 `site.icp`）——
+ * 那是旧前端与老配置的形状，让没人在编辑器里动过的部署照旧有那一行；
+ * 编辑器一打开就会把旧字段迁成条目并删掉它们（见 `AdminSiteView` 的 `hydrate`），所以不会长期两套并存。
+ *
+ * 注意窄屏：条目是用户排的，内核不再知道哪一条"可以丢"，所以**不再按段丢口号**，
+ * 交给 `.deck-footer` 整行省略号（原来的规则写在 §68.5）。
  */
-export function effectiveIcp(config: SiteConfig): string {
-  const fromFooter = typeof config.footer.icp === 'string' ? config.footer.icp.trim() : ''
-  if (fromFooter !== '') return fromFooter
-  const legacy = typeof config.site.icp === 'string' ? config.site.icp.trim() : ''
+export function footerTexts(config: SiteConfig): string[] {
+  const items = Array.isArray(config.footer.items) ? config.footer.items : []
+  const texts = items
+    .map((item) => (typeof item?.text === 'string' ? item.text.trim() : ''))
+    .filter((text) => text !== '')
+  if (texts.length > 0) return texts
+
+  const legacy: string[] = []
+  const { copyright, slogan, icp } = config.footer
+  if (typeof copyright === 'string' && copyright.trim() !== '') legacy.push(`© ${copyright.trim()}`)
+  if (typeof slogan === 'string' && slogan.trim() !== '') legacy.push(slogan.trim())
+  const legacyIcp = [icp, config.site.icp].find(
+    (value): value is string => typeof value === 'string' && value.trim() !== '',
+  )
+  if (legacyIcp) legacy.push(legacyIcp.trim())
   return legacy
 }
 
-/**
- * 把页脚配置拆成状态行的若干段（硬要求 3：不做传统页脚区块，只刻一行小字）。
- *
- * 拆段而不是拼成一根字符串，是为了让**窄屏**能优先丢掉口号、
- * 保留版权与备案 —— 拼在一起就只能整体省略号，把必要信息也省掉了。
- * 空字段自动跳过（不留下多余的 ` · `）。
- *
- * 自定义条目（`footer.items`，用户裁决 2026-10-08）接在备案号后面，顺序即配置顺序；
- * 空的、非法的条目直接跳过（一份手改坏的配置不该让整行小字消失）。
- */
+/** 把页脚那条小字拆成若干段（空的一律不出现，不留下孤零零的 ` · `） */
 export function footerSegments(config: SiteConfig): FooterSegment[] {
-  const segments: FooterSegment[] = []
-
-  if (config.footer.copyright) {
-    segments.push({ id: 'copyright', kind: 'copyright', text: `© ${config.footer.copyright}` })
-  }
-  if (config.footer.slogan) {
-    segments.push({ id: 'slogan', kind: 'slogan', text: config.footer.slogan })
-  }
-  const icp = effectiveIcp(config)
-  if (icp !== '') {
-    segments.push({ id: 'icp', kind: 'icp', text: icp })
-  }
-
-  const items = Array.isArray(config.footer.items) ? config.footer.items : []
-  items.forEach((item, index) => {
-    const text = typeof item?.text === 'string' ? item.text.trim() : ''
-    if (text === '') return
-    segments.push({ id: `item-${index}`, kind: 'item', text })
-  })
-
-  return segments
+  return footerTexts(config).map((text, index) => ({ id: `seg-${index}`, text }))
 }
 
 /** 状态行的完整文字（段之间用 ` · ` 连接），给断言与将来的 meta 用 */

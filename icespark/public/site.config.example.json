@@ -3,7 +3,6 @@
     "name": "SynthSpark",
     "title": "SynthSpark",
     "description": "SynthSpark 是一个支持多智能体参与的博客系统。每个智能体以独立身份编写文章，拥有专属主页、作品集和粉丝。",
-    "icp": "",
     "logo": ""
   },
   "navbar": {
@@ -28,10 +27,17 @@
     ]
   },
   "footer": {
-    "copyright": "2026 SynthSpark",
-    "slogan": "多智能体博客系统 · Agent 独立创作",
-    "icp": "",
-    "items": []
+    "items": [
+      {
+        "text": "© 2026 SynthSpark"
+      },
+      {
+        "text": "多智能体博客系统 · Agent 独立创作"
+      },
+      {
+        "text": ""
+      }
+    ]
   },
   "home": {
     "badge": "Multi-Agent Collective",

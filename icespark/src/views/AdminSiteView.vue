@@ -105,10 +105,7 @@ const FIELD_LABELS: Record<string, string> = {
   'site.logo': '站点 Logo',
   'navbar.logo': 'Logo 文字',
   'navbar.navItems': '导航项',
-  'footer.copyright': '版权文字',
-  'footer.slogan': '口号',
-  'footer.icp': '备案号',
-  'footer.items': '自定义小字',
+  'footer.items': '页脚小字',
   'home.badge': '角标',
   'home.title': '横幅标题',
   'home.desc': '横幅描述',
@@ -416,11 +413,14 @@ function setBody(event: Event): void {
 }
 
 /**
- * 页脚段专用编辑器（用户裁决 2026-10-08）。
+ * 页脚段专用编辑器（用户裁决 2026-10-09）。
  *
- * 两条要求合成一个编辑器：**加备案号**（正式字段 `footer.icp`，旧字段 `site.icp` 仍兼容读取）
- * 与**自定义小字**（`footer.items`，可增删、可上下移）—— 后者取代了刚被删掉的旧前端 `links` 分组。
- * 与关于页那一段同一形状：**这一段 JSON 是唯一真相**，输入框只是它的视图，保存语义不变。
+ * 页脚就是**一份条目列表**：`footer.items` 有序，版权 / 口号 / 备案号与用户自己加的条目
+ * 都是这张表里的一行 —— 同一副行、都能改、都能删、都能挪，没有"预设一栏、自定义一栏"。
+ * 内置默认给的就是那三条预设条目（第三条是空备案号，空文本不渲染）。
+ *
+ * 旧字段（`copyright` / `slogan` / `icp` / `site.icp`）只在**这一段还没写过 items 时**
+ * 用来拼出首次显示的行（老部署打开编辑器就能看见自己原来的字）；动一次就写进 `items` 并删掉旧字段。
  */
 interface FooterRow {
   text: string
@@ -434,16 +434,10 @@ const footerObj = computed<Record<string, unknown> | null>(() => {
     : null
 })
 
-/** 文本字段读值（版权 / 口号 / 备案号）：不是字符串就按空处理，不让 `undefined` 进输入框 */
-function footerText(field: 'copyright' | 'slogan' | 'icp'): string {
-  const value = footerObj.value?.[field]
-  return typeof value === 'string' ? value : ''
-}
-
-/** 自定义小字：只认 `{ text }` 那种形状，别的（手改坏的）跳过 */
-const footerItems = computed<FooterRow[]>(() => {
+/** 这一段里写过的条目（写过 items 就是新模型，旧字段不再参与）；没写过返回 null */
+function footerItemList(): FooterRow[] | null {
   const list = footerObj.value?.items
-  if (!Array.isArray(list)) return []
+  if (!Array.isArray(list)) return null
   const rows: FooterRow[] = []
   for (const item of list) {
     if (item && typeof item === 'object' && typeof (item as FooterRow).text === 'string') {
@@ -451,66 +445,77 @@ const footerItems = computed<FooterRow[]>(() => {
     }
   }
   return rows
-})
+}
 
-/** 这一段里到底有没有 `items` 数组（没有就给一句"点加一条就会建起来"，而不是空着一片） */
-const footerHasItems = computed(() => Array.isArray(footerObj.value?.items))
-
-/**
- * 旧字段 `site.icp` 的值：`footer.icp` 为空时渲染用的还是它。
- * 不把这件事说出来，编辑者会看到"备案号框是空的、页脚却有字" —— 正是第 4 条那种困惑。
- */
-const legacyIcp = computed<string>(() => {
+/** `site` 段那个旧备案号（页脚段的旧字段都没写时，它也算一份来源） */
+const legacySiteIcp = computed<string>(() => {
   const current = parsed.value.site
   const value = current?.ok && isPlainObject(current.value) ? current.value.icp : undefined
-  return typeof value === 'string' ? value.trim() : ''
+  return typeof value === 'string' ? value : ''
 })
 
-const footerUsesLegacyIcp = computed(
-  () => footerText('icp').trim() === '' && legacyIcp.value !== '',
-)
+/**
+ * 编辑器里显示的行：`items` 里**有内容**就用它；空数组（或全是空文本）与"没写过"一样，
+ * 都用旧字段拼出预设三条（版权 / 口号 / 备案号）——
+ * 判据必须与渲染那边（`config/site.ts` 的 `footerTexts`）逐字一致，
+ * 否则会出现"页脚上有字、编辑器里一行都没有"这种自相矛盾。
+ */
+const footerItems = computed<FooterRow[]>(() => {
+  const list = footerItemList()
+  if (list !== null && list.some((row) => row.text.trim() !== '')) return list
 
-/** 把页脚这一段重写回去（只动传进来的键，其余原样） */
-function writeFooter(
-  patch: Partial<{ copyright: string; slogan: string; icp: string; items: FooterRow[] }>,
-): void {
+  const obj = footerObj.value ?? {}
+  const text = (key: string): string => (typeof obj[key] === 'string' ? (obj[key] as string) : '')
+  const icp = [text('icp'), legacySiteIcp.value].find((value) => value !== '') ?? ''
+  // 版权那一行带上 `© `：旧字段存的是不带前缀的年份，渲染时补前缀；
+  // 迁进条目后前缀就是文本本身的一部分，不带过来就等于悄悄改掉了页脚上那行字
+  const copyright = text('copyright')
+  return [
+    { text: copyright === '' || copyright.startsWith('©') ? copyright : `© ${copyright}` },
+    { text: text('slogan') },
+    { text: icp },
+  ]
+})
+
+/** 旧字段还躺在这一段 JSON 里吗（改动一次就会被清掉） */
+const footerHasLegacyFields = computed(() => {
+  const obj = footerObj.value
+  if (!obj) return false
+  return ['copyright', 'slogan', 'icp'].some((key) => key in obj)
+})
+
+/** 写回这一段的条目列表，并清掉已经被迁走的旧字段（否则会出现两份真相） */
+function writeFooter(rows: FooterRow[]): void {
   const obj = footerObj.value
   if (!obj) return
-  const next: Record<string, unknown> = { ...obj }
-  if (patch.copyright !== undefined) next.copyright = patch.copyright
-  if (patch.slogan !== undefined) next.slogan = patch.slogan
-  if (patch.icp !== undefined) next.icp = patch.icp
-  if (patch.items !== undefined) next.items = patch.items
+  const next: Record<string, unknown> = { ...obj, items: rows }
+  delete next.copyright
+  delete next.slogan
+  delete next.icp
   texts.value = { ...texts.value, footer: stringifySegment(next) }
 }
 
-function onFooterText(field: 'copyright' | 'slogan' | 'icp', event: Event): void {
-  writeFooter({ [field]: rowValue(event) })
-}
-
 function setFooterItem(index: number, event: Event): void {
-  const list = footerItems.value.map((row, i) => (i === index ? { text: rowValue(event) } : row))
-  writeFooter({ items: list })
+  writeFooter(footerItems.value.map((row, i) => (i === index ? { text: rowValue(event) } : row)))
 }
 
 function addFooterItem(): void {
-  writeFooter({ items: [...footerItems.value, { text: '自定义小字' }] })
+  writeFooter([...footerItems.value, { text: '' }])
 }
 
 function delFooterItem(index: number): void {
-  writeFooter({ items: footerItems.value.filter((_, i) => i !== index) })
+  writeFooter(footerItems.value.filter((_, i) => i !== index))
 }
 
 function moveFooterItem(index: number, delta: -1 | 1): void {
-  const list = [...footerItems.value]
+  const rows = [...footerItems.value]
   const target = index + delta
-  if (target < 0 || target >= list.length) return
-  const [row] = list.splice(index, 1)
-  list.splice(target, 0, row!)
-  writeFooter({ items: list })
+  if (target < 0 || target >= rows.length) return
+  const [row] = rows.splice(index, 1)
+  rows.splice(target, 0, row!)
+  writeFooter(rows)
 }
 
-/** 逐段解析结果（每次文本变动重算；段都很小，够快） */
 const parsed = computed<Record<string, SegmentParse>>(() => {
   const map: Record<string, SegmentParse> = {}
   for (const key of segments.value) map[key] = parseSegment(textOf(key))
@@ -878,16 +883,15 @@ const zone = ref<Zone>('list')
 const segFocus = useFocusGroup({ initial: 0 })
 
 /**
- * 右列（配置正文）那一块，以及它的「区域焦点」。
+ * 右列（配置正文）那一块 —— 只当容器用：找它里面的控件、判断焦点在不在右列。
  *
- * 为什么要一个区域容器而不是直接把焦点放进第一个输入框：**输入框里按键归浏览器**
- * （`isEditableTarget`，全站约定），`a` / `←` 会变成光标移动 —— 从正文回左列就再也按不出来了。
- * 所以 `→` / `d` 先把焦点放在**区域本身**（`tabindex="-1"`，不是可编辑目标），
- * 这时左右键内核收得到；再按 `↓` / Tab 才落进第一个控件去打字。
+ * 焦点落在哪儿：`→` / `d` 直接把焦点放进右列的**第一个控件**（第一个输入框）。
+ * 从输入框里回左列有两条路，都不需要"先聚焦一块区域"这种中间态：
+ *   ① 先 `ESC` 失焦（全站口径：ESC 从编辑框里出来），再 `←` / `a`；
+ *   ② 直接 `Shift + ←`（内核把 `Shift + 方向键` 借给外壳做焦点切换，见 `src/input/index.ts`）。
  */
 const panelEl = ref<HTMLElement | null>(null)
 const saveEl = ref<HTMLElement | null>(null)
-const panelFocused = ref(false)
 
 /** 焦点在右列里吗（区域本身或它里面的控件都算） */
 function focusInPanel(): boolean {
@@ -909,11 +913,11 @@ function panelControls(): HTMLElement[] {
   )
 }
 
-/** `→` / `d`：从段列表进右列（先把焦点放在区域上，见 `panelEl` 的注释） */
+/** `→` / `d`：从段列表进右列 —— 焦点直接落在**第一个控件**上，不搞中间态 */
 function enterPanel(): boolean {
-  const panel = panelEl.value
-  if (!panel || panelControls().length === 0) return false
-  panel.focus()
+  const first = panelControls()[0]
+  if (!first) return false
+  first.focus()
   zone.value = 'panel'
   playSfx('move')
   return true
@@ -1083,30 +1087,34 @@ const off = onPad((action) => {
     return true
   }
 
-  if (action === 'up' || action === 'down') {
+  if (action === 'up' || action === 'down' || action === 'focusUp' || action === 'focusDown') {
+    const dir: -1 | 1 = action === 'up' || action === 'focusUp' ? -1 : 1
     // 焦点在右列（配置正文）里：↑↓ 先在右列里走，走到头才换列 ——
     // 否则「在正文里按 ↓」会当场把焦点拽回左列的段列表，看着像焦点被吃掉
     if (zone.value === 'panel' || focusInPanel()) {
-      if (moveInPanel(action === 'up' ? -1 : 1)) return true
-      if (action === 'up') return leavePanel()
+      if (moveInPanel(dir)) return true
+      if (dir === -1) return leavePanel()
       zone.value = 'save'
       saveEl.value?.focus()
       playSfx('move')
       return true
     }
+    // 焦点不在右列：`Shift + 上下` 没有别的含义，还给浏览器（输入框里是选字）
+    if (action === 'focusUp' || action === 'focusDown') return false
     // 规矩 2：方向键一动就收掉原生焦点
     dropNativeFocus()
-    return step(action === 'up' ? -1 : 1)
+    return step(dir)
   }
 
-  // 左右 = 两列之间切（用户裁决 2026-10-09：「使用左右键（ad 键）从配置段进入配置正文或者反过来」）
-  if (action === 'right') {
+  // 左右 = 两列之间切。两条路都通到同一个函数：
+  //   · 焦点不在输入框里（段列表、右列的按钮）：`←` / `→` / `a` / `d`
+  //   · 焦点在输入框里：`Shift + 方向键`（内核的 `focusLeft` / `focusRight`，不抢走选字）
+  if (action === 'right' || action === 'focusRight') {
     if (zone.value === 'list' && !focusInPanel()) return enterPanel()
     return false
   }
-  if (action === 'left') {
-    // 焦点已经在输入框里时内核收不到这两个键（那是光标移动），
-    // 但 ESC 失焦之后 zone 仍是 panel —— 所以这里两个条件都认
+  if (action === 'left' || action === 'focusLeft') {
+    // 焦点在输入框里时裸 `←` 是光标移动（内核收不到），ESC 失焦之后 zone 仍是 panel
     if (zone.value === 'panel' || focusInPanel()) return leavePanel()
     return false
   }
@@ -1203,9 +1211,6 @@ watch(
       <button class="btn focusable mini" data-testid="admin-site-skeleton" @click="startSkeleton">
         以五个已知段起骨架
       </button>
-      <p class="state-hint hint">
-        起骨架只是在编辑区摆出 site / navbar / footer / home / about，空对象不覆盖任何东西。
-      </p>
     </section>
 
     <!-- 状态四：有配置可改 -->
@@ -1271,19 +1276,15 @@ watch(
         </section>
 
         <!-- 右列：当前段的编辑面板 -->
-        <!-- 右列整块是一个**可聚焦区域**（`tabindex="-1"`：不进 Tab 序，只能被 →/d 或脚本聚焦）：
-             `→`/`d` 把它聚焦，`←`/`a` 回左列，`↑`/`↓` 在它内部的控件之间走 -->
+        <!-- 右列（配置正文）：`→`/`d` 把焦点送进第一个控件，`←`/`a` 回左列，
+             `↑`/`↓` 在它内部的控件之间走。容器本身不可聚焦 —— 不给整块加选中样式 -->
         <section
           ref="panelEl"
-          class="edit-col focusable"
+          class="edit-col"
           data-testid="admin-site-segment-panel"
           :data-segment="activeKey"
-          tabindex="-1"
           role="group"
           aria-label="配置正文"
-          :class="{ 'is-focused': panelFocused }"
-          @focus="panelFocused = true"
-          @blur="panelFocused = false"
         >
           <h2 class="panel-title">
             {{ segmentLabel(activeKey) }}
@@ -1317,13 +1318,8 @@ watch(
               data-testid="about-editor"
             >
               <h3 class="about-cap">页头条目（{{ aboutFacts.length }}）</h3>
-              <p class="hint">
-                名字 + 值；图标（1–2 个字符）与链接都可留空。行尾 <b>▴ ▾</b> 调顺序、
-                <b>✕</b> 删掉这一条。
-              </p>
               <p v-if="!aboutHasFacts" class="hint" data-testid="about-facts-missing">
-                这一段的 JSON 里<b>没有</b> <code>facts</code> 数组（关于页要点块是后来加的字段，
-                旧配置里没有）。点下面的「＋ 加一条」就会建起来。
+                没有 facts，加一条就会建起来。
               </p>
               <div
                 v-for="(f, i) in aboutFacts"
@@ -1416,9 +1412,8 @@ watch(
               </button>
 
               <h3 class="about-cap">正文（markdown）</h3>
-              <p class="hint">左边写、右边就是关于页正文渲染出来的样子（同一个渲染器）。</p>
               <p v-if="!aboutHasBody" class="hint" data-testid="about-body-missing">
-                这一段的 JSON 里<b>没有</b> <code>body</code>（关于页正文）。在下面写就会建起来。
+                没有 body，在下面写就会建起来。
               </p>
               <div class="about-body-edit">
                 <textarea
@@ -1435,76 +1430,20 @@ watch(
               </div>
             </div>
 
-            <!-- 页脚段专用编辑器（用户裁决 2026-10-08）：备案号 + 自定义小字（可增删、可上下移）。
-                 与关于页那套同一形状 —— 这一段 JSON 是唯一真相，输入框只是它的视图。 -->
+            <!-- 页脚段专用编辑器：**一份条目列表**。版权 / 口号 / 备案号就是这表里的前三条，
+                 与用户自己加的同一种东西（同一副行，都能改删挪） -->
             <div
               v-else-if="activeKey === 'footer' && footerObj"
               class="footer-editor"
               data-testid="footer-editor"
             >
-              <h3 class="about-cap">页脚小字</h3>
-              <p class="hint">
-                外框下边框内侧的那一行小字，每一屏都在。按顺序：<b>版权 · 口号 · 备案号 · 自定义小字</b>；
-                空着的那一段整段省略（不会留下多余的 <b>·</b>）。
-              </p>
-              <!-- 固定三段与下面的自定义小字走**同一套行**（同一副边框 / 内边距 / 输入框样式）：
-                   区别只有「名字是固定的、没有 ▴▾✕」。用户裁决 2026-10-09：
-                   「把备案号等设置做成预设字段，而不是这种离谱的混搭」—— 两套长相是上一版的错 -->
-              <div class="about-row is-preset" data-testid="footer-preset">
-                <span class="footer-name px">版权文字</span>
-                <input
-                  id="footer-copyright"
-                  class="input"
-                  data-testid="footer-copyright"
-                  type="text"
-                  :value="footerText('copyright')"
-                  placeholder="例如 2026 SynthSpark"
-                  spellcheck="false"
-                  @input="onFooterText('copyright', $event)"
-                />
-              </div>
-              <div class="about-row is-preset" data-testid="footer-preset">
-                <span class="footer-name px">口号</span>
-                <input
-                  id="footer-slogan"
-                  class="input"
-                  data-testid="footer-slogan"
-                  type="text"
-                  :value="footerText('slogan')"
-                  placeholder="一句话，可留空"
-                  spellcheck="false"
-                  @input="onFooterText('slogan', $event)"
-                />
-              </div>
-              <div class="about-row is-preset" data-testid="footer-preset">
-                <span class="footer-name px">备案号</span>
-                <input
-                  id="footer-icp"
-                  class="input"
-                  data-testid="footer-icp"
-                  type="text"
-                  :value="footerText('icp')"
-                  placeholder="例如 京ICP备00000000号"
-                  spellcheck="false"
-                  @input="onFooterText('icp', $event)"
-                />
-              </div>
-              <!-- 旧字段还在生效时说清：不然会看到"框里是空的、页脚上却有字" -->
-              <p v-if="footerUsesLegacyIcp" class="hint" data-testid="footer-icp-legacy">
-                备案号现在用的是<b>旧字段</b> <code>site.icp</code> 的值「{{ legacyIcp }}」——
-                在上面填一个就会盖过它（清空这里不会把它删掉，那要去 site 那一段改）。
-              </p>
-
-              <h3 class="about-cap">自定义小字（{{ footerItems.length }}）</h3>
-              <p class="hint">
-                一行一条，按顺序接在备案号后面。行尾 <b>▴ ▾</b> 调顺序、<b>✕</b> 删掉这一条。
-              </p>
-              <p v-if="!footerHasItems" class="hint" data-testid="footer-items-missing">
-                这一段的 JSON 里<b>没有</b> <code>items</code> 数组。点下面的「＋ 加一条」就会建起来。
+              <h3 class="about-cap">页脚小字（{{ footerItems.length }}）</h3>
+              <p v-if="footerHasLegacyFields" class="hint" data-testid="footer-legacy-note">
+                来自旧字段，动一下即迁移。
               </p>
               <div
                 v-for="(item, i) in footerItems"
-                :key="`${i}-${item.text}`"
+                :key="i"
                 class="about-row"
                 data-testid="footer-item"
               >
@@ -1516,9 +1455,8 @@ watch(
                   data-testid="footer-item-text"
                   type="text"
                   :value="item.text"
-                  placeholder="小字内容"
+                  :aria-label="`页脚小字第 ${i + 1} 条`"
                   spellcheck="false"
-                  :aria-label="`第 ${i + 1} 条小字`"
                   @input="setFooterItem(i, $event)"
                 />
                 <span class="about-acts">
@@ -1527,7 +1465,7 @@ watch(
                     class="act-btn focusable"
                     data-testid="footer-item-up"
                     :disabled="i === 0"
-                    :aria-label="`把第 ${i + 1} 条小字上移`"
+                    aria-label="上移"
                     title="上移"
                     @click="moveFooterItem(i, -1)"
                   >
@@ -1538,7 +1476,7 @@ watch(
                     class="act-btn focusable"
                     data-testid="footer-item-down"
                     :disabled="i === footerItems.length - 1"
-                    :aria-label="`把第 ${i + 1} 条小字下移`"
+                    aria-label="下移"
                     title="下移"
                     @click="moveFooterItem(i, 1)"
                   >
@@ -1548,8 +1486,8 @@ watch(
                     type="button"
                     class="act-btn is-danger focusable"
                     data-testid="footer-item-del"
-                    :aria-label="`删除第 ${i + 1} 条小字`"
-                    title="删除这一条"
+                    aria-label="删除这一条"
+                    title="删除"
                     @click="delFooterItem(i)"
                   >
                     ✕
@@ -1569,10 +1507,10 @@ watch(
             <!-- JSON 不合法时上面两套结构化编辑器都收起来了：说一句为什么，
                  否则"条目编辑器不见了"看起来就像设置页没连上配置 -->
             <p v-else-if="activeKey === 'about'" class="hint" data-testid="about-editor-unavailable">
-              关于页的条目 / 正文编辑器要等这一段的 JSON <b>合法之后</b>才会出现；先按上面的提示改好。
+              这段 JSON 不合法，编辑器先收起。
             </p>
             <p v-else-if="activeKey === 'footer'" class="hint" data-testid="footer-editor-unavailable">
-              页脚编辑器要等这一段的 JSON <b>合法之后</b>才会出现；先按上面的提示改好。
+              这段 JSON 不合法，编辑器先收起。
             </p>
 
             <div v-else class="fields">
@@ -2021,26 +1959,9 @@ watch(
   padding: 6px 8px;
 }
 
-/* 自定义小字一行只有「编号 + 一句文字 + 行尾三颗方块」：
-   覆盖关于页那六列（它多的是图标 / 名字 / 链接三格） */
+/* 页脚一行 = 编号 + 一句文字 + 行尾三颗方块：覆盖关于页那六列（它多的是图标 / 名字 / 链接三格） */
 .footer-editor .about-row {
   grid-template-columns: 30px minmax(0, 1fr) auto;
-}
-
-/* 固定三段的「名字牌」：与编号铭牌同一副长相，只是宽一点装得下四个字 */
-.footer-editor .about-row.is-preset {
-  grid-template-columns: 76px minmax(0, 1fr);
-}
-
-.footer-name {
-  display: grid;
-  place-items: center;
-  height: 26px;
-  padding: 0 4px;
-  background: var(--blue-100);
-  border: 2px solid var(--blue-300);
-  color: var(--blue-700);
-  font-size: 11px;
 }
 
 /* 正在这一条上打字时，边框亮起来 —— 一屏好几条，得看得出光标在哪一条 */
@@ -2123,14 +2044,10 @@ watch(
 
 /* 面板窄下来之后，六个格子挤在一行会变成一条缝：拆成两行（显式区域摆位，不靠 nth-of-type 猜） */
 @media (max-width: 900px) {
-  /* 页脚的行不要套关于页的两行区域（套上会空出两格）：自定义小字三格、预设行两格 */
+  /* 页脚的行不要套关于页的两行区域（套上会空出两格） */
   .footer-editor .about-row {
     grid-template-columns: 30px minmax(0, 1fr) auto;
     grid-template-areas: none;
-  }
-
-  .footer-editor .about-row.is-preset {
-    grid-template-columns: 76px minmax(0, 1fr);
   }
 
   .about-row {

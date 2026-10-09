@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   clearPadListeners,
   dispatchPadAction,
+  focusActionForArrow,
   isEditableTarget,
   onPad,
   resolveComboAction,
@@ -254,6 +255,21 @@ describe('dispatchPadAction：两趟派发与消费语义', () => {
       'toTop',
     ]
     for (const action of actions) expect(dispatchPadAction(action)).toBe(false)
+  })
+})
+
+describe('Shift + 方向键 → 焦点切换动作（专用动作，不借 left/right）', () => {
+  it('四个方向键都映射到 focus* 动作', () => {
+    expect(focusActionForArrow('ArrowUp')).toBe('focusUp')
+    expect(focusActionForArrow('ArrowDown')).toBe('focusDown')
+    expect(focusActionForArrow('ArrowLeft')).toBe('focusLeft')
+    expect(focusActionForArrow('ArrowRight')).toBe('focusRight')
+  })
+
+  it('字母与其它键不认（Shift+w/a/s/d 是打字，不是焦点切换）', () => {
+    for (const key of ['w', 'a', 's', 'd', 'W', 'Enter', 'Tab', 'Escape', 'PageUp']) {
+      expect(focusActionForArrow(key)).toBe(null)
+    }
   })
 })
 

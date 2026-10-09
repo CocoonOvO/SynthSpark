@@ -1,4 +1,10 @@
-import { dispatchPadAction, isEditableTarget, resolveComboAction, resolvePadAction } from './pad'
+import {
+  dispatchPadAction,
+  focusActionForArrow,
+  isEditableTarget,
+  resolveComboAction,
+  resolvePadAction,
+} from './pad'
 import { cycleFocusInTrap } from './focusTrap'
 import { inputLocked } from './scopes'
 
@@ -62,6 +68,18 @@ export function mountInput(root: HTMLElement): () => void {
         event.preventDefault()
         focusShellRoot()
         return
+      }
+
+      // ③ `Shift + 方向键` = 「我要换焦点」（用户裁决 2026-10-09）：走一组**专用动作**
+      //    （`focusUp` / `focusDown` / `focusLeft` / `focusRight`），不是借 `left` / `right` ——
+      //    后者在别的页面也被用着，借了就把输入框里的选字一起抢走（写作页那条用例当场挂过）。
+      //    与下面那条组合键同一条纪律：**没人接就还给浏览器**，所以选字在没实现焦点切换的页面照旧。
+      if (event.shiftKey) {
+        const focusAction = focusActionForArrow(event.key)
+        if (focusAction && dispatchPadAction(focusAction)) {
+          event.preventDefault()
+          return
+        }
       }
 
       // 只有当前场景真的用掉了这个动作才吞掉按键，否则还给浏览器（大写字母照常输入）

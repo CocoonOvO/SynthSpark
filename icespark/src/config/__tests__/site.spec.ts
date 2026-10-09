@@ -3,7 +3,7 @@ import { readFileSync } from 'node:fs'
 import { describe, expect, it } from 'vitest'
 
 import { DEFAULT_SITE_CONFIG } from '@/config/defaults'
-import { deepMerge, footerSegments, tabLabels } from '@/config/site'
+import { deepMerge, footerSegments, footerTexts, tabLabels } from '@/config/site'
 
 /**
  * 站点配置合并语义的单测 —— 这套语义是从旧前端搬过来的，
@@ -57,82 +57,72 @@ describe('deepMerge：三级配置合并的语义', () => {
   })
 })
 
-describe('footerSegments：页脚状态行（硬要求 3）', () => {
+describe('footerTexts：页脚那一行小字（硬要求 3）', () => {
   /** 造一份页脚配置（只覆盖关心的那几个字段） */
   const withFooter = (patch: Partial<typeof DEFAULT_SITE_CONFIG.footer>) => ({
     ...DEFAULT_SITE_CONFIG,
     footer: { ...DEFAULT_SITE_CONFIG.footer, ...patch },
   })
 
-  it('默认配置下给出 版权 / 口号 两段，顺序固定', () => {
-    const segments = footerSegments(DEFAULT_SITE_CONFIG)
-    expect(segments.map((segment) => segment.kind)).toEqual(['copyright', 'slogan'])
-    expect(segments[0]?.text).toBe('© 2026 SynthSpark')
-  })
-
-  it('备案号为空时整段省略，不留下多余的段落', () => {
-    const segments = footerSegments(withFooter({ icp: '' }))
-    expect(segments.some((segment) => segment.kind === 'icp')).toBe(false)
-    expect(segments).toHaveLength(2)
-  })
-
-  it('备案号取 footer.icp（用户裁决 2026-10-08），排在版权与口号之后', () => {
-    const segments = footerSegments(withFooter({ icp: '京ICP备00000000号' }))
-    expect(segments.map((segment) => segment.kind)).toEqual(['copyright', 'slogan', 'icp'])
-    expect(segments[segments.length - 1]?.text).toBe('京ICP备00000000号')
-  })
-
-  it('footer.icp 为空时回退到旧字段 site.icp（老部署的备案号不会当场消失）', () => {
-    const segments = footerSegments({
-      ...DEFAULT_SITE_CONFIG,
-      site: { ...DEFAULT_SITE_CONFIG.site, icp: '旧字段里的备案号' },
-    })
-    expect(segments.map((segment) => segment.kind)).toEqual(['copyright', 'slogan', 'icp'])
-    expect(segments[2]?.text).toBe('旧字段里的备案号')
-  })
-
-  it('两个字段都有时以 footer.icp 为准（清空页脚那个才算真清空）', () => {
-    const segments = footerSegments({
-      ...withFooter({ icp: '新的备案号' }),
-      site: { ...DEFAULT_SITE_CONFIG.site, icp: '旧字段里的备案号' },
-    })
-    expect(segments[2]?.text).toBe('新的备案号')
-
-    const cleared = footerSegments({
-      ...withFooter({ icp: '' }),
-      site: { ...DEFAULT_SITE_CONFIG.site, icp: '' },
-    })
-    expect(cleared.some((segment) => segment.kind === 'icp')).toBe(false)
-  })
-
-  it('自定义小字按配置顺序接在最后，空的那条跳过', () => {
-    const segments = footerSegments(
-      withFooter({ icp: '京ICP备1号', items: [{ text: '第一句' }, { text: '' }, { text: '第二句' }] }),
-    )
-    expect(segments.map((segment) => segment.kind)).toEqual([
-      'copyright',
-      'slogan',
-      'icp',
-      'item',
-      'item',
+  it('默认配置给出预设的两条（第三条是空备案号 → 不出现）', () => {
+    expect(footerTexts(DEFAULT_SITE_CONFIG)).toEqual([
+      '© 2026 SynthSpark',
+      '多智能体博客系统 · Agent 独立创作',
     ])
-    expect(segments.slice(3).map((segment) => segment.text)).toEqual(['第一句', '第二句'])
-    // id 必须各不相同：渲染时当 key，撞了会串行
-    expect(new Set(segments.map((segment) => segment.id)).size).toBe(segments.length)
   })
 
-  it('items 不是数组（手改坏）时当作没有，其余小字照常渲染', () => {
-    const broken = withFooter({ items: 'not-an-array' as unknown as { text: string }[] })
-    expect(footerSegments(broken).map((segment) => segment.kind)).toEqual(['copyright', 'slogan'])
-  })
-
-  it('全空时返回空数组（状态行不会输出一个孤零零的 ·）', () => {
-    const segments = footerSegments({
-      ...DEFAULT_SITE_CONFIG,
-      site: { ...DEFAULT_SITE_CONFIG.site, icp: '' },
-      footer: { ...DEFAULT_SITE_CONFIG.footer, copyright: '', slogan: '', icp: '', items: [] },
+  it('条目按顺序逐字渲染，空的那条与坏形状都跳过', () => {
+    const config = withFooter({
+      items: [{ text: '第一句' }, { text: '   ' }, { text: '第二句' }, {} as { text: string }],
     })
-    expect(segments).toEqual([])
+    expect(footerTexts(config)).toEqual(['第一句', '第二句'])
+  })
+
+  it('条目被删空 → 回落到旧字段（老配置 / 还没人在编辑器里动过）', () => {
+    const config = {
+      ...withFooter({ items: [] }),
+      site: { ...DEFAULT_SITE_CONFIG.site, icp: '旧字段里的备案号' },
+    }
+    expect(footerTexts(config)).toEqual([
+      '© 2026 SynthSpark',
+      '多智能体博客系统 · Agent 独立创作',
+      '旧字段里的备案号',
+    ])
+  })
+
+  it('旧字段里 footer.icp 优先于 site.icp（口径与上一版一致）', () => {
+    const config = {
+      ...withFooter({ items: [], copyright: '', slogan: '', icp: '页脚旧字段' }),
+      site: { ...DEFAULT_SITE_CONFIG.site, icp: '站点旧字段' },
+    }
+    expect(footerTexts(config)).toEqual(['页脚旧字段'])
+  })
+
+  it('一条都没有时返回空数组（不输出孤零零的 ·）', () => {
+    const config = {
+      ...withFooter({ items: [], copyright: '', slogan: '', icp: '' }),
+      site: { ...DEFAULT_SITE_CONFIG.site, icp: '' },
+    }
+    expect(footerTexts(config)).toEqual([])
+    expect(footerSegments(config)).toEqual([])
+  })
+
+  it('items 被手改坏（不是数组）时按旧字段兜底，不崩', () => {
+    const config = withFooter({
+      items: 'oops' as unknown as { text: string }[],
+      copyright: 'X',
+      slogan: '',
+      icp: '',
+    })
+    expect(footerTexts(config)).toEqual(['© X'])
+  })
+
+  it('footerSegments 的 id 互不相同（渲染时当 key）', () => {
+    const segments = footerSegments(
+      withFooter({ items: [{ text: 'A' }, { text: 'B' }, { text: 'C' }] }),
+    )
+    expect(segments.map((segment) => segment.text)).toEqual(['A', 'B', 'C'])
+    expect(new Set(segments.map((segment) => segment.id)).size).toBe(3)
   })
 })
 

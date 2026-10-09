@@ -22,6 +22,18 @@ export type PadAction =
   | 'down'
   | 'left'
   | 'right'
+  /**
+   * `Shift + 方向键`：**在输入框里**做焦点切换（用户裁决 2026-10-09）。
+   *
+   * 为什么要另开四个动作、而不是借用 `left` / `right`：输入框里 `Shift + 方向键` 本来是**选字**，
+   * 而 `left` / `right` 在别的页面（列表、写作页）也被用着 —— 借用就等于把选字一并抢走
+   * （写作页那条「选中一段再点插入」当场挂掉）。单开一组：**只有真要用它做焦点切换的页面
+   * 才消费**，没人消费就还给浏览器选字，和其它组合键同一条纪律。
+   */
+  | 'focusUp'
+  | 'focusDown'
+  | 'focusLeft'
+  | 'focusRight'
   | 'confirm'
   | 'cancel'
   | 'start'
@@ -190,6 +202,18 @@ const KEYMAP: Record<string, PadAction> = {
   n: 'panelDocs',
   m: 'panelMeta',
   v: 'panelPreview',
+}
+
+/** 方向键 → 「输入框里的焦点切换」动作（只有 `Shift + 方向键` 这条路走它） */
+const FOCUS_ACTION_BY_ARROW: Record<string, PadAction> = {
+  ArrowUp: 'focusUp',
+  ArrowDown: 'focusDown',
+  ArrowLeft: 'focusLeft',
+  ArrowRight: 'focusRight',
+}
+
+export function focusActionForArrow(key: string): PadAction | null {
+  return FOCUS_ACTION_BY_ARROW[key] ?? null
 }
 
 /** 事件目标是不是「正在输入的表单域」——输入框里不劫持按键 */

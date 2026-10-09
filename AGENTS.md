@@ -68,7 +68,8 @@ Python 依赖用 **uv 管理**（`backend/pyproject.toml`），增删依赖改 p
 - **优先级**：后台配置 > `frontend/public/site.config.json` > 内置默认 `frontend/src/config/copywriting.json`；数组整体替换，未配置字段自动回退默认，修改后刷新页面生效。
 - **接口**：`GET /api/site-config`（公开）、`GET|PUT /api/admin/site-config`（业务库超管，同外链接口鉴权）、`GET /api/admin/site-config/audit-logs`（超管查审计，返回 `{ logs, total }`，`total` 是**总条数**：另走一次 `COUNT(*)`，不是本页 `logs` 的长度）。
 - **存储与审计**：后台配置存**配置库 `config.db`** 的 `system_configs`（key=`site_config`）；每次保存记入配置库 `site_config_audit_logs`。
-- **配置段**：`site`（name/title/description/icp/defaultTheme/logo）、`navbar`（logo/navItems）、`footer`（copyright/slogan/**icp**/**items**）、`home`、`about`；模板见 `frontend/public/site.config.example.json`，`npm run config:init` 可生成文件配置。**新前端（icespark）的口径**：备案号读 `footer.icp`（为空回退旧字段 `site.icp`），自定义小字读 `footer.items`；旧前端的 `footer.links` 已废弃，icespark 读回时丢弃、保存即从后台配置里清掉（架构 §68.3）。
+- **配置段**：`site`（name/title/description/defaultTheme/logo）、`navbar`（logo/navItems）、`footer`（**items**：一份小字条目列表，逐字渲染）、`home`、`about`；模板见 `frontend/public/site.config.example.json`，`npm run config:init` 可生成文件配置。
+- **新前端（icespark）的页脚口径（2026-10-09 定稿，架构 §68.2）**：页脚那一行小字**只**来自 `footer.items`（`{ text }` 数组，可增删挪，版权/口号/备案号就是内置默认给的三条预设条目）。旧字段 `footer.copyright` / `slogan` / `icp` 与 `site.icp`、旧前端的 `footer.links` 都已废弃：前四者只在 `items` 一条有内容的都没有时兜底渲染，编辑器里动一下就会迁进 `items` 并把它们从 JSON 里删掉；`links` 读回时直接丢弃（§68.3）。
 - **管理入口**：Profile 设置页「站点设置」tab。
 
 ## 5. 开发约定

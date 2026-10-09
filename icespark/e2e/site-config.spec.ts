@@ -185,7 +185,7 @@ test('关于页：要点块与正文都等于最高优先级覆盖层给的内�
  *   · 给空串 → 那一段**不该出现**（`deepMerge` 里基本类型直接覆盖，空串不会退回默认值）；
  *   · 这一层压根没给这个字段 → 生效的是内层 / 内置默认，不归这道门管，跳过。
  */
-test('页脚小字：版权 / 口号 / 备案 / 自定义小字都等于最高优先级覆盖层给的字（空值则那段消失）', async ({ page }) => {
+test('页脚小字：逐条等于最高优先级覆盖层给的字（条目为空则回落到旧字段）', async ({ page }) => {
   await page.goto('/')
   await booted(page)
 
@@ -195,45 +195,39 @@ test('页脚小字：版权 / 口号 / 备案 / 自定义小字都等于最高�
     return
   }
 
-  const cases = [
-    { path: 'footer.copyright', selector: '.deck-footer .is-copyright', prefix: '© ' },
-    { path: 'footer.slogan', selector: '.deck-footer .is-slogan', prefix: '' },
-    { path: 'footer.icp', selector: '.deck-footer .is-icp', prefix: '' },
-  ] as const
+  /**
+   * 生效的小字条目 —— 与 `src/config/site.ts` 的 `footerTexts` 同一条规则：
+   * `footer.items` 里逐字取（空文本跳过）；一条都没有时回落到旧字段
+   * （`copyright` / `slogan` / `icp`，备案号兼容 `site.icp`）。规则本身由单测钉住，这里只照抄。
+   */
+  const textsOf = (value: unknown): string[] =>
+    Array.isArray(value)
+      ? value
+          .map((row) =>
+            row && typeof row === 'object' ? (row as { text?: unknown }).text : undefined,
+          )
+          .filter((text): text is string => typeof text === 'string' && text.trim() !== '')
+          .map((text) => text.trim())
+      : []
 
-  let checked = 0
-  for (const item of cases) {
-    let value = pick(layer.data, item.path)
-    // 备案号：`footer.icp` 是正式字段，为空时渲染会回退到旧字段 `site.icp`
-    // （口径写在 config/site.ts 的 effectiveIcp，由单测钉住）；这道门按同一条规则核对。
-    if (item.path === 'footer.icp' && (value === undefined || value === '')) {
-      value = pick(layer.data, 'site.icp')
-    }
-    if (value === undefined) continue // 这一层没给 → 不归这道门管
-    checked += 1
-    const segment = page.locator(item.selector)
-    if (typeof value === 'string' && value !== '') {
-      await expect(segment).toHaveText(`${item.prefix}${value}`)
-    } else {
-      await expect(segment, `${item.path} 是空值，那一段就不该出现`).toHaveCount(0)
-    }
+  let expected = textsOf(pick(layer.data, 'footer.items'))
+  if (expected.length === 0) {
+    const legacy: string[] = []
+    const copyright = pick(layer.data, 'footer.copyright')
+    const slogan = pick(layer.data, 'footer.slogan')
+    const icp = pick(layer.data, 'footer.icp') ?? pick(layer.data, 'site.icp')
+    if (typeof copyright === 'string' && copyright.trim() !== '') legacy.push(`© ${copyright.trim()}`)
+    if (typeof slogan === 'string' && slogan.trim() !== '') legacy.push(slogan.trim())
+    if (typeof icp === 'string' && icp.trim() !== '') legacy.push(icp.trim())
+    expected = legacy
   }
 
-  // 自定义小字（`footer.items`）：按配置顺序接在备案号后面，空的那条不出现
-  const items = pick(layer.data, 'footer.items')
-  if (Array.isArray(items)) {
-    checked += 1
-    const expected = items
-      .map((row) => (row && typeof row === 'object' ? (row as { text?: unknown }).text : undefined))
-      .filter((text): text is string => typeof text === 'string' && text.trim() !== '')
-      .map((text) => text.trim())
-    await expect(page.locator('.deck-footer .is-item')).toHaveText(expected)
-  }
-
-  if (checked === 0) {
-    test.skip(true, '本机的覆盖层一个页脚字段都没给（生效的是内置默认，由单测守）')
+  if (expected.length === 0) {
+    test.skip(true, '本机的覆盖层没给任何页脚小字（生效的是内置默认，由单测守）')
     return
   }
+
+  await expect(page.locator('.deck-footer .deck-seg')).toHaveText(expected)
 
   // 段间分隔符只在「真的有两段以上」时出现：不留下孤零零的 ` · `
   const dots = await page.locator('.deck-footer .deck-dot').count()

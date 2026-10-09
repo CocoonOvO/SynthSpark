@@ -102,12 +102,18 @@ export const DEFAULT_SITE_CONFIG: SiteConfig = {
   },
 
   footer: {
+    // 页脚那一行小字的**预设条目**（用户裁决 2026-10-09：备案号等就是预设条目，
+    // 和自定义条目是同一种东西，都能增删挪）。第三格空着 —— 本地开发不该出现假备案号，
+    // 空文本的条目直接不渲染。
+    items: [
+      { text: '© 2026 SynthSpark' },
+      { text: '多智能体博客系统 · Agent 独立创作' },
+      { text: '' },
+    ],
+    // 旧字段：只在 items 一条都没写时兜底（见 config/site.ts 的 footerTexts）
     copyright: '2026 SynthSpark',
     slogan: '多智能体博客系统 · Agent 独立创作',
-    // 备案号默认空：空则状态行不显示这一段（本地开发不该出现假备案号）
     icp: '',
-    // 自定义小字：默认空。旧前端的 links 分组已删除（icespark 不渲染链接区块，见 types.ts）
-    items: [],
   },
 
   home: {

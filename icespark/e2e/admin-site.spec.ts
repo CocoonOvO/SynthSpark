@@ -773,7 +773,9 @@ test('Tab 在「配置段」与「配置正文」之间来回走（段列表是�
   ).toHaveAttribute('data-segment', 'home')
 })
 
-test('左右键（ad）在「配置段」与「配置正文」之间来回切，上下键在正文里走', async ({ page }) => {
+test('左右键（ad）在「配置段」与「配置正文」之间来回切，输入框里用 Shift+方向键换焦点', async ({
+  page,
+}) => {
   await loggedIn(page, true)
   await stubAdminSite(page, { get: { status: 200, body: fixture() } })
 
@@ -786,39 +788,41 @@ test('左右键（ad）在「配置段」与「配置正文」之间来回切，
     'site',
   )
 
-  // d / → 进右列：焦点先落在**区域本身**（不是输入框 —— 输入框里 a/d 是打字，
-  // 焦点一进去就再也按不出「回左列」）
+  // d / → 进右列：焦点**直接落在第一个控件**上，不给整块区域加选中样式
   await page.keyboard.press('d')
-  await expect(panel).toBeFocused()
-  await expect(panel).toHaveClass(/is-focused/)
-
-  // ↓ 落进右列第一个控件，再 ↑ 退回左列（顶到边就换列）
-  await page.keyboard.press('ArrowDown')
   await expect(page.locator('[data-testid="admin-site-restore"]')).toBeFocused()
-  await page.keyboard.press('ArrowUp')
-  await expect(page.locator('[data-testid="admin-site-segment"][data-segment="site"]')).toBeFocused()
+  await expect(panel).not.toHaveClass(/is-focused/)
 
-  // a / ← 从右列回左列；落点是**当前这一段**那颗按钮
-  await page.keyboard.press('ArrowRight')
-  await expect(panel).toBeFocused()
-  await page.keyboard.press('a')
+  // 再往下走就是这一段的第一个字段
+  await page.keyboard.press('ArrowDown')
+  await expect(page.locator('[data-field="site.name"] input')).toBeFocused()
+
+  // 输入框里 a/d 是**打字**（全站约定：可编辑目标让开）
+  await page.keyboard.type('ad')
+  await expect(page.locator('[data-field="site.name"] input')).toHaveValue(/ad$/)
+
+  // 但 Shift + ← 是"回左列"（内核把 Shift+方向键借给外壳）：落点是**当前这一段**那颗按钮
+  await page.keyboard.press('Shift+ArrowLeft')
   await expect(page.locator('[data-testid="admin-site-segment"][data-segment="site"]')).toBeFocused()
   await expect(page.locator('[data-testid="admin-site-segment"].is-focused')).toHaveAttribute(
     'data-segment',
     'site',
   )
 
-  // 进右列后按 Tab 落进输入框：这时 a/d 就是**打字**，不是换列（全站约定：可编辑目标让开）
-  await page.keyboard.press('d')
-  await page.keyboard.press('Tab') // 还原这一段
-  await page.keyboard.press('Tab') // 该段第一个字段
+  // 另一条路：ESC 失焦之后，裸 ← / a 也能回左列
+  await page.keyboard.press('ArrowRight')
+  await expect(page.locator('[data-testid="admin-site-restore"]')).toBeFocused()
+  await page.keyboard.press('ArrowDown')
   await expect(page.locator('[data-field="site.name"] input')).toBeFocused()
-  await page.keyboard.type('ad')
-  await expect(page.locator('[data-field="site.name"] input')).toHaveValue(/ad$/)
+  await page.keyboard.press('Escape')
+  await page.keyboard.press('a')
+  await expect(page.locator('[data-testid="admin-site-segment"][data-segment="site"]')).toBeFocused()
 })
 
-test('页脚段：备案号与自定义小字可增删，旧前端的 links 被丢掉', async ({ page }) => {
-  const config = fixture() // 夹具里带着 `footer.links`，正好用来验"读回来就丢掉"
+test('页脚段：一份条目列表（旧字段拼出来、写一次就迁进 items），旧前端的 links 被丢掉', async ({
+  page,
+}) => {
+  const config = fixture() // 夹具的 footer 是旧形状（copyright / slogan / links），正好验迁移
   await loggedIn(page, true)
   const stub = await stubAdminSite(page, { get: { status: 200, body: config } })
 
@@ -826,66 +830,52 @@ test('页脚段：备案号与自定义小字可增删，旧前端的 links 被�
   await booted(page)
   await page.click('[data-testid="admin-site-segment"][data-segment="footer"]')
 
-  // 结构化编辑器在，三个单行字段就是这一段 JSON 的视图
+  // 旧字段拼出预设三条（版权 / 口号 / 空备案号），且提示了"来自旧字段"
   await expect(page.locator('[data-testid="footer-editor"]')).toBeVisible()
-  await expect(page.locator('[data-testid="footer-copyright"]')).toHaveValue('2026 E2E')
-  await expect(page.locator('[data-testid="footer-slogan"]')).toHaveValue('E2E 口号')
+  await expect(page.locator('[data-testid="footer-item"]')).toHaveCount(3)
+  await expect(page.locator('[data-testid="footer-item-text"]').nth(0)).toHaveValue('© 2026 E2E')
+  await expect(page.locator('[data-testid="footer-item-text"]').nth(1)).toHaveValue('E2E 口号')
+  await expect(page.locator('[data-testid="footer-item-text"]').nth(2)).toHaveValue('')
+  await expect(page.locator('[data-testid="footer-legacy-note"]')).toBeVisible()
 
-  // 固定三段走的是**与自定义小字同一套行**（用户裁决 2026-10-09：
-  // 「把备案号等设置做成预设字段，而不是这种离谱的混搭」）：
-  // 同一副边框出行，只是名字是固定的、行尾没有 ▴▾✕
-  await expect(page.locator('[data-testid="footer-preset"]')).toHaveCount(3)
-  await expect(page.locator('[data-testid="footer-preset"]').first()).toHaveClass(
-    /about-row is-preset/,
-  )
-  await expect(
-    page.locator('[data-testid="footer-preset"] [data-testid="footer-item-del"]'),
-  ).toHaveCount(0)
+  // `links` 已经在读回来时被丢掉
+  await expect(page.locator('[data-testid="admin-site-json"]')).not.toHaveValue(/links/)
 
-  // 旧字段 site.icp 还在生效时要说清（夹具里是空串，所以这里不该出现提示）
-  await expect(page.locator('[data-testid="footer-icp-legacy"]')).toHaveCount(0)
-
-  // `links` 已经在读回来时被丢掉：JSON 里不该再有它，items 也还没有（于是给一句"点加一条"）
+  // 改动一次：旧字段当场从这一段 JSON 里消失，只剩条目列表
+  await page.locator('[data-testid="footer-item-text"]').nth(2).fill('京ICP备00000000号')
   const json = page.locator('[data-testid="admin-site-json"]')
-  await expect(json).not.toHaveValue(/links/)
-  await expect(page.locator('[data-testid="footer-items-missing"]')).toBeVisible()
+  await expect(json).toHaveValue(/"items"/)
+  await expect(json).not.toHaveValue(/copyright/)
+  await expect(json).not.toHaveValue(/slogan/)
 
-  // 自定义那一行与固定三段是同一套行，但它带 ▴▾✕（加一条看长相，再删掉还回原样）
+  // 加一条 + 上移：顺序真的变了
   await page.click('[data-testid="footer-item-add"]')
-  await expect(page.locator('[data-testid="footer-item"]').first()).toHaveClass(/about-row/)
-  await expect(page.locator('[data-testid="footer-item"]').first()).not.toHaveClass(/is-preset/)
-  await expect(
-    page.locator('[data-testid="footer-item"] [data-testid="footer-item-del"]'),
-  ).toHaveCount(1)
-  await page.locator('[data-testid="footer-item-del"]').first().click()
-
-  // 填备案号 + 加两条小字 + 把第二条上移
-  await page.fill('[data-testid="footer-icp"]', '京ICP备00000000号')
-  await page.click('[data-testid="footer-item-add"]')
-  await page.click('[data-testid="footer-item-add"]')
-  await expect(page.locator('[data-testid="footer-item"]')).toHaveCount(2)
-  await page.locator('[data-testid="footer-item-text"]').nth(0).fill('第一句')
-  await page.locator('[data-testid="footer-item-text"]').nth(1).fill('第二句')
-  await page.locator('[data-testid="footer-item-up"]').nth(1).click()
-  await expect(page.locator('[data-testid="footer-item-text"]').nth(0)).toHaveValue('第二句')
+  await expect(page.locator('[data-testid="footer-item"]')).toHaveCount(4)
+  await page.locator('[data-testid="footer-item-text"]').nth(3).fill('自定义一句')
+  await page.locator('[data-testid="footer-item-up"]').nth(3).click()
+  await expect(page.locator('[data-testid="footer-item-text"]').nth(2)).toHaveValue('自定义一句')
 
   await page.click('[data-testid="admin-site-save"]')
   await expect.poll(() => stub.puts.length).toBe(1)
-  expect(pick(stub.puts[0], 'footer.icp')).toBe('京ICP备00000000号')
-  expect(pick(stub.puts[0], 'footer.items')).toEqual([{ text: '第二句' }, { text: '第一句' }])
-  const footer = pick(stub.puts[0], 'footer')
-  expect(
-    typeof footer === 'object' && footer !== null && 'links' in footer,
-    '旧前端的 links 不该再被写回去',
-  ).toBe(false)
+  const footer = pick(stub.puts[0], 'footer') as Record<string, unknown>
+  expect(Array.isArray(footer.items)).toBe(true)
+  expect((footer.items as { text: string }[]).map((row) => row.text)).toEqual([
+    '© 2026 E2E', // 旧字段里的版权不带 ©，迁移时补上 —— 页脚上那行字不能变样
+    'E2E 口号',
+    '自定义一句',
+    '京ICP备00000000号',
+  ])
+  expect('links' in footer, '旧前端的 links 不该再被写回去').toBe(false)
+  expect('copyright' in footer, '旧字段迁走后就该消失').toBe(false)
   // 整份 PUT：没动过的段原样还在
-  expect(stub.puts[0]?.custom).toEqual(config.custom)
+  expect(pick(stub.puts[0], 'custom')).toEqual(config.custom)
 
-  // 删掉一条也要写回 JSON
+  // 删掉一条也写回 JSON
   await page.locator('[data-testid="footer-item-del"]').nth(0).click()
   await page.click('[data-testid="admin-site-save"]')
   await expect.poll(() => stub.puts.length).toBe(2)
-  expect(pick(stub.puts[1], 'footer.items')).toEqual([{ text: '第一句' }])
+  const second = pick(stub.puts[1], 'footer.items') as { text: string }[]
+  expect(second.map((row) => row.text)).toEqual(['E2E 口号', '自定义一句', '京ICP备00000000号'])
 })
 
 test('关于页：条目与正文取的是这一段 JSON；缺 facts / body 时说清而不是空着', async ({ page }) => {
