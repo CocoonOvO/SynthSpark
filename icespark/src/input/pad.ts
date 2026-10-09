@@ -204,16 +204,21 @@ const KEYMAP: Record<string, PadAction> = {
   v: 'panelPreview',
 }
 
-/** 方向键 → 「输入框里的焦点切换」动作（只有 `Shift + 方向键` 这条路走它） */
-const FOCUS_ACTION_BY_ARROW: Record<string, PadAction> = {
-  ArrowUp: 'focusUp',
-  ArrowDown: 'focusDown',
-  ArrowLeft: 'focusLeft',
-  ArrowRight: 'focusRight',
+/**
+ * 基础方向动作 → 「输入框里的焦点切换」动作。
+ *
+ * 按**基础动作**映射而不是按物理键：方向键与 `W/A/S/D` 在 `KEYMAP` 里本来就同义
+ * （`w`→`up`…），于是 `Shift + W/A/S/D` 与 `Shift + 方向键` 自动一致 —— 不用抄第二张表。
+ */
+const FOCUS_ACTION_BY_DIRECTION: Partial<Record<PadAction, PadAction>> = {
+  up: 'focusUp',
+  down: 'focusDown',
+  left: 'focusLeft',
+  right: 'focusRight',
 }
 
-export function focusActionForArrow(key: string): PadAction | null {
-  return FOCUS_ACTION_BY_ARROW[key] ?? null
+export function focusActionFor(direction: PadAction): PadAction | null {
+  return FOCUS_ACTION_BY_DIRECTION[direction] ?? null
 }
 
 /** 事件目标是不是「正在输入的表单域」——输入框里不劫持按键 */

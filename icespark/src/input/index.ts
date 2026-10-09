@@ -1,6 +1,6 @@
 import {
   dispatchPadAction,
-  focusActionForArrow,
+  focusActionFor,
   isEditableTarget,
   resolveComboAction,
   resolvePadAction,
@@ -75,7 +75,8 @@ export function mountInput(root: HTMLElement): () => void {
       //    后者在别的页面也被用着，借了就把输入框里的选字一起抢走（写作页那条用例当场挂过）。
       //    与下面那条组合键同一条纪律：**没人接就还给浏览器**，所以选字在没实现焦点切换的页面照旧。
       if (event.shiftKey) {
-        const focusAction = focusActionForArrow(event.key)
+        const direction = resolvePadAction(event)
+        const focusAction = direction ? focusActionFor(direction) : null
         if (focusAction && dispatchPadAction(focusAction)) {
           event.preventDefault()
           return

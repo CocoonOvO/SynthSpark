@@ -200,7 +200,11 @@ test('站点设置：超管深链接打开，接口给的配置真的上了屏�
     'data-segment',
     'home',
   )
-  // 光标移动**不**换段（和全站的芯片口径一致）：按 ENTER 才打开
+  // 上下移动**顺带就切段**（2026-10-09 起）：光标走到哪一段，右列就是哪一段
+  await expect(page.locator('[data-testid="admin-site-segment-panel"]')).toHaveAttribute(
+    'data-segment',
+    'home',
+  )
   await page.keyboard.press('Enter')
   await expect(page.locator('[data-testid="admin-site-segment"].is-active')).toHaveAttribute(
     'data-segment',
@@ -280,16 +284,22 @@ test('站点设置：改一处保存，请求体里没动过的段原样还在',
 
   // 改的那一处真的改了
   expect(pick(body, 'site.name')).toBe('E2E 改过的站点名')
-  // site 段只动了 name，同一个段里的其它键与后端多给的 defaultTheme 都还在
-  expect(pick(body, 'site')).toEqual({ ...config.site, name: 'E2E 改过的站点名' })
+  // site 段只动了 name，同一个段里的其它键与后端多给的 defaultTheme 都还在。
+  // 唯一少的是 `icp`：备案号已归页脚条目，这个键读回来时就被丢掉了（值迁进了 footer.items）
+  const siteExpected: Json = { ...config.site, name: 'E2E 改过的站点名' }
+  delete siteExpected.icp
+  expect(pick(body, 'site')).toEqual(siteExpected)
   // 没动过的段整份原样写回：丢了哪一段就是真丢了
   expect(pick(body, 'navbar')).toEqual(config.navbar)
-  // 例外只有 footer：旧前端的 `links` 在读回来时就被丢掉（用户裁决 2026-10-08 第 3 条
-  // 「为什么里面有个 links 项？还不在配置里？给我移除了」），所以写回去的那份没有它 ——
-  // 这不是丢数据，是那份数据 icespark 从来就不渲染。
-  const footerExpected: Json = { ...config.footer }
-  delete footerExpected.links
-  expect(pick(body, 'footer')).toEqual(footerExpected)
+  // 例外只有 footer：读回来时旧形状就被收拾掉了 —— `links` 丢弃（icespark 不渲染），
+  // 旧字段（copyright / slogan / icp）就地迁进条目列表。写回去的那份因此是**新形状**。
+  expect(pick(body, 'footer')).toEqual({
+    items: [
+      { text: '© 2026 E2E' },
+      { text: 'E2E 口号' },
+      { text: '' },
+    ],
+  })
   expect(pick(body, 'home')).toEqual(config.home)
   expect(pick(body, 'about')).toEqual(config.about)
   expect(pick(body, 'custom')).toEqual(config.custom)
@@ -788,18 +798,23 @@ test('左右键（ad）在「配置段」与「配置正文」之间来回切，
     'site',
   )
 
-  // d / → 进右列：焦点**直接落在第一个控件**上，不给整块区域加选中样式
+  // d / → 进右列：落在**第一站**（第一行条目的外层容器），不是输入框
   await page.keyboard.press('d')
-  await expect(page.locator('[data-testid="admin-site-restore"]')).toBeFocused()
+  await expect(page.locator('[data-field="site.name"]')).toBeFocused()
+  await expect(page.locator('[data-field="site.name"] input')).not.toBeFocused()
   await expect(panel).not.toHaveClass(/is-focused/)
 
-  // 再往下走就是这一段的第一个字段
+  // ↓ 在**站与站之间**走（整行），不会落进行里的第二个格子
   await page.keyboard.press('ArrowDown')
-  await expect(page.locator('[data-field="site.name"] input')).toBeFocused()
+  await expect(page.locator('[data-field="site.title"]')).toBeFocused()
+
+  // 回车才进这一行的输入框
+  await page.keyboard.press('Enter')
+  await expect(page.locator('[data-field="site.title"] input')).toBeFocused()
 
   // 输入框里 a/d 是**打字**（全站约定：可编辑目标让开）
   await page.keyboard.type('ad')
-  await expect(page.locator('[data-field="site.name"] input')).toHaveValue(/ad$/)
+  await expect(page.locator('[data-field="site.title"] input')).toHaveValue(/ad$/)
 
   // 但 Shift + ← 是"回左列"（内核把 Shift+方向键借给外壳）：落点是**当前这一段**那颗按钮
   await page.keyboard.press('Shift+ArrowLeft')
@@ -811,8 +826,8 @@ test('左右键（ad）在「配置段」与「配置正文」之间来回切，
 
   // 另一条路：ESC 失焦之后，裸 ← / a 也能回左列
   await page.keyboard.press('ArrowRight')
-  await expect(page.locator('[data-testid="admin-site-restore"]')).toBeFocused()
-  await page.keyboard.press('ArrowDown')
+  await expect(page.locator('[data-field="site.name"]')).toBeFocused()
+  await page.keyboard.press('Enter')
   await expect(page.locator('[data-field="site.name"] input')).toBeFocused()
   await page.keyboard.press('Escape')
   await page.keyboard.press('a')
@@ -836,17 +851,15 @@ test('页脚段：一份条目列表（旧字段拼出来、写一次就迁进 i
   await expect(page.locator('[data-testid="footer-item-text"]').nth(0)).toHaveValue('© 2026 E2E')
   await expect(page.locator('[data-testid="footer-item-text"]').nth(1)).toHaveValue('E2E 口号')
   await expect(page.locator('[data-testid="footer-item-text"]').nth(2)).toHaveValue('')
-  await expect(page.locator('[data-testid="footer-legacy-note"]')).toBeVisible()
 
-  // `links` 已经在读回来时被丢掉
-  await expect(page.locator('[data-testid="admin-site-json"]')).not.toHaveValue(/links/)
-
-  // 改动一次：旧字段当场从这一段 JSON 里消失，只剩条目列表
-  await page.locator('[data-testid="footer-item-text"]').nth(2).fill('京ICP备00000000号')
+  // 读回来就收拾干净：`links` 丢掉、旧字段迁进 items —— 行与 JSON 是同一份数据
   const json = page.locator('[data-testid="admin-site-json"]')
+  await expect(json).not.toHaveValue(/links/)
   await expect(json).toHaveValue(/"items"/)
   await expect(json).not.toHaveValue(/copyright/)
   await expect(json).not.toHaveValue(/slogan/)
+
+  await page.locator('[data-testid="footer-item-text"]').nth(2).fill('京ICP备00000000号')
 
   // 加一条 + 上移：顺序真的变了
   await page.click('[data-testid="footer-item-add"]')
@@ -878,7 +891,7 @@ test('页脚段：一份条目列表（旧字段拼出来、写一次就迁进 i
   expect(second.map((row) => row.text)).toEqual(['E2E 口号', '自定义一句', '京ICP备00000000号'])
 })
 
-test('关于页：条目与正文取的是这一段 JSON；缺 facts / body 时说清而不是空着', async ({ page }) => {
+test('关于页：条目与正文取的是这一段 JSON（不是空着一片）', async ({ page }) => {
   await loggedIn(page, true)
   await stubAdminSite(page, { get: { status: 200, body: fixture() } })
 
@@ -890,11 +903,9 @@ test('关于页：条目与正文取的是这一段 JSON；缺 facts / body 时�
   await expect(page.locator('[data-testid="about-row"]')).toHaveCount(1)
   await expect(page.locator('[data-testid="about-key"]').first()).toHaveValue('站点')
   await expect(page.locator('[data-testid="about-body"]')).toHaveValue(/E2E 正文/)
-  await expect(page.locator('[data-testid="about-facts-missing"]')).toHaveCount(0)
-  await expect(page.locator('[data-testid="about-body-missing"]')).toHaveCount(0)
 })
 
-test('关于页：这一段里没有 facts / body 时给出"点一下就建起来"的提示', async ({ page }) => {
+test('关于页：这一段里没有 facts / body 时，编辑器照样能建起来', async ({ page }) => {
   const config = fixture()
   // 旧配置的形状：只有 badge / title / desc / techStack
   const about = config.about as Record<string, unknown>
@@ -910,17 +921,14 @@ test('关于页：这一段里没有 facts / body 时给出"点一下就建起�
 
   await expect(page.locator('[data-testid="about-editor"]')).toBeVisible()
   await expect(page.locator('[data-testid="about-row"]')).toHaveCount(0)
-  await expect(page.locator('[data-testid="about-facts-missing"]')).toBeVisible()
-  await expect(page.locator('[data-testid="about-body-missing"]')).toBeVisible()
 
   // 点「加一条」就把 facts 数组建起来（不用去 JSON 里手写）
   await page.click('[data-testid="about-add"]')
   await expect(page.locator('[data-testid="about-row"]')).toHaveCount(1)
-  await expect(page.locator('[data-testid="about-facts-missing"]')).toHaveCount(0)
   await expect(page.locator('[data-testid="admin-site-json"]')).toHaveValue(/"facts"/)
 })
 
-test('关于页：这一段 JSON 不合法时，说清编辑器为什么收起', async ({ page }) => {
+test('关于页：这一段 JSON 不合法时，编辑器收起并留一句说明', async ({ page }) => {
   await loggedIn(page, true)
   await stubAdminSite(page, { get: { status: 200, body: fixture() } })
 

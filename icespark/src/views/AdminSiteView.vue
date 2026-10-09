@@ -100,7 +100,6 @@ const FIELD_LABELS: Record<string, string> = {
   'site.name': '站点名称',
   'site.title': '浏览器标题',
   'site.description': '站点描述',
-  'site.icp': '备案号',
   'site.defaultTheme': '默认主题',
   'site.logo': '站点 Logo',
   'navbar.logo': 'Logo 文字',
@@ -312,12 +311,62 @@ function hydrate(raw: Record<string, unknown>, keepActive = false): void {
   segFocus.set(Math.max(0, segments.value.indexOf(activeKey.value)), true)
 }
 
-/** 丢掉已经废弃的键（目前只有 footer.links，见 `hydrate`） */
+/**
+ * 旧形状收拾干净（读回来就做，见 `hydrate`）：
+ *
+ * 1. `footer.links`（旧前端的页脚链接分组，icespark 从来不渲染）直接丢掉；
+ * 2. 页脚换成**条目列表**（2026-10-09）：`items` 里一条有内容的都没有、而旧字段还有值时，
+ *    就地按渲染侧同一条判据（`config/site.ts` 的 `footerTexts`）拼出条目并删掉旧字段 ——
+ *    这样"上面每一行"与"下面那段 JSON"从打开这一页起就是同一份数据，不会出现
+ *    "行里有三条、JSON 里一条都没有"。改不改由人决定（不保存就不写回，`还原这一段` 能退回去）。
+ * 3. `site.icp`：备案号已归页脚条目，这个键在 icespark 里没人渲染（值已迁进页脚），丢掉。
+ */
 function dropLegacyKeys(raw: Record<string, unknown>): void {
   const footer = raw.footer
   if (footer && typeof footer === 'object' && !Array.isArray(footer)) {
-    delete (footer as Record<string, unknown>).links
+    const box = footer as Record<string, unknown>
+    delete box.links
+    migrateFooterItems(box, raw)
   }
+  const site = raw.site
+  if (site && typeof site === 'object' && !Array.isArray(site)) {
+    delete (site as Record<string, unknown>).icp
+  }
+}
+
+/** 页脚旧字段 → 条目列表（判据与 `footerTexts` 逐字一致；没有可迁的就什么都不动） */
+function migrateFooterItems(footer: Record<string, unknown>, raw: Record<string, unknown>): void {
+  const text = (key: string): string => (typeof footer[key] === 'string' ? (footer[key] as string) : '')
+  const list = Array.isArray(footer.items) ? footer.items : []
+  const filled = list.some(
+    (item) =>
+      item &&
+      typeof item === 'object' &&
+      typeof (item as { text?: unknown }).text === 'string' &&
+      ((item as { text: string }).text ?? '').trim() !== '',
+  )
+  if (filled) return
+
+  const site = raw.site
+  const siteIcp =
+    site && typeof site === 'object' && !Array.isArray(site)
+      ? (site as Record<string, unknown>).icp
+      : undefined
+  const icp = [text('icp'), typeof siteIcp === 'string' ? siteIcp : ''].find(
+    (value) => value !== '',
+  )
+  const copyright = text('copyright')
+  const rows = [
+    { text: copyright === '' || copyright.startsWith('©') ? copyright : `© ${copyright}` },
+    { text: text('slogan') },
+    { text: icp ?? '' },
+  ]
+  if (rows.every((row) => row.text.trim() === '')) return
+
+  footer.items = rows
+  delete footer.copyright
+  delete footer.slogan
+  delete footer.icp
 }
 
 /**
@@ -354,15 +403,6 @@ const aboutBody = computed<string>(() =>
   typeof aboutObj.value?.body === 'string' ? (aboutObj.value.body as string) : '',
 )
 
-/**
- * 这一段里到底有没有 `facts` / `body`（用户反馈第 4 条的防呆）。
- *
- * 旧配置（或旧前端保存回来的那份）只有 badge / title / desc / techStack —— 那时候
- * 条目与正文编辑器会是**空的**，而且看不出为什么。现在没有键就明说"没有这个字段、
- * 点一下就建起来"，而不是让编辑者对着空列表怀疑"设置页是不是根本没连上配置"。
- */
-const aboutHasFacts = computed(() => Array.isArray(aboutObj.value?.facts))
-const aboutHasBody = computed(() => typeof aboutObj.value?.body === 'string')
 
 /** 把这一段的 JSON 重写回去（只动 facts / body，其余键原样） */
 function writeAbout(patch: { facts?: AboutRow[]; body?: string }): void {
@@ -475,13 +515,6 @@ const footerItems = computed<FooterRow[]>(() => {
     { text: text('slogan') },
     { text: icp },
   ]
-})
-
-/** 旧字段还躺在这一段 JSON 里吗（改动一次就会被清掉） */
-const footerHasLegacyFields = computed(() => {
-  const obj = footerObj.value
-  if (!obj) return false
-  return ['copyright', 'slogan', 'icp'].some((key) => key in obj)
 })
 
 /** 写回这一段的条目列表，并清掉已经被迁走的旧字段（否则会出现两份真相） */
@@ -883,12 +916,15 @@ const zone = ref<Zone>('list')
 const segFocus = useFocusGroup({ initial: 0 })
 
 /**
- * 右列（配置正文）那一块 —— 只当容器用：找它里面的控件、判断焦点在不在右列。
+ * 右列（配置正文）那一块 —— 只当容器用：找它里面的**一站一站**、判断焦点在不在右列。
  *
- * 焦点落在哪儿：`→` / `d` 直接把焦点放进右列的**第一个控件**（第一个输入框）。
- * 从输入框里回左列有两条路，都不需要"先聚焦一块区域"这种中间态：
+ * 一「站」= 一个 `[data-stop]`：整行条目（外层容器）或一个独立控件（加一条 / JSON 框 / 展开）。
+ * 行**里面的**输入框与 ▴▾✕ 不算站 —— 所以要按 `↑` `↓` 在两行之间走，而不是在一行的四个格子里走。
+ *
+ * `→` / `d` 进右列落在**第一站**（第一行条目的外层容器），`↑` `↓` 在各站之间走，
+ * **回车**才进那一行里的输入框。从输入框里回左列有两条路：
  *   ① 先 `ESC` 失焦（全站口径：ESC 从编辑框里出来），再 `←` / `a`；
- *   ② 直接 `Shift + ←`（内核把 `Shift + 方向键` 借给外壳做焦点切换，见 `src/input/index.ts`）。
+ *   ② 直接 `Shift + 方向键 / WASD`（内核把这一下借给外壳做焦点切换，见 `src/input/index.ts`）。
  */
 const panelEl = ref<HTMLElement | null>(null)
 const saveEl = ref<HTMLElement | null>(null)
@@ -901,21 +937,37 @@ function focusInPanel(): boolean {
 }
 
 /**
- * 右列里能被 ↑↓ 依次走到的控件（按 DOM 顺序）。
- * 排掉：禁用的、`tabindex="-1"` 的、以及看不见的（`offsetParent` 为空）——
- * 隐藏的控件要是也算一格，方向键就会「按一下什么都不动」。
+ * 右列里能被 ↑↓ 依次走到的「站」（按 DOM 顺序）。
+ *
+ * 两条过滤：看得见（隐藏的站会让方向键"按一下不动"）、没被禁用。行内的控件不进这个列表 ——
+ * 它们由**回车**进去，进去之后是原生 Tab / 光标的地盘。
  */
-function panelControls(): HTMLElement[] {
+function panelStops(): HTMLElement[] {
   const panel = panelEl.value
   if (!panel) return []
-  return [...panel.querySelectorAll<HTMLElement>('a, button, input, textarea, select, [tabindex]')].filter(
-    (el) => !el.hasAttribute('disabled') && el.tabIndex >= 0 && el.offsetParent !== null,
+  return [...panel.querySelectorAll<HTMLElement>('[data-stop]')].filter(
+    (el) => !el.hasAttribute('disabled') && el.offsetParent !== null,
   )
 }
 
-/** `→` / `d`：从段列表进右列 —— 焦点直接落在**第一个控件**上，不搞中间态 */
+/** 站里面第一个能打字的控件（回车进来就落在这里）；纯按钮的站返回 null */
+function firstControlIn(stop: HTMLElement): HTMLElement | null {
+  return (
+    [...stop.querySelectorAll<HTMLElement>('input, textarea, select, a[href], button')].find(
+      (el) => !el.hasAttribute('disabled') && el.offsetParent !== null,
+    ) ?? null
+  )
+}
+
+/** 焦点这一站是容器还是控件本身（容器才需要回车进去，控件交给浏览器原生） */
+function focusedStop(): HTMLElement | null {
+  const el = document.activeElement as HTMLElement | null
+  return el?.hasAttribute('data-stop') ? el : null
+}
+
+/** `→` / `d`：从段列表进右列 —— 落在**第一站**（第一行条目的外层容器） */
 function enterPanel(): boolean {
-  const first = panelControls()[0]
+  const first = panelStops()[0]
   if (!first) return false
   first.focus()
   zone.value = 'panel'
@@ -934,12 +986,15 @@ function leavePanel(): boolean {
   return true
 }
 
-/** 在右列里上下走一格；走到头返回 false（由调用方决定「回左列」还是「去保存」） */
+/** 在右列的各站之间上下走；走到头返回 false（由调用方决定「回左列」还是「去保存」） */
 function moveInPanel(dir: -1 | 1): boolean {
-  const controls = panelControls()
-  if (controls.length === 0) return false
-  const current = controls.indexOf(document.activeElement as HTMLElement)
-  const next = current === -1 ? controls[dir === 1 ? 0 : controls.length - 1] : controls[current + dir]
+  const stops = panelStops()
+  if (stops.length === 0) return false
+  // 焦点可能在某一站**里面**（某个输入框）：先认出它属于哪一站，再从那一站往下走
+  const active = document.activeElement as HTMLElement | null
+  const owner = active?.closest<HTMLElement>('[data-stop]') ?? null
+  const current = owner ? stops.indexOf(owner) : -1
+  const next = current === -1 ? stops[dir === 1 ? 0 : stops.length - 1] : stops[current + dir]
   if (!next) return false
   next.focus()
   playSfx('move')
@@ -1031,6 +1086,9 @@ function step(dir: -1 | 1): boolean {
     }
     const next = Math.max(0, Math.min(count - 1, segFocus.index.value + dir))
     segFocus.set(next)
+    // 上下移动**顺带就切段**（用户裁决 2026-10-09：不必再按一次回车才看到对应的正文）
+    const key = segments.value[next]
+    if (key) activeKey.value = key
     return true
   }
 
@@ -1068,6 +1126,17 @@ const off = onPad((action) => {
   }
 
   if (action === 'confirm') {
+    // 右列里停在**整行**上（还没进具体格子）：回车进这一行
+    const stop = focusedStop()
+    if (stop) {
+      const first = firstControlIn(stop)
+      if (first) {
+        first.focus()
+        playSfx('confirm')
+        return true
+      }
+      return false
+    }
     // 规矩 1：原生焦点在按钮 / 输入框上时，这一下回车归浏览器
     if (nativeOwnsEnter()) return false
     if (zone.value === 'back') {
@@ -1193,9 +1262,6 @@ watch(
     <section v-else-if="state === 'error'" class="state" data-testid="admin-site-error">
       <h2 class="state-title">站点配置读取失败</h2>
       <p class="err" data-testid="admin-site-load-error">{{ loadError }}</p>
-      <p class="state-hint hint">
-        上面这句是后端返回的 <code>detail</code> 原文。读不到就不写回，改不到配置也不会写坏它。
-      </p>
       <button class="btn focusable mini" data-testid="admin-site-retry" @click="load">
         重试 (R)
       </button>
@@ -1204,10 +1270,7 @@ watch(
     <!-- 状态三：后端从没保存过（契约原文：GET 返回 {}）—— 不是错误，是一条明确的下手路径 -->
     <section v-else-if="state === 'empty'" class="state" data-testid="admin-site-empty">
       <h2 class="state-title">后台从没保存过站点配置</h2>
-      <p class="state-hint hint">
-        接口返回的是空对象 <code>{}</code>，三级合并会继续用本地 site.config.json 与内置默认，
-        所以站点现在是正常的 —— 只是「后台」这一层还没有内容。
-      </p>
+      <p class="state-hint hint">接口返回空对象 <code>{}</code>。</p>
       <button class="btn focusable mini" data-testid="admin-site-skeleton" @click="startSkeleton">
         以五个已知段起骨架
       </button>
@@ -1318,14 +1381,13 @@ watch(
               data-testid="about-editor"
             >
               <h3 class="about-cap">页头条目（{{ aboutFacts.length }}）</h3>
-              <p v-if="!aboutHasFacts" class="hint" data-testid="about-facts-missing">
-                没有 facts，加一条就会建起来。
-              </p>
               <div
                 v-for="(f, i) in aboutFacts"
                 :key="`${i}-${f.key}`"
                 class="about-row"
                 data-testid="about-row"
+                data-stop
+                tabindex="-1"
               >
                 <span class="about-idx px" aria-hidden="true">{{ String(i + 1).padStart(2, '0') }}</span>
                 <input
@@ -1406,15 +1468,13 @@ watch(
                 type="button"
                 class="btn focusable mini"
                 data-testid="about-add"
+                data-stop
                 @click="addFact"
               >
                 ＋ 加一条
               </button>
 
               <h3 class="about-cap">正文（markdown）</h3>
-              <p v-if="!aboutHasBody" class="hint" data-testid="about-body-missing">
-                没有 body，在下面写就会建起来。
-              </p>
               <div class="about-body-edit">
                 <textarea
                   class="input about-md"
@@ -1438,14 +1498,13 @@ watch(
               data-testid="footer-editor"
             >
               <h3 class="about-cap">页脚小字（{{ footerItems.length }}）</h3>
-              <p v-if="footerHasLegacyFields" class="hint" data-testid="footer-legacy-note">
-                来自旧字段，动一下即迁移。
-              </p>
               <div
                 v-for="(item, i) in footerItems"
                 :key="i"
                 class="about-row"
                 data-testid="footer-item"
+                data-stop
+                tabindex="-1"
               >
                 <span class="about-idx px" aria-hidden="true">{{
                   String(i + 1).padStart(2, '0')
@@ -1498,6 +1557,7 @@ watch(
                 type="button"
                 class="btn focusable mini"
                 data-testid="footer-item-add"
+                data-stop
                 @click="addFooterItem"
               >
                 ＋ 加一条
@@ -1520,6 +1580,8 @@ watch(
                 class="field"
                 :data-field="`${activeKey}.${row.key}`"
                 data-testid="admin-site-field"
+                data-stop
+                tabindex="-1"
               >
                 <label class="field-cap" :for="fieldId(row.key)">{{ row.label }}</label>
                 <input
@@ -1558,20 +1620,17 @@ watch(
                 <span v-else class="struct px">{{ row.text }}</span>
               </div>
             </div>
-            <p class="tip hint">
-              数组与嵌套对象不拆成几十个格子，在下面这一段 JSON
-              里改；上面每个格子改的都是同一份数据。
-            </p>
 
             <!-- 整段 JSON：自由结构段的兜底编辑面，也是「未知键原样保留」的保证。
                  它本身就是文档型，所以也配框内那个展开图标 -->
             <div class="json-box">
-              <label class="json-cap px" for="admin-site-json">这一段 JSON（整段写回）</label>
+              <label class="json-cap px" for="admin-site-json">这一段 JSON</label>
               <div class="json-wrap">
                 <textarea
                   id="admin-site-json"
                   class="json"
                   data-testid="admin-site-json"
+                  data-stop
                   spellcheck="false"
                   :aria-label="`${activeKey} 这一段的 JSON`"
                   :value="textOf(activeKey)"
@@ -1581,6 +1640,7 @@ watch(
                 <button
                   class="expand"
                   data-testid="admin-site-json-expand"
+                  data-stop
                   type="button"
                   aria-label="编辑全文：这一段的 JSON"
                   title="编辑全文（F2）"
@@ -1594,9 +1654,7 @@ watch(
             <!-- 改动对照：叶子路径级的 - 旧 / + 新，改了什么一眼看得见 -->
             <section class="diff">
               <h2 class="diff-title">改动对照（{{ activeDiff.length }}）</h2>
-              <p v-if="!activeOk" class="hint">这一段的 JSON 还没写合法，暂时比不了。</p>
-              <p v-else-if="!activeDiff.length" class="hint">这一段与读回来的原文一致。</p>
-              <ul v-else class="diff-list">
+              <ul class="diff-list">
                 <li
                   v-for="line in activeDiff"
                   :key="line.path"
@@ -1626,9 +1684,7 @@ watch(
           <p v-else-if="saveError" class="err" data-testid="admin-site-save-error">
             {{ saveError }}
           </p>
-          <p v-else class="hint px">
-            共 {{ totalChanges }} 处改动 · 保存写整份 dict（未改动的段原样写回）
-          </p>
+          <p v-else class="hint px">共 {{ totalChanges }} 处改动</p>
           <p v-if="invalidKeys.length" class="err px" data-testid="admin-site-invalid-summary">
             有 {{ invalidKeys.length }} 段的 JSON 还没写合法：{{ invalidKeys.join(' / ') }}
           </p>
@@ -1962,6 +2018,15 @@ watch(
 /* 页脚一行 = 编号 + 一句文字 + 行尾三颗方块：覆盖关于页那六列（它多的是图标 / 名字 / 链接三格） */
 .footer-editor .about-row {
   grid-template-columns: 30px minmax(0, 1fr) auto;
+}
+
+/* 焦点停在**整行**上（还没进格子）：整行亮起来 —— 一眼看出"选中了这一条"。
+   用 outline 而不是边框，免得亮起来那一下把布局顶动 */
+.about-row:focus,
+.field:focus {
+  outline: 2px solid var(--blue-600);
+  outline-offset: 2px;
+  background: var(--blue-100);
 }
 
 /* 正在这一条上打字时，边框亮起来 —— 一屏好几条，得看得出光标在哪一条 */

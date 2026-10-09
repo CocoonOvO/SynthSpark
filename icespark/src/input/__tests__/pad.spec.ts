@@ -3,7 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
   clearPadListeners,
   dispatchPadAction,
-  focusActionForArrow,
+  focusActionFor,
   isEditableTarget,
   onPad,
   resolveComboAction,
@@ -258,17 +258,26 @@ describe('dispatchPadAction：两趟派发与消费语义', () => {
   })
 })
 
-describe('Shift + 方向键 → 焦点切换动作（专用动作，不借 left/right）', () => {
-  it('四个方向键都映射到 focus* 动作', () => {
-    expect(focusActionForArrow('ArrowUp')).toBe('focusUp')
-    expect(focusActionForArrow('ArrowDown')).toBe('focusDown')
-    expect(focusActionForArrow('ArrowLeft')).toBe('focusLeft')
-    expect(focusActionForArrow('ArrowRight')).toBe('focusRight')
+describe('Shift + 方向键 / WASD → 焦点切换动作（专用动作，不借 left/right）', () => {
+  it('四个方向都映射到 focus* 动作，且与 WASD 同义（由 KEYMAP 统一）', () => {
+    const pairs = [
+      ['ArrowUp', 'w'],
+      ['ArrowDown', 's'],
+      ['ArrowLeft', 'a'],
+      ['ArrowRight', 'd'],
+    ] as const
+    for (const [arrow, letter] of pairs) {
+      const byArrow = resolvePadAction({ key: arrow, shiftKey: true })
+      const byLetter = resolvePadAction({ key: letter, shiftKey: true })
+      expect(byArrow, `${arrow} 应当解析出方向动作`).not.toBe(null)
+      expect(byLetter, `${letter} 应当与 ${arrow} 同义`).toBe(byArrow)
+      expect(focusActionFor(byArrow as 'up')).toBe(`focus${(byArrow as string)[0]?.toUpperCase()}${(byArrow as string).slice(1)}`)
+    }
   })
 
-  it('字母与其它键不认（Shift+w/a/s/d 是打字，不是焦点切换）', () => {
-    for (const key of ['w', 'a', 's', 'd', 'W', 'Enter', 'Tab', 'Escape', 'PageUp']) {
-      expect(focusActionForArrow(key)).toBe(null)
+  it('其它动作不映射（回车 / 翻页 / 返回等照旧）', () => {
+    for (const action of ['confirm', 'cancel', 'pagePrev', 'pageNext', 'back', 'forward'] as const) {
+      expect(focusActionFor(action)).toBe(null)
     }
   })
 })
