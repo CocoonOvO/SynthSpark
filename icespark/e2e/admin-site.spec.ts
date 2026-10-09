@@ -116,10 +116,28 @@ async function loggedIn(page: Page, isSuperuser: boolean): Promise<void> {
 /** 打桩站点配置接口：GET 给夹具，PUT 按用例决定（默认成功），并记下每一次请求 */
 async function stubAdminSite(
   page: Page,
-  options: { get?: { status: number; body: unknown }; put?: { status: number; body: unknown } },
+  options: {
+    get?: { status: number; body: unknown }
+    put?: { status: number; body: unknown }
+    /**
+     * 公开的生效配置（`GET /api/site-config`）。默认给 `{}`：三级合并的结果就是内置默认。
+     *
+     * 为什么这些用例也要打它：编辑区的底稿是**站点当前生效的那份**（默认 + 文件 + 后台），
+     * 不打桩就会去读这台机器上真的后台配置 —— 用例会随本机数据飘。
+     */
+    public?: unknown
+  },
 ): Promise<{ puts: Json[]; gets: () => number }> {
   const puts: Json[] = []
   let gets = 0
+
+  await page.route('**/api/site-config', (route) =>
+    route.fulfill({
+      status: 200,
+      contentType: 'application/json',
+      body: JSON.stringify(options.public ?? {}),
+    }),
+  )
 
   await page.route('**/api/admin/site-config', async (route) => {
     if (route.request().method() === 'PUT') {
@@ -905,27 +923,35 @@ test('关于页：条目与正文取的是这一段 JSON（不是空着一片）
   await expect(page.locator('[data-testid="about-body"]')).toHaveValue(/E2E 正文/)
 })
 
-test('关于页：这一段里没有 facts / body 时，编辑器照样能建起来', async ({ page }) => {
+test('关于页：后台那一层没写 facts / body 时，编辑区显示站点正在用的那份', async ({ page }) => {
   const config = fixture()
-  // 旧配置的形状：只有 badge / title / desc / techStack
+  // 旧前端存下来的形状：只有 badge / title / desc / techStack
   const about = config.about as Record<string, unknown>
   delete about.facts
   delete about.body
 
   await loggedIn(page, true)
-  await stubAdminSite(page, { get: { status: 200, body: config } })
+  // 公开层给内置默认（`{}` → 合并结果就是默认）：站点渲染的 facts / body 正是默认那套
+  const stub = await stubAdminSite(page, { get: { status: 200, body: config }, public: {} })
 
   await page.goto('/admin/site')
   await booted(page)
   await page.click(`[data-testid="admin-site-segment"][data-segment="about"]`)
 
+  // 这就是用户贴整份响应来报的那个 bug：站点上有 5 条要点与一篇正文，编辑区却是空的。
+  // 现在编辑区的底稿是**生效配置**，所以站点上看得见的，编辑区里就看得见。
   await expect(page.locator('[data-testid="about-editor"]')).toBeVisible()
-  await expect(page.locator('[data-testid="about-row"]')).toHaveCount(0)
+  await expect(page.locator('[data-testid="about-row"]')).toHaveCount(5)
+  await expect(page.locator('[data-testid="about-key"]').first()).toHaveValue('站点')
+  await expect(page.locator('[data-testid="about-body"]')).toHaveValue(/这里是什么地方/)
 
-  // 点「加一条」就把 facts 数组建起来（不用去 JSON 里手写）
-  await page.click('[data-testid="about-add"]')
-  await expect(page.locator('[data-testid="about-row"]')).toHaveCount(1)
-  await expect(page.locator('[data-testid="admin-site-json"]')).toHaveValue(/"facts"/)
+  // 保存会把这份生效值写进后台那一层（后台段从"没写"变成"写了"）
+  await page.click('[data-testid="admin-site-save"]')
+  await expect.poll(() => stub.puts.length).toBe(1)
+  const saved = pick(stub.puts[0], 'about') as Record<string, unknown>
+  expect(Array.isArray(saved.facts)).toBe(true)
+  expect((saved.facts as unknown[]).length).toBe(5)
+  expect(typeof saved.body).toBe('string')
 })
 
 test('关于页：这一段 JSON 不合法时，编辑器收起并留一句说明', async ({ page }) => {

@@ -70,9 +70,12 @@ import { useStatusBar } from '@/scene/clock'
 import { useLongText } from '@/scene/longtext'
 import { canGoBack, goBack, goTab } from '@/scene/nav'
 import { scrollScreenTop } from '@/scene/screen'
+import { deepMerge } from '@/config/site'
 import { useAuthStore } from '@/stores/auth'
+import { useSiteStore } from '@/stores/site'
 
 const auth = useAuthStore()
+const site = useSiteStore()
 const { clock, stop } = useStatusBar()
 
 // ── 段的展示口径 ──
@@ -284,26 +287,54 @@ function fieldRows(segment: string, value: unknown): FieldRow[] {
 // ── 编辑态 ──
 
 /**
+ * 编辑区显示的底稿 = **站点当前生效的那份配置**（内置默认 + 本地文件 + 后台那一层）。
+ *
+ * 为什么不是后台那一层本身：后台层没写的键，站点照样在渲染（默认值 / 本地文件顶上来），
+ * 而"编辑区只显示后台层"就会变成**站点上有内容、设置页里一片空** ——
+ * 用户 2026-10-09 贴了整份响应来报的就是这个（关于页有 5 条要点与一篇正文，
+ * 编辑区却是空的，因为后台那一层是旧前端存的、里面没有 facts / body）。
+ *
+ * 合并方向：**后台层优先**（它写过的值不许被默认值顶掉），缺的键用生效值补。
+ */
+function effectiveView(raw: Record<string, unknown>): Record<string, unknown> {
+  const effective = site.config as unknown as Record<string, unknown>
+  const out: Record<string, unknown> = {}
+  const keys = new Set([...Object.keys(effective), ...Object.keys(raw)])
+  for (const key of keys) {
+    const fromLayer = raw[key]
+    const fromSite = effective[key]
+    if (fromLayer === undefined) out[key] = fromSite
+    else if (!isPlainObject(fromSite) || !isPlainObject(fromLayer)) out[key] = fromLayer
+    else out[key] = deepMerge(fromSite, fromLayer)
+  }
+  return out
+}
+
+/**
  * 用一份完整配置重建编辑态（读回来 / 空态起骨架 / 保存成功后都走这里）。
  *
  * `keepActive` 给保存成功那条路用：刚保存完就把光标踢回第一段，正在改 footer 的人
  * 会当场失去上下文。段被删掉时（配置里没有它了）照样回落到第一段。
+ * `view` 只在保存成功后传：那时编辑区该显示**刚写回去的那份**，
+ * 而不是 store 里那份还没刷新的生效配置（不然刚改完就被旧值盖回去）。
  */
-function hydrate(raw: Record<string, unknown>, keepActive = false): void {
+function hydrate(raw: Record<string, unknown>, keepActive = false, view?: Record<string, unknown>): void {
   const previous = activeKey.value
-  // 旧前端的 `footer.links`（页脚链接分组）在 icespark 已删除（用户裁决 2026-10-08：
-  // 「为什么里面有个 links 项？还不在配置里？给我移除了」）。icespark 从来不渲染它，
-  // 留着只会让人以为"配了没反应"。读回来时直接丢弃 → 下一次保存就把它从后台配置里清掉。
-  dropLegacyKeys(raw)
+  // diff 的基准永远是**后台那一层原样**：写回去会改什么照它算，
+  // 于是"丢弃 links / 把旧字段迁成条目"这些收拾动作会如实出现在「改动对照」里（可以还原）。
   server.value = cloneJson(raw)
 
-  const keys = Object.keys(raw)
+  // 编辑区显示的那份才做收拾（迁移、丢废弃键）；合并要在收拾**之前**做，
+  // 否则旧字段一删，内层的默认值又会把它们补回来（`effectiveView` 读到的是收拾后的 raw）。
+  const shown = cloneJson(view ?? effectiveView(raw))
+  dropLegacyKeys(shown)
+  const keys = Object.keys(shown)
   const known = KNOWN_SEGMENTS.filter((key) => keys.includes(key))
   const rest = keys.filter((key) => !KNOWN_SEGMENTS.includes(key as KnownSegment))
   segments.value = [...known, ...rest]
 
   const next: Record<string, string> = {}
-  for (const key of segments.value) next[key] = stringifySegment(raw[key])
+  for (const key of segments.value) next[key] = stringifySegment(shown[key])
   texts.value = next
 
   activeKey.value =
@@ -653,7 +684,9 @@ async function load(): Promise<void> {
   savedFlash.value = false
 
   try {
-    const config = await fetchAdminSiteConfig()
+    // 生效配置（默认 + 文件 + 后台）要一起到位：编辑区的底稿就是它（见 `effectiveView`）。
+    // `site.load()` 是幂等的，外壳启动时拉过就直接返回
+    const [config] = await Promise.all([fetchAdminSiteConfig(), site.load()])
     // 后端从没保存过时返回 {} —— 这不是错误，是「后台这一层还是空的」
     if (!isPlainObject(config) || Object.keys(config).length === 0) {
       server.value = {}
@@ -891,7 +924,7 @@ async function save(): Promise<void> {
     const payload = buildPayload()
     await saveAdminSiteConfig(payload)
     // 写回去了：原文换成这一份，差异归零；但配置是启动时读一次，页面上的旧值要刷新才换
-    hydrate(payload, true)
+    hydrate(payload, true, payload)
     state.value = 'ready'
     savedFlash.value = true
     playSfx('confirm')
