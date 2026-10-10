@@ -1270,3 +1270,58 @@ test('写作页：资料面板里方向键 / WASD 在标签、封面、分组、
   expect(copy).toMatchObject({ method: 'POST', path: '/api/posts/' })
   expect((copy.body as Record<string, unknown>).status).toBe('draft')
 })
+
+test('写作页：标题行右侧的「简介」—— 弹窗编辑、写回表单、跟着保存一起发出去', async ({ page }) => {
+  const recorder = await openWrite(page)
+  const dialog = page.locator('[data-testid="long-text-dialog"]')
+  const intro = page.locator('[data-testid="write-intro"]')
+
+  // 入口与标题框同一行、在它右侧（布局断言，免得后来的人把它挪到别处）
+  const [titleBox, introBox] = await Promise.all([
+    page.locator('[data-testid="write-title"]').boundingBox(),
+    intro.boundingBox(),
+  ])
+  expect(introBox!.x).toBeGreaterThan(titleBox!.x + titleBox!.width - 1)
+  expect(Math.abs(introBox!.y - titleBox!.y)).toBeLessThan(2)
+
+  // 键盘路径：动作条 ↑ 到标题框 → Tab 到「简介」→ 回车走浏览器原生激活
+  await page.locator('main h1').click()
+  await press(page, 'ArrowUp')
+  await expect(page.locator('[data-testid="write-title"]')).toBeFocused()
+  await press(page, 'Tab')
+  await expect(intro).toBeFocused()
+  await page.keyboard.press('Enter')
+  await expect(dialog).toBeVisible()
+  // 光标落在编辑区，且计数用的是后端那个上限（`Post.introduction` 的 max_length=500）
+  await expect(page.locator('[data-testid="long-text-area"]')).toBeFocused()
+  await expect(page.locator('[data-testid="long-text-count"]')).toHaveText(/\/ 500/)
+
+  // ESC 取消：不写回，焦点还给那颗按钮（焦点掉到 body 键盘就整块失灵）
+  await page.keyboard.press('Escape')
+  await expect(dialog).toHaveCount(0)
+  await expect(intro).toBeFocused()
+
+  // 鼠标路径：写一段、保存 —— 简介不是实时写回，落进表单后页头随即显示「未保存」
+  await intro.click()
+  await page.fill('[data-testid="long-text-area"]', '一段简介：说清这篇写的是什么。')
+  await page.click('[data-testid="long-text-save"]')
+  await expect(dialog).toHaveCount(0)
+  await expect(page.locator('[data-testid="write-status"]')).toHaveText('● 未保存')
+
+  // 跟着存草稿一起 PUT（不为它单开一次请求）
+  await page.fill('[data-testid="write-title"]', '带简介的草稿')
+  await page.click('[data-testid="write-save"]')
+  await expect.poll(() => recorder.writes.length).toBe(1)
+  expect(recorder.writes[0]?.body).toMatchObject({
+    title: '带简介的草稿',
+    introduction: '一段简介：说清这篇写的是什么。',
+    status: 'draft',
+  })
+
+  // 重新装载这一篇时回显（`fill()` 把 `post.introduction` 填进表单）
+  await page.goto('/write/brand-new')
+  await booted(page)
+  await expect(page.locator('[data-testid="write-title"]')).toHaveValue('带简介的草稿')
+  await intro.click()
+  await expect(page.locator('[data-testid="long-text-area"]')).toHaveValue('一段简介：说清这篇写的是什么。')
+})

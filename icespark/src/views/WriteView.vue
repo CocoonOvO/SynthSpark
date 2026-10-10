@@ -13,8 +13,11 @@
  *   D4 旧版靠**右键菜单**呼出的文章操作 → 改成资料面板里的一行按钮（纯键盘路径下
  *        右键菜单不可达，与全站「键鼠等价」冲突）。
  *   D8 旧版三处死 UI 不迁：AI 助手占位块；「公开文章 / 允许评论」两个开关
- *        （只改本地 ref，全程不发后端，契约的 Post/PostCreate/PostUpdate 也没有这两个字段）；
- *        简介（`introduction`）旧编辑器没有输入口，照旧不给。
+ *        （只改本地 ref，全程不发后端，契约的 Post/PostCreate/PostUpdate 也没有这两个字段）。
+ *        **简介（`introduction`）后来补上了**（用户要求）：旧编辑器确实没有输入口，但契约里
+ *        `Post` / `PostCreate` / `PostUpdate` 三处都带这个字段，对接就是把它加进表单与那次 `PUT`。
+ *        入口是**标题行右侧**一颗「简介」按钮，点开的是设置页那块同一张长文本画布
+ *        （`machine/TextEditorDialog.vue` + `scene/longtext.ts`）—— 不新增字段、不新增弹窗组件。
  *   D5 代码块语言清单 35 项原样保留（在 `signal/MarkdownSourceEditor.vue` 里）。
  *   D6 新稿未保存时**不拦截**离开（旧版没有这个行为），只在页头常显「未保存」。
  *   D7 发布后**留在本页**（旧版行为），另给一个「查看」入口。
@@ -57,7 +60,9 @@ import { pageModalOpen } from '@/input/scopes'
 import { playSfx } from '@/input/sfx'
 import PixelDialog from '@/machine/PixelDialog.vue'
 import SceneHead from '@/machine/SceneHead.vue'
+import TextEditorDialog from '@/machine/TextEditorDialog.vue'
 import { useStatusBar } from '@/scene/clock'
+import { useLongText } from '@/scene/longtext'
 import { canGoBack, goArticle, goBack, goTab } from '@/scene/nav'
 import { scrollScreenTop } from '@/scene/screen'
 import { requestTransition } from '@/scene/transition'
@@ -124,10 +129,21 @@ function countIn(status: 'published' | 'draft'): number {
 const postId = ref<string | null>(null)
 const title = ref('')
 const content = ref('')
+/**
+ * 文章简介（`introduction`，后端 `max_length=500`）。
+ *
+ * 它不是正文的一部分，也不进预览 —— 卡片 / 列表页读的就是它（`PostListView` 的
+ * `.card-intro`）。所以它**不实时写回**：改在弹窗里，按保存才落到这里，再跟着下一次
+ * 存草稿 / 发布一起 `PUT`（与标签、封面同一时机，不为此单开一次请求）。
+ */
+const introduction = ref('')
 const tags = ref<string[]>([])
 const cover = ref<string | null>(null)
 const status = ref<'draft' | 'published'>('draft')
 const postGroupId = ref<string | null>(null)
+
+/** 简介的字数上限：与后端 `Post.introduction` 的 `max_length=500` 对齐 */
+const INTRODUCTION_MAX = 500
 
 /**
  * 已保存内容的指纹。`dirty` 只做一件事：页头那行状态与自动保存的判据。
@@ -136,6 +152,7 @@ const postGroupId = ref<string | null>(null)
 function fingerprintOf(parts: {
   title: string
   content: string
+  introduction: string
   tags: string[]
   cover: string | null
   status: 'draft' | 'published'
@@ -144,6 +161,7 @@ function fingerprintOf(parts: {
   return JSON.stringify([
     parts.title,
     parts.content,
+    parts.introduction,
     parts.tags,
     parts.cover,
     parts.status,
@@ -155,6 +173,7 @@ function fingerprint(): string {
   return fingerprintOf({
     title: title.value,
     content: content.value,
+    introduction: introduction.value,
     tags: tags.value,
     cover: cover.value,
     status: status.value,
@@ -197,14 +216,73 @@ function goView(): void {
   void goArticle(postKey({ id: postId.value, slug: postSlug.value }))
 }
 
-/* ══════════════════════ 模态（面板 / 确认框 / 通告框） ══════════════════════ */
+/* ══════════════════════ 简介（长文本弹窗） ══════════════════════ */
+
+/**
+ * 简介的入口是标题行右侧那颗按钮，弹窗本身是**设置页那块同一张画布**
+ * （`machine/TextEditorDialog.vue`），接线走 `scene/longtext.ts` 那条既有通道 ——
+ * 这一页不新写弹窗、不新写焦点交接。
+ *
+ * 为什么用弹窗而不是标题行下面再加一个 textarea：简介是**文档型**的（一两句到几百字），
+ * 塞在标题下面会把正文挤下去，而这个入口不是每天都要动一次的。设置页的「简介」也是这么做的
+ * （`ProfileView` 的 `openBioLong`），同一场景同一形态。
+ *
+ * 写回时机：弹窗**不实时写回**，保存才落进 `introduction`，之后跟着存草稿 / 发布一起 `PUT`。
+ * 所以「改了又后悔」不会污染表单，`dirty` 与自动保存也照旧按指纹走。
+ */
+const { editing, openLongText, closeLongText } = useLongText()
+
+/** 标题行右侧那颗按钮（`focusId` 要它的 DOM id，关掉弹窗后焦点还给谁） */
+const introEl = ref<HTMLButtonElement | null>(null)
+const INTRO_BTN_ID = 'write-intro'
+
+function openIntro(): void {
+  playSfx('confirm')
+  openLongText({
+    key: 'introduction',
+    label: '简介',
+    value: introduction.value,
+    maxlength: INTRODUCTION_MAX,
+    placeholder: '一两句话说明这篇写的是什么（列表卡片上显示它）',
+    focusId: INTRO_BTN_ID,
+  })
+}
+
+/** 弹窗保存：写回简介。`dirty` 会自己变（指纹里带上了这一项），页头随即显示「未保存」 */
+function onLongSave(value: string): void {
+  closeLongText()
+  introduction.value = value
+}
+
+/**
+ * 弹窗开着时的按键归属（写法与 `ProfileView` 的 `longTextPad` 同源，理由见那边的注释）：
+ * `cancel` 在**页面这一层**关框 —— 点过遮罩之后原生焦点被外壳收走，弹窗自己的监听器收不到键。
+ * 其余按键一律吞掉：下面的方向键分支会把原生焦点收回外壳，焦点一离开弹窗，框里的键盘当场就死了。
+ * Tab 例外：焦点还在编辑区里时内核本来就让浏览器自己走，放行不会多一次触发。
+ */
+function longTextPad(a: PadAction): boolean {
+  if (a === 'cancel') {
+    closeLongText()
+    return true
+  }
+  if (a === 'tabNext' || a === 'tabPrev') return false
+  return true
+}
+
+/* ══════════════════════ 模态（面板 / 确认框 / 通告框 / 长文本） ══════════════════════ */
 
 /** 二次确认框（删除 / 放弃改动这类不可逆动作） */
 const confirmState = ref<{ text: string; ok: () => void } | null>(null)
 /** 通告框（走 `machine/PixelDialog.vue`，打字机出字；EMPTY 时的「请先填标题」也走它） */
 const noticeLines = ref<string[] | null>(null)
 
-const anyModal = computed(() => panel.value !== null || confirmState.value !== null || noticeLines.value !== null)
+const anyModal = computed(
+  () =>
+    panel.value !== null ||
+    confirmState.value !== null ||
+    noticeLines.value !== null ||
+    editing.value !== null,
+)
 
 /** 页内模态开着时告诉外壳：P / ESC / Q / E 一律让位（同一时刻只有一个模态） */
 watch(
@@ -251,6 +329,7 @@ function fill(post: Post): void {
   postSlug.value = post.slug ?? null
   title.value = post.title ?? ''
   content.value = post.content ?? ''
+  introduction.value = post.introduction ?? ''
   tags.value = [...(post.tags ?? [])]
   cover.value = post.cover_image ?? null
   status.value = post.status === 'published' ? 'published' : 'draft'
@@ -271,6 +350,7 @@ function resetForm(): void {
   postId.value = null
   title.value = ''
   content.value = ''
+  introduction.value = ''
   tags.value = []
   cover.value = null
   status.value = 'draft'
@@ -384,6 +464,7 @@ async function doSave(next: 'draft' | 'published', opts: { auto?: boolean } = {}
   const sent = {
     title: cleanTitle,
     content: content.value,
+    introduction: introduction.value,
     tags: [...tags.value],
     cover: cover.value,
     status: next,
@@ -397,6 +478,7 @@ async function doSave(next: 'draft' | 'published', opts: { auto?: boolean } = {}
       ? await updatePost(postId.value, {
           title: sent.title,
           content: sent.content,
+          introduction: sent.introduction,
           tags: sent.tags,
           cover_image: sent.cover,
           status: sent.status,
@@ -405,6 +487,7 @@ async function doSave(next: 'draft' | 'published', opts: { auto?: boolean } = {}
       : await createPost({
           title: sent.title,
           content: sent.content,
+          introduction: sent.introduction,
           tags: sent.tags,
           cover_image: sent.cover,
           status: sent.status,
@@ -430,6 +513,7 @@ async function doSave(next: 'draft' | 'published', opts: { auto?: boolean } = {}
     snapshot.value = fingerprintOf({
       title: title.value === titleAtSend ? title.value : sent.title,
       content: sent.content,
+      introduction: introduction.value,
       tags: sent.tags,
       cover: sent.cover,
       status: status.value,
@@ -825,9 +909,22 @@ function barHasFocus(): boolean {
   return Boolean((document.activeElement as HTMLElement | null)?.closest('.write-bar'))
 }
 
+/** 原生焦点此刻是不是在「简介」那颗按钮上（同 `barHasFocus`，看真实焦点） */
+function introHasFocus(): boolean {
+  return document.activeElement === introEl.value
+}
+
 /** 方向键在"非编辑态"下的按布局移动；返回是否消费了这次按键 */
 function moveByLayout(a: PadAction): boolean {
   if (a === 'left' || a === 'right') {
+    // 标题行内部：焦点在「简介」上时左右键回到标题框 —— 标题行是**两格一组**
+    // （标题框 → 简介），到头就绕回，与动作条同一口径（`focusBar` 也是取模绕回）。
+    // 反方向到不了这里：标题框是**可编辑目标**，内核把方向键让给了光标
+    // （`isEditableTarget`）—— 那是打字该有的手感，不能抢。
+    if (introHasFocus()) {
+      titleEl.value?.focus()
+      return true
+    }
     // 焦点不在动作条里（例如刚从标题框 / 点空白回来）→ 一律从第一颗重新进入，
     // 免得用上一次留下的下标接着走（那样"从中立态按 →"会莫名其妙落到中间某颗上）
     if (!barHasFocus()) {
@@ -838,7 +935,7 @@ function moveByLayout(a: PadAction): boolean {
     return true
   }
   if (a === 'up') {
-    // 布局上在动作条上面的是标题框
+    // 布局上在动作条上面的是标题行（落点照旧是第一格：标题框）
     barIndex.value = -1
     titleEl.value?.focus()
     return true
@@ -1155,6 +1252,10 @@ function panelPad(a: PadAction, which: Panel): boolean {
 }
 
 const off = onPad((a) => {
+  // 长文本弹窗开着时，页面层把按键交给它先处理。守卫必须写在**自己**这个监听器里：
+  // 外壳的 `runPass` 会遍历全部同作用域监听器、不提前退出，少这一句，
+  // 弹窗里按方向键会被下面的分支把焦点收回外壳，框里的键盘当场失灵（`ProfileView` 同一条）。
+  if (editing.value) return longTextPad(a)
   if (confirmState.value) return confirmPad(a)
   if (panel.value) return panelPad(a, panel.value)
 
@@ -1333,18 +1434,32 @@ onUnmounted(() => {
     <p v-if="loadError" class="note px is-bad" data-testid="write-load-error">{{ loadError }}</p>
     <p v-if="uploadNote" class="note px">{{ uploadNote }}</p>
 
-    <!-- 标题（单行；「重命名」就是把焦点交给它） -->
-    <label class="title-row">
-      <span class="sr-only">文章标题</span>
-      <input
-        ref="titleEl"
-        v-model="title"
-        class="title-input px"
-        type="text"
-        placeholder="文章标题"
-        data-testid="write-title"
-      />
-    </label>
+    <!-- 标题行：文章标题（单行；「重命名」就是把焦点交给它）+ 右侧的「简介」入口。
+         `label` 只裹标题框 —— 把按钮也裹进去，点它会连带把焦点丢给标题框。 -->
+    <div class="title-row">
+      <label class="title-label">
+        <span class="sr-only">文章标题</span>
+        <input
+          ref="titleEl"
+          v-model="title"
+          class="title-input px"
+          type="text"
+          placeholder="文章标题"
+          data-testid="write-title"
+        />
+      </label>
+      <button
+        :id="INTRO_BTN_ID"
+        ref="introEl"
+        type="button"
+        class="bar-btn focusable intro-btn"
+        data-testid="write-intro"
+        title="编辑简介"
+        @click="openIntro()"
+      >
+        简介
+      </button>
+    </div>
 
     <!-- 正文：宽屏左源码右预览；窄屏只有源码，预览走面板 -->
     <!-- 栅格列数必须跟 `narrow` 同源：窄屏下预览那一栏从 DOM 里拿掉了，
@@ -1794,6 +1909,19 @@ onUnmounted(() => {
       data-testid="write-cover-input"
       @change="onCoverPicked"
     />
+
+    <!-- 简介：设置页那块同一张长文本画布（`useLongText` 是唯一的开关，非空就是开着）。
+         遮罩点击不关闭是有意的 —— 框里可能写着几百字，一次误点不该丢。 -->
+    <TextEditorDialog
+      v-if="editing"
+      :label="editing.label"
+      :value="editing.value"
+      :maxlength="editing.maxlength"
+      :placeholder="editing.placeholder"
+      :mono="editing.mono"
+      @save="onLongSave"
+      @close="closeLongText"
+    />
   </div>
 </template>
 
@@ -1919,9 +2047,26 @@ onUnmounted(() => {
   color: var(--ink-soft);
 }
 
-/* ── 标题 ── */
+/* ── 标题行（标题框 + 简介入口） ── */
+/*
+ * 一行两格：标题框吃掉剩余宽度，右边那颗「简介」按钮**贴着标题框同高**（`stretch`）——
+ * 它是这一行的配角，但高度对齐才像同一个控件组，不然会在标题框旁边缩成一颗小疙瘩。
+ * 按钮本身不另写外观：`.bar-btn` 就是这一页的按钮（`.focusable` 那套焦点视觉也不许重写，
+ * 见 `pixel.css` 第 8 节）。
+ */
 .title-row {
-  display: block;
+  display: flex;
+  align-items: stretch;
+  gap: 8px;
+}
+
+.title-label {
+  flex: 1 1 auto;
+  min-width: 0;
+}
+
+.intro-btn {
+  flex: 0 0 auto;
 }
 
 .title-input {
